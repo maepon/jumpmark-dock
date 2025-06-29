@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Jumpmark Dock</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- メイン画面 -->
+  <div id="mainView">
+    <div class="header">
+      <h1 class="app-title">Jumpmark Dock</h1>
+      <div class="current-url" id="currentUrl">読み込み中...</div>
+    </div>
+    
+    <div class="jumpmarks-container" id="jumpmarksContainer">
+      <!-- Jumpmarkリストがここに表示される -->
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">⚓</div>
+        <p>このページにはまだJumpmarkがありません</p>
+        <p class="empty-subtitle">関連ページへのショートカットを追加しましょう</p>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <button id="addButton" class="add-button">+ Jumpmarkを追加</button>
+    </div>
+  </div>
+
+  <!-- 追加フォーム -->
+  <div id="formView" class="hidden">
+    <div class="form-header">
+      <button id="backButton" class="back-button">← 戻る</button>
+      <h2 id="formTitle">新しいJumpmark</h2>
+    </div>
+    
+    <form id="jumpmarkForm" class="jumpmark-form">
+      <div class="form-group">
+        <label for="jumpmarkTitle">タイトル</label>
+        <input type="text" id="jumpmarkTitle" placeholder="関連ページ" required>
+      </div>
+      
+      <div class="form-group">
+        <label for="jumpmarkUrl">URL</label>
+        <input type="url" id="jumpmarkUrl" placeholder="https://example.com" required>
+      </div>
+      
+      <div class="form-group">
+        <label for="jumpmarkIcon">アイコン（絵文字）</label>
+        <input type="text" id="jumpmarkIcon" placeholder="📝" maxlength="2">
+      </div>
+      
+      <div class="form-group checkbox-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="bidirectional" checked>
+          <span class="checkmark"></span>
+          双方向リンク（相手ページからもこのページへのJumpmarkを作成）
+        </label>
+      </div>
+      
+      <div class="form-actions">
+        <button type="button" id="cancelButton" class="cancel-button">キャンセル</button>
+        <button type="submit" class="save-button">保存</button>
+      </div>
+    </form>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

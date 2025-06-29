@@ -1,0 +1,292 @@
+/* 基本スタイル */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 350px;
+  min-height: 400px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  background-color: #ffffff;
+  color: #202124;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ヘッダー */
+.header {
+  padding: 16px;
+  border-bottom: 1px solid #e8eaed;
+  background-color: #f8f9fa;
+}
+
+.app-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #4285f4;
+  margin-bottom: 8px;
+}
+
+.current-url {
+  font-size: 12px;
+  color: #5f6368;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+/* Jumpmarkコンテンツ */
+.jumpmarks-container {
+  min-height: 280px;
+  padding: 16px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #5f6368;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-state p {
+  margin-bottom: 8px;
+}
+
+.empty-subtitle {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Jumpmarkリスト */
+.jumpmark-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-bottom: 8px;
+  border: 1px solid #e8eaed;
+}
+
+.jumpmark-item:hover {
+  background-color: #f8f9fa;
+}
+
+.jumpmark-icon {
+  font-size: 20px;
+  margin-right: 12px;
+  width: 24px;
+  text-align: center;
+}
+
+.jumpmark-content {
+  flex: 1;
+}
+
+.jumpmark-title {
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: #202124;
+}
+
+.jumpmark-url {
+  font-size: 12px;
+  color: #5f6368;
+  word-break: break-all;
+}
+
+.jumpmark-actions {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.jumpmark-item:hover .jumpmark-actions {
+  opacity: 1;
+}
+
+.edit-button {
+  background: none;
+  border: none;
+  color: #4285f4;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.edit-button:hover {
+  background-color: #e8f0fe;
+}
+
+.delete-button {
+  background: none;
+  border: none;
+  color: #ea4335;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.delete-button:hover {
+  background-color: #fce8e6;
+}
+
+/* フッター */
+.footer {
+  padding: 16px;
+  border-top: 1px solid #e8eaed;
+  background-color: #f8f9fa;
+}
+
+.add-button {
+  width: 100%;
+  padding: 12px;
+  background-color: #4285f4;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.add-button:hover {
+  background-color: #3367d6;
+}
+
+/* フォーム画面 */
+.form-header {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #e8eaed;
+  background-color: #f8f9fa;
+}
+
+.back-button {
+  background: none;
+  border: none;
+  color: #4285f4;
+  cursor: pointer;
+  font-size: 14px;
+  margin-right: 12px;
+  padding: 4px;
+}
+
+.back-button:hover {
+  background-color: #e8f0fe;
+  border-radius: 4px;
+}
+
+.form-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #202124;
+}
+
+.jumpmark-form {
+  padding: 16px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #202124;
+}
+
+.form-group input[type="text"],
+.form-group input[type="url"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="url"]:focus {
+  outline: none;
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+}
+
+/* チェックボックスグループ */
+.checkbox-group {
+  margin-top: 20px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin-right: 8px;
+  margin-top: 2px;
+}
+
+/* フォームアクション */
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #e8eaed;
+}
+
+.cancel-button {
+  flex: 1;
+  padding: 10px;
+  background-color: #f8f9fa;
+  color: #5f6368;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.cancel-button:hover {
+  background-color: #e8eaed;
+}
+
+.save-button {
+  flex: 1;
+  padding: 10px;
+  background-color: #4285f4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.save-button:hover {
+  background-color: #3367d6;
+}
+
+.save-button:disabled {
+  background-color: #dadce0;
+  cursor: not-allowed;
+}

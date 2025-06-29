@@ -1,0 +1,43 @@
+# Chrome Extension Development
+*.crx
+*.pem
+.DS_Store
+
+# Claude Code settings
+.claude/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Node.js (if used for development tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Development tools
+dist/
+build/
+
+# Chrome extension zip files
+*.zip
+
+# Logs
+logs/
+*.log
