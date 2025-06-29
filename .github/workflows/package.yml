@@ -1,0 +1,167 @@
+name: Package for Chrome Web Store
+
+on:
+  # バージョンタグがプッシュされた時にトリガー (例: v1.0.0, v0.1.0)
+  push:
+    tags:
+      - 'v*'
+  
+  # 手動実行を可能にする
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to package (optional, uses manifest.json if empty)'
+        required: false
+        type: string
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Get version from tag or input
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+            # タグから実行された場合
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "source=tag" >> $GITHUB_OUTPUT
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            # 手動実行で版数が指定された場合
+            VERSION="${{ github.event.inputs.version }}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "source=manual" >> $GITHUB_OUTPUT
+          else
+            # manifest.jsonから取得
+            VERSION=$(jq -r '.version' manifest.json)
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "source=manifest" >> $GITHUB_OUTPUT
+          fi
+          echo "Version: $VERSION (source: $(echo ${{ github.output.source }} || echo 'manifest'))"
+          
+      - name: Validate manifest.json
+        run: |
+          # manifest.jsonの基本検証
+          if ! jq empty manifest.json; then
+            echo "Error: manifest.json is not valid JSON"
+            exit 1
+          fi
+          
+          # 必須フィールドの確認
+          NAME=$(jq -r '.name' manifest.json)
+          MANIFEST_VERSION=$(jq -r '.version' manifest.json)
+          
+          if [[ "$NAME" == "null" || -z "$NAME" ]]; then
+            echo "Error: name field is missing in manifest.json"
+            exit 1
+          fi
+          
+          if [[ "$MANIFEST_VERSION" == "null" || -z "$MANIFEST_VERSION" ]]; then
+            echo "Error: version field is missing in manifest.json"
+            exit 1
+          fi
+          
+          echo "Manifest validation passed: $NAME v$MANIFEST_VERSION"
+          
+      - name: Create package directory
+        run: |
+          mkdir -p package
+          
+      - name: Copy extension files
+        run: |
+          # Chrome拡張機能に必要なファイルのみをコピー
+          cp manifest.json package/
+          cp background.js package/
+          cp popup.html package/
+          cp popup.js package/
+          cp popup.css package/
+          cp -r icons package/
+          
+          # ファイル一覧を表示
+          echo "Packaged files:"
+          find package -type f | sort
+          
+      - name: Remove development files from package
+        run: |
+          # 開発用ファイルが紛れ込んでいないか確認して削除
+          find package -name "*.tmp" -delete
+          find package -name "*.log" -delete
+          find package -name ".DS_Store" -delete
+          
+      - name: Validate package structure
+        run: |
+          # パッケージの必須ファイル確認
+          REQUIRED_FILES=("manifest.json" "background.js" "popup.html" "popup.js" "popup.css")
+          
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [[ ! -f "package/$file" ]]; then
+              echo "Error: Required file $file is missing from package"
+              exit 1
+            fi
+          done
+          
+          # アイコンディレクトリの確認
+          if [[ ! -d "package/icons" ]]; then
+            echo "Error: icons directory is missing from package"
+            exit 1
+          fi
+          
+          echo "Package structure validation passed"
+          
+      - name: Create Chrome Web Store package
+        run: |
+          cd package
+          PACKAGE_NAME="jumpmark-dock-v${{ steps.version.outputs.version }}.zip"
+          zip -r "../$PACKAGE_NAME" .
+          cd ..
+          
+          # パッケージ情報を表示
+          echo "Package created: $PACKAGE_NAME"
+          echo "Package size: $(du -h "$PACKAGE_NAME" | cut -f1)"
+          echo "Package contents:"
+          unzip -l "$PACKAGE_NAME"
+          
+      - name: Upload package as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jumpmark-dock-v${{ steps.version.outputs.version }}
+          path: jumpmark-dock-v${{ steps.version.outputs.version }}.zip
+          retention-days: 90
+          
+      - name: Create release (for tag triggers)
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Jumpmark Dock v${{ steps.version.outputs.version }}
+          body: |
+            ## Jumpmark Dock v${{ steps.version.outputs.version }}
+            
+            Chrome Web Store用パッケージが自動生成されました。
+            
+            ### インストール方法
+            1. Artifactから `jumpmark-dock-v${{ steps.version.outputs.version }}.zip` をダウンロード
+            2. Chrome拡張機能管理画面で「パッケージ化されていない拡張機能を読み込む」
+            3. 解凍したフォルダを選択
+            
+            ### 変更点
+            詳細は[CHANGELOG](./CHANGELOG.md)をご確認ください。
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
+          
+      - name: Upload release asset (for tag triggers)
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: jumpmark-dock-v${{ steps.version.outputs.version }}.zip
+          asset_name: jumpmark-dock-v${{ steps.version.outputs.version }}.zip
+          asset_content_type: application/zip

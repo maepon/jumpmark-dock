@@ -37,6 +37,7 @@ build/
 
 # Chrome extension zip files
 *.zip
+jumpmark-dock-v*.zip
 
 # Logs
 logs/
