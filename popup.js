@@ -19,6 +19,7 @@ const formTitle = document.getElementById('formTitle');
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await init();
+    setupThemeDetection();
   } catch (error) {
     console.error('初期化エラー:', error);
   }
@@ -463,4 +464,28 @@ function setupEventListeners() {
       alert(editingJumpmark ? '更新に失敗しました' : '保存に失敗しました');
     }
   });
+}
+
+// テーマ検出とスタイル切り替え
+function setupThemeDetection() {
+  // システムテーマの初期検出
+  const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  applyTheme(darkModeMediaQuery.matches);
+  
+  // テーマ変更の監視
+  darkModeMediaQuery.addEventListener('change', (e) => {
+    applyTheme(e.matches);
+  });
+}
+
+function applyTheme(isDark) {
+  const body = document.body;
+  
+  if (isDark) {
+    body.setAttribute('data-theme', 'dark');
+  } else {
+    body.removeAttribute('data-theme');
+  }
+  
+  // アイコンの切り替えは不要なので、メッセージ送信は削除
 }

@@ -290,3 +290,102 @@ body {
   background-color: #dadce0;
   cursor: not-allowed;
 }
+
+/* ダークモード対応 */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #202124;
+    color: #e8eaed;
+  }
+
+  .header,
+  .footer,
+  .form-header {
+    background-color: #292a2d;
+    border-color: #3c4043;
+  }
+
+  .app-title {
+    color: #8ab4f8;
+  }
+
+  .current-url,
+  .empty-state,
+  .jumpmark-url {
+    color: #9aa0a6;
+  }
+
+  .jumpmark-item {
+    border-color: #3c4043;
+    background-color: #292a2d;
+  }
+
+  .jumpmark-item:hover {
+    background-color: #3c4043;
+  }
+
+  .jumpmark-title,
+  .form-group label,
+  .form-header h2 {
+    color: #e8eaed;
+  }
+
+  .edit-button {
+    color: #8ab4f8;
+  }
+
+  .edit-button:hover {
+    background-color: #1a73e8;
+  }
+
+  .delete-button {
+    color: #f28b82;
+  }
+
+  .delete-button:hover {
+    background-color: #5f2120;
+  }
+
+  .add-button,
+  .save-button {
+    background-color: #1a73e8;
+  }
+
+  .add-button:hover,
+  .save-button:hover {
+    background-color: #1557b0;
+  }
+
+  .cancel-button {
+    background-color: #3c4043;
+    color: #9aa0a6;
+    border-color: #5f6368;
+  }
+
+  .cancel-button:hover {
+    background-color: #5f6368;
+  }
+
+  .form-group input[type="text"],
+  .form-group input[type="url"] {
+    background-color: #3c4043;
+    border-color: #5f6368;
+    color: #e8eaed;
+  }
+
+  .form-group input[type="text"]:focus,
+  .form-group input[type="url"]:focus {
+    border-color: #8ab4f8;
+    box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.1);
+  }
+
+  .form-actions,
+  .checkbox-group {
+    border-color: #3c4043;
+  }
+
+  .save-button:disabled {
+    background-color: #5f6368;
+    color: #9aa0a6;
+  }
+}
