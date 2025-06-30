@@ -1,0 +1,58 @@
+name: Build Chrome Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Create extension package
+      run: |
+        # 必要なファイルのみをパッケージに含める
+        mkdir -p dist
+        cp manifest.json dist/
+        cp background.js dist/
+        cp popup.html dist/
+        cp popup.js dist/
+        cp popup.css dist/
+        cp -r icons dist/
+        
+        # zipファイルを作成
+        cd dist
+        zip -r ../jumpmark-dock-extension.zip .
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: jumpmark-dock-extension
+        path: jumpmark-dock-extension.zip
+        
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+        
+    - name: Upload Release Asset
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./jumpmark-dock-extension.zip
+        asset_name: jumpmark-dock-extension.zip
+        asset_content_type: application/zip
