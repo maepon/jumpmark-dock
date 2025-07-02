@@ -12,6 +12,10 @@ URLごとに双方向ショートカット（Jumpmark）を設定・管理でき
 
 ## 📦 インストール
 
+### Chrome ウェブストアから（推奨）
+
+[Chrome ウェブストア](https://chromewebstore.google.com/detail/jumpmark-dock/ldodfncboddjjbggcholbmkmjbfjmblh)からインストールできます。
+
 ### 開発者向け（パッケージ化されていない拡張機能として）
 
 1. このリポジトリをクローン

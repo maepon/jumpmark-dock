@@ -61,6 +61,8 @@
 
 ## Chrome Web Store用の説明文（単一用途重視版）
 
+**公開URL**: https://chromewebstore.google.com/detail/jumpmark-dock/ldodfncboddjjbggcholbmkmjbfjmblh
+
 **一行説明**
 Webページ間に双方向ショートカットを作成する拡張機能
 
