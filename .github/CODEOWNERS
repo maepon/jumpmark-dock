@@ -1,0 +1,14 @@
+# Global code owners
+* @maepon
+
+# Critical files require explicit approval
+manifest.json @maepon
+background.js @maepon
+popup.js @maepon
+
+# Documentation
+*.md @maepon
+docs/ @maepon
+
+# Configuration files
+.github/ @maepon
