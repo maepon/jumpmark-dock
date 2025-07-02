@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Jumpmark Dock",
-  "version": "1.0.0",
-  "description": "Create bidirectional shortcuts between web pages. Jump between related pages with ease and sync across devices.",
+  "version": "1.0.1",
+  "description": "ページごとに個別のリンク集（ショートカット）を管理・呼び出せるChrome拡張です。",
   "icons": {
     "16": "icons/icon_16x16.png",
     "32": "icons/icon_32x32.png",
