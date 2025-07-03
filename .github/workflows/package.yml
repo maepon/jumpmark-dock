@@ -114,9 +114,9 @@ jobs:
           
       - name: Create Chrome Web Store package
         run: |
-          cd package
           PACKAGE_NAME="jumpmark-dock-v${{ steps.version.outputs.version }}.zip"
-          zip -r "../$PACKAGE_NAME" .
+          cd package
+          zip -r "../$PACKAGE_NAME" *
           cd ..
           
           # パッケージ情報を表示
@@ -124,6 +124,14 @@ jobs:
           echo "Package size: $(du -h "$PACKAGE_NAME" | cut -f1)"
           echo "Package contents:"
           unzip -l "$PACKAGE_NAME"
+          
+          # manifest.jsonがルートにあることを確認
+          if unzip -l "$PACKAGE_NAME" | grep -q "manifest.json$"; then
+            echo "✓ manifest.json found at root level"
+          else
+            echo "✗ manifest.json not found at root level"
+            exit 1
+          fi
           
       - name: Upload package as artifact
         uses: actions/upload-artifact@v4
