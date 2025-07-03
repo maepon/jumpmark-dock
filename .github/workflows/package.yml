@@ -114,16 +114,22 @@ jobs:
           
       - name: Create Chrome Web Store package
         run: |
-          PACKAGE_NAME="jumpmark-dock-v${{ steps.version.outputs.version }}.zip"
+          VERSION="${{ steps.version.outputs.version }}"
+          PACKAGE_NAME="jumpmark-dock-v${VERSION}.zip"
           cd package
           zip -r "../$PACKAGE_NAME" *
           cd ..
           
           # パッケージ情報を表示
-          echo "Package created: $PACKAGE_NAME"
-          echo "Package size: $(du -h "$PACKAGE_NAME" | cut -f1)"
-          echo "Package contents:"
+          echo "=================================="
+          echo "Chrome Web Store Package Created"
+          echo "=================================="
+          echo "Package Name: $PACKAGE_NAME"
+          echo "Version: $VERSION"
+          echo "Package Size: $(du -h "$PACKAGE_NAME" | cut -f1)"
+          echo "Package Contents:"
           unzip -l "$PACKAGE_NAME"
+          echo "=================================="
           
           # manifest.jsonがルートにあることを確認
           if unzip -l "$PACKAGE_NAME" | grep -q "manifest.json$"; then
@@ -136,7 +142,7 @@ jobs:
       - name: Upload package as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: jumpmark-dock-v${{ steps.version.outputs.version }}
+          name: jumpmark-dock-v${{ steps.version.outputs.version }}-chrome-store-package
           path: jumpmark-dock-v${{ steps.version.outputs.version }}.zip
           retention-days: 90
           
@@ -160,4 +166,5 @@ jobs:
             詳細は[CHANGELOG](./CHANGELOG.md)をご確認ください。
           draft: false
           prerelease: ${{ contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
-          files: jumpmark-dock-v${{ steps.version.outputs.version }}.zip
+          files: |
+            jumpmark-dock-v${{ steps.version.outputs.version }}.zip
