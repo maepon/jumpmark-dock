@@ -116,8 +116,24 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           PACKAGE_NAME="jumpmark-dock-v${VERSION}.zip"
+          
+          # パッケージディレクトリの内容を確認
+          echo "=================================="
+          echo "Package Directory Contents:"
+          echo "=================================="
+          ls -la package/
+          echo ""
+          
+          # zipファイルを作成（絶対パスで指定）
+          FULL_PACKAGE_PATH="$(pwd)/$PACKAGE_NAME"
           cd package
-          zip -r "../$PACKAGE_NAME" *
+          echo "Creating zip file: $FULL_PACKAGE_PATH"
+          echo "From directory: $(pwd)"
+          echo "Files to include:"
+          ls -la
+          echo ""
+          
+          zip -r "$FULL_PACKAGE_PATH" . -x "*.DS_Store"
           cd ..
           
           # パッケージ情報を表示
@@ -132,10 +148,13 @@ jobs:
           echo "=================================="
           
           # manifest.jsonがルートにあることを確認
-          if unzip -l "$PACKAGE_NAME" | grep -q "manifest.json$"; then
+          echo "Checking for manifest.json at root level:"
+          if unzip -l "$PACKAGE_NAME" | grep -E "^\s*[0-9]+.*manifest\.json$"; then
             echo "✓ manifest.json found at root level"
           else
             echo "✗ manifest.json not found at root level"
+            echo "Full zip listing:"
+            unzip -l "$PACKAGE_NAME"
             exit 1
           fi
           
