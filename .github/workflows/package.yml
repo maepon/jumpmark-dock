@@ -134,19 +134,17 @@ jobs:
           
       - name: Create release (for tag triggers)
         if: github.event_name == 'push' && github.ref_type == 'tag'
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: Jumpmark Dock v${{ steps.version.outputs.version }}
+          name: Jumpmark Dock v${{ steps.version.outputs.version }}
           body: |
             ## Jumpmark Dock v${{ steps.version.outputs.version }}
             
             Chrome Web Store用パッケージが自動生成されました。
             
             ### インストール方法
-            1. Artifactから `jumpmark-dock-v${{ steps.version.outputs.version }}.zip` をダウンロード
+            1. 下記のzipファイルをダウンロード
             2. Chrome拡張機能管理画面で「パッケージ化されていない拡張機能を読み込む」
             3. 解凍したフォルダを選択
             
@@ -154,14 +152,4 @@ jobs:
             詳細は[CHANGELOG](./CHANGELOG.md)をご確認ください。
           draft: false
           prerelease: ${{ contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
-          
-      - name: Upload release asset (for tag triggers)
-        if: github.event_name == 'push' && github.ref_type == 'tag'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: jumpmark-dock-v${{ steps.version.outputs.version }}.zip
-          asset_name: jumpmark-dock-v${{ steps.version.outputs.version }}.zip
-          asset_content_type: application/zip
+          files: jumpmark-dock-v${{ steps.version.outputs.version }}.zip
