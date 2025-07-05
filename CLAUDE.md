@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Jumpmark Dock is a Chrome Extension (Manifest V3) that allows users to create bidirectional shortcuts between web pages. The extension uses vanilla JavaScript without frameworks and Chrome Storage API for data persistence.
+Jumpmark Dock is a Chrome Extension (Manifest V3) that allows users to create bidirectional shortcuts between web pages. The extension uses vanilla JavaScript without frameworks and Chrome Storage Sync API for data persistence and synchronization across devices.
 
 **Published on Chrome Web Store**: https://chromewebstore.google.com/detail/jumpmark-dock/ldodfncboddjjbggcholbmkmjbfjmblh
 
@@ -53,6 +53,7 @@ This is a Chrome extension project with no build process. Development is done di
 - Monitor tab changes (`chrome.tabs.onUpdated`, `chrome.tabs.onActivated`)
 - Update badge counts showing number of jumpmarks for current page
 - Listen for storage changes and update badges accordingly
+- Handle Chrome Sync storage events for real-time synchronization
 
 ### Popup Script Responsibilities
 - Display current page's jumpmarks
@@ -73,7 +74,7 @@ This is a Chrome extension project with no build process. Development is done di
 - **Phase 2**: ✅ Editing/deletion functionality, smart tab management (exact URL matching)
 - **Phase 3**: ⬜ Auto-favicon, error handling improvements, import/export, search functionality
 
-Current status: Phase 2 complete (v0.1.0). Core functionality fully implemented with editing capabilities.
+Current status: Phase 2 complete (v1.0.1). Core functionality fully implemented with editing capabilities and Chrome Sync support.
 
 ## Code Conventions
 
@@ -82,3 +83,10 @@ Current status: Phase 2 complete (v0.1.0). Core functionality fully implemented 
 - Japanese comments are acceptable
 - Error handling with try-catch blocks
 - Function names start with verbs (e.g., `saveJumpmark`, `displayJumpmarks`)
+
+## Chrome Sync Features
+
+- **Storage API**: Uses `chrome.storage.sync` for automatic synchronization
+- **Cross-device sync**: Jumpmarks automatically sync across devices when Chrome Sync is enabled
+- **Fallback behavior**: Functions as local storage when Chrome Sync is disabled
+- **Limitations**: 102KB storage limit, 512 items max, 4096 bytes per item
