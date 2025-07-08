@@ -29,7 +29,7 @@ This is a Chrome extension project with no build process. Development is done di
 
 **URL Normalization**: All URLs are normalized (removing protocol, www, trailing slashes) for consistent storage and retrieval.
 
-**Bidirectional Linking**: When creating a jumpmark A→B, the system automatically creates B→A. The `bidirectional` flag distinguishes original (true) from auto-generated (false) links.
+**Bidirectional Linking**: Uses URL-match based detection instead of flags. When creating a jumpmark A→B, an optional reverse jumpmark B→A can be created. Bidirectional relationships are detected dynamically by comparing `sourceUrl` and `url` fields.
 
 **Storage Schema**:
 ```javascript
@@ -41,7 +41,7 @@ This is a Chrome extension project with no build process. Development is done di
         "title": "Display name",
         "url": "target-url",
         "icon": "emoji",
-        "bidirectional": true/false,
+        "sourceUrl": "normalized-source-url",
         "created": "ISO-timestamp"
       }
     ]
@@ -71,10 +71,10 @@ This is a Chrome extension project with no build process. Development is done di
 ## Implementation Phases
 
 - **Phase 1**: ✅ Basic popup UI, URL handling, jumpmark storage/display, bidirectional links, badge functionality
-- **Phase 2**: ✅ Editing/deletion functionality, smart tab management (exact URL matching)
+- **Phase 2**: 🔄 **IN PROGRESS** - Options page with advanced management, bidirectional system refactor (URL-match based), deletion bug fixed
 - **Phase 3**: ⬜ Auto-favicon, error handling improvements, import/export, search functionality
 
-Current status: Phase 2 complete (v1.0.1). Core functionality fully implemented with editing capabilities and Chrome Sync support.
+Current status: Phase 2 in progress. Options page implemented with bidirectional refactor complete. **Known issue**: editing duplication bug (same pattern as fixed deletion bug).
 
 ## Code Conventions
 
@@ -90,3 +90,13 @@ Current status: Phase 2 complete (v1.0.1). Core functionality fully implemented 
 - **Cross-device sync**: Jumpmarks automatically sync across devices when Chrome Sync is enabled
 - **Fallback behavior**: Functions as local storage when Chrome Sync is disabled
 - **Limitations**: 102KB storage limit, 512 items max, 4096 bytes per item
+
+## Work Session Continuity
+
+**⚠️ IMPORTANT**: For active development sessions, check `docs/work-session-handoff.md` for:
+- Current work status and pending tasks
+- Known issues and their fixes
+- Detailed technical context for work continuation
+- Step-by-step instructions for ongoing development
+
+This ensures seamless continuation of work across sessions and provides complete context for any ongoing development.
