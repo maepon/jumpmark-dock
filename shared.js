@@ -117,7 +117,7 @@ async function saveJumpmark(jumpmarkData) {
       title: jumpmarkData.title,
       url: targetUrl,
       icon: jumpmarkData.icon || '🔗',
-      bidirectional: jumpmarkData.bidirectional || false,
+      sourceUrl: sourceUrl,
       created: new Date().toISOString()
     };
     
@@ -128,7 +128,7 @@ async function saveJumpmark(jumpmarkData) {
     jumpmarks[sourceUrl].push(newJumpmark);
     
     // 双方向リンクの場合、逆方向も作成
-    if (jumpmarkData.bidirectional) {
+    if (jumpmarkData.createBidirectional) {
       const normalizedTargetUrl = normalizeUrl(targetUrl);
       if (!jumpmarks[normalizedTargetUrl]) {
         jumpmarks[normalizedTargetUrl] = [];
@@ -137,10 +137,10 @@ async function saveJumpmark(jumpmarkData) {
       // 逆方向のJumpmarkを作成
       const reverseJumpmark = {
         id: generateUniqueId(),
-        title: jumpmarkData.reverseTitle || jumpmarkData.title,
+        title: jumpmarkData.reverseTitle || `← ${jumpmarkData.title}`,
         url: jumpmarkData.sourceUrl,
         icon: jumpmarkData.icon || '🔗',
-        bidirectional: false, // 逆方向は自動生成なのでfalse
+        sourceUrl: normalizedTargetUrl,
         created: new Date().toISOString()
       };
       
@@ -155,22 +155,26 @@ async function saveJumpmark(jumpmarkData) {
   }
 }
 
-// Jumpmarkを更新
+// Jumpmarkを更新（シンプル版）
 async function updateJumpmark(jumpmarkId, updateData) {
   try {
     const result = await chrome.storage.sync.get(['jumpmarks']);
     const jumpmarks = result.jumpmarks || {};
     
     let found = false;
-    let sourceUrl = '';
     
     // Jumpmarkを検索して更新
     Object.entries(jumpmarks).forEach(([url, jumpmarkList]) => {
       const index = jumpmarkList.findIndex(j => j.id === jumpmarkId);
       if (index !== -1) {
-        jumpmarkList[index] = { ...jumpmarkList[index], ...updateData };
+        // sourceUrlも更新データに含まれている場合は更新
+        const updatedJumpmark = { 
+          ...jumpmarkList[index], 
+          ...updateData,
+          sourceUrl: updateData.sourceUrl || jumpmarkList[index].sourceUrl
+        };
+        jumpmarkList[index] = updatedJumpmark;
         found = true;
-        sourceUrl = url;
       }
     });
     
@@ -186,7 +190,7 @@ async function updateJumpmark(jumpmarkId, updateData) {
   }
 }
 
-// Jumpmarkを削除
+// Jumpmarkを削除（単体）
 async function deleteJumpmark(jumpmarkId) {
   try {
     const result = await chrome.storage.sync.get(['jumpmarks']);
@@ -216,6 +220,38 @@ async function deleteJumpmark(jumpmarkId) {
     return true;
   } catch (error) {
     console.error('Jumpmark削除エラー:', error);
+    throw error;
+  }
+}
+
+// 双方向ペアを削除
+async function deleteBidirectionalPair(jumpmarkId, partnerId) {
+  try {
+    const result = await chrome.storage.sync.get(['jumpmarks']);
+    const jumpmarks = result.jumpmarks || {};
+    
+    let deletedCount = 0;
+    
+    // 両方のJumpmarkを削除
+    [jumpmarkId, partnerId].forEach(id => {
+      Object.entries(jumpmarks).forEach(([url, jumpmarkList]) => {
+        const index = jumpmarkList.findIndex(j => j.id === id);
+        if (index !== -1) {
+          jumpmarkList.splice(index, 1);
+          deletedCount++;
+          
+          // 空になったURLエントリを削除
+          if (jumpmarkList.length === 0) {
+            delete jumpmarks[url];
+          }
+        }
+      });
+    });
+    
+    await chrome.storage.sync.set({ jumpmarks });
+    return deletedCount;
+  } catch (error) {
+    console.error('双方向ペア削除エラー:', error);
     throw error;
   }
 }
@@ -355,6 +391,31 @@ async function getCurrentTab() {
     return tab;
   } catch (error) {
     console.error('タブ情報取得エラー:', error);
+    return null;
+  }
+}
+
+// 双方向リンクのペア判定
+function isBidirectionalPair(jumpmarkA, jumpmarkB) {
+  if (!jumpmarkA || !jumpmarkB || jumpmarkA.id === jumpmarkB.id) {
+    return false;
+  }
+  
+  const urlA = normalizeUrl(jumpmarkA.url);
+  const urlB = normalizeUrl(jumpmarkB.url);
+  const sourceA = jumpmarkA.sourceUrl;
+  const sourceB = jumpmarkB.sourceUrl;
+  
+  return urlA === sourceB && urlB === sourceA;
+}
+
+// 指定jumpmarkと対になる双方向リンクを検索
+async function findBidirectionalPartner(targetJumpmark) {
+  try {
+    const allJumpmarks = await getAllJumpmarks();
+    return allJumpmarks.find(jm => isBidirectionalPair(targetJumpmark, jm));
+  } catch (error) {
+    console.error('双方向パートナー検索エラー:', error);
     return null;
   }
 }

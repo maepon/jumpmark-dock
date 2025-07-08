@@ -31,14 +31,6 @@
         <span class="tab-icon">📂</span>
         <span class="tab-label">インポート/エクスポート</span>
       </button>
-      <button class="nav-tab" data-tab="analytics">
-        <span class="tab-icon">📊</span>
-        <span class="tab-label">分析</span>
-      </button>
-      <button class="nav-tab" data-tab="settings">
-        <span class="tab-icon">⚙️</span>
-        <span class="tab-label">設定</span>
-      </button>
     </nav>
 
     <!-- Main Content -->
@@ -48,6 +40,18 @@
         <div class="tab-header">
           <h2>Jumpmark管理</h2>
           <p>すべてのJumpmarkを表示・編集・削除できます</p>
+        </div>
+
+        <!-- Storage Info -->
+        <div class="storage-info" id="storageInfo">
+          <div class="storage-summary">
+            <span class="storage-text">
+              <span id="totalJumpmarks">-</span>件のJumpmark（<span id="storageUsage">-</span> / 102KB）
+            </span>
+            <div class="storage-bar">
+              <div class="storage-progress" id="storageProgress"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Controls -->
@@ -61,7 +65,7 @@
             </select>
             <select id="filterBy" class="filter-select">
               <option value="all">すべて</option>
-              <option value="original">オリジナルのみ</option>
+              <option value="single">単独のみ</option>
               <option value="bidirectional">双方向のみ</option>
             </select>
           </div>
@@ -125,32 +129,60 @@
         </div>
       </div>
 
-      <!-- Analytics Tab -->
-      <div id="analyticsTab" class="tab-content">
-        <div class="tab-header">
-          <h2>分析</h2>
-          <p>Jumpmarkの使用状況と統計情報</p>
-        </div>
-        <div class="placeholder">
-          <p>Phase 4で実装予定</p>
-        </div>
-      </div>
-
-      <!-- Settings Tab -->
-      <div id="settingsTab" class="tab-content">
-        <div class="tab-header">
-          <h2>設定</h2>
-          <p>拡張機能の設定とカスタマイズ</p>
-        </div>
-        <div class="placeholder">
-          <p>Phase 5で実装予定</p>
-        </div>
-      </div>
     </main>
 
     <!-- Status Bar -->
     <div class="status-bar" id="statusBar">
       <span id="statusMessage">準備完了</span>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal" id="editModal">
+    <div class="modal-content modal-large">
+      <h3 id="editModalTitle">Jumpmarkを編集</h3>
+      <form id="editForm" class="edit-form">
+        <div class="form-group">
+          <label for="editTitle">タイトル *</label>
+          <input type="text" id="editTitle" name="title" placeholder="Jumpmarkのタイトル" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="editUrl">URL *</label>
+          <input type="url" id="editUrl" name="url" placeholder="https://example.com" required>
+          <div class="url-preview" id="urlPreview" style="display: none;">
+            <small class="preview-text">正規化後: <span id="normalizedUrl"></span></small>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="editIcon">アイコン</label>
+          <input type="text" id="editIcon" name="icon" placeholder="🔗" maxlength="2">
+          <small class="form-help">絵文字1文字（例: 🔗, 📚, 🎯）</small>
+        </div>
+        
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="editCreateReverse" name="createReverse">
+            <span class="checkbox-text">戻りリンクを作成</span>
+          </label>
+          <small class="form-help">チェックすると、リンク先ページからも戻ってくるJumpmarkが作成されます</small>
+        </div>
+
+        <div class="form-group source-info">
+          <label>作成元URL</label>
+          <div class="source-url" id="editSourceUrl"></div>
+        </div>
+      </form>
+      
+      <div class="modal-actions">
+        <button type="button" id="editCancel" class="btn btn-secondary">キャンセル</button>
+        <button type="submit" form="editForm" id="editSave" class="btn btn-primary">保存</button>
+      </div>
+      
+      <div class="edit-error" id="editError" style="display: none;">
+        <span class="error-message"></span>
+      </div>
     </div>
   </div>
 

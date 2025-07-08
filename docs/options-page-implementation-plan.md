@@ -350,32 +350,95 @@ class JumpmarkEvents {
 }
 ```
 
+## Release Strategy & Scope Revision
+
+### **Current Release Scope** (v1.1.0)
+Based on user feedback and priority assessment, the following phases will be included in the upcoming release:
+
+#### ✅ **Phase 1: Core Setup** (Completed)
+- Basic options page structure with tab navigation
+- Jumpmark list view with search, filter, sort
+- Bulk operations (select, delete, basic export)
+- Shared utilities for popup/options integration
+
+#### 🎯 **Phase 2: Enhanced Management** (In Progress)
+**Core Features:**
+- **Modal-based editing**: Comprehensive edit form for title, URL, icon, bidirectional settings
+- **Enhanced bidirectional link management**: Visual indicators and cascade operations
+- **Basic storage usage display**: Simple capacity indicator for Chrome Sync limits
+- **Improved error handling**: User-friendly error messages and validation
+
+**Design Decisions:**
+- **Modal over inline editing**: Clear edit flow with explicit save/cancel actions
+- **Focused scope**: Essential management features only, avoiding complex analytics
+
+#### 🚀 **Phase 3: Import/Export** (Final Release Feature)
+- Advanced export formats (JSON, CSV, HTML)
+- Import functionality with duplicate handling
+- Manifest update to include `downloads` permission
+
+### **Future Updates** (Post-Release)
+The following features are valuable but excluded from current release scope:
+
+#### ⏳ **Deferred Features**
+- **Detailed analytics dashboard**: Charts, trends, usage statistics
+- **Advanced cleanup tools**: Orphaned link detection, duplicate merging
+- **Link usage tracking**: Click counts and usage patterns
+- **Advanced settings management**: Backup/restore, sync status monitoring
+
+### **Chrome Sync Capacity Analysis**
+
+**Storage Limits:**
+- Total capacity: 102,400 bytes (100KB)
+- Item limit: 512 items max
+- Per-item limit: 8,192 bytes (8KB)
+
+**Estimated Jumpmark Capacity:**
+- Average jumpmark size: ~150-200 bytes (including JSON overhead)
+- **Practical limit: 400-600 jumpmarks total**
+- **With bidirectional links: 200-300 original jumpmarks**
+
+**Priority Assessment:**
+- Basic storage usage indicator is sufficient for initial release
+- Advanced analytics can wait for user feedback on actual usage patterns
+- Most users unlikely to hit limits in normal usage
+
 ## Implementation Timeline
 
-### Week 1-2: Phase 1 (Core Setup)
-- Create basic options page structure
-- Implement navigation and layout
-- Set up shared utilities
+### ✅ **Phase 1: Core Setup** (Completed - Jan 2025)
+- ✅ Basic options page structure
+- ✅ Navigation and layout
+- ✅ Shared utilities setup
+- ✅ Jumpmark list view with basic operations
 
-### Week 3-4: Phase 2 (Management Features)
-- Implement jumpmark list view
-- Add search and filter functionality
-- Create advanced edit features
+### 🎯 **Phase 2: Enhanced Management** (Current)
+- Modal-based comprehensive editing interface
+- Enhanced bidirectional link management
+- Basic storage usage display
+- Improved error handling and validation
 
-### Week 5-6: Phase 3 (Import/Export)
-- Implement export functionality
-- Create import system with validation
-- Add duplicate handling
+### 🚀 **Phase 3: Import/Export** (Release Target)
+- Advanced export functionality (JSON, CSV, HTML)
+- Import system with validation and duplicate handling
+- Manifest permissions update
+- Final testing and release preparation
 
-### Week 7-8: Phase 4 (Data Management)
-- Build analytics dashboard
-- Implement cleanup tools
-- Add storage optimization
+### **Design Philosophy**
 
-### Week 9-10: Phase 5 (Advanced Features)
-- Add sync status management
-- Implement backup/restore
-- Create settings management
+**Simplicity over Complexity:**
+- Focus on essential features that provide clear user value
+- Avoid over-engineering analytics that may not be used
+- Prioritize solid core functionality over advanced reporting
+
+**User-Centric Approach:**
+- Modal-based editing provides clear interaction patterns
+- Basic storage indicators address real capacity concerns
+- Import/export enables data portability and backup
+
+**Incremental Value Delivery:**
+- Each phase delivers complete, usable functionality
+- Post-release updates can add advanced features based on actual user needs
+- Maintain fast development cycles with focused scope
 
 ## Testing Strategy
 

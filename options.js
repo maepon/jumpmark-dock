@@ -33,6 +33,22 @@ const confirmTitle = document.getElementById('confirmTitle');
 const confirmMessage = document.getElementById('confirmMessage');
 const confirmCancel = document.getElementById('confirmCancel');
 const confirmOk = document.getElementById('confirmOk');
+const editModal = document.getElementById('editModal');
+const editModalTitle = document.getElementById('editModalTitle');
+const editForm = document.getElementById('editForm');
+const editTitle = document.getElementById('editTitle');
+const editUrl = document.getElementById('editUrl');
+const editIcon = document.getElementById('editIcon');
+const editCreateReverse = document.getElementById('editCreateReverse');
+const editSourceUrl = document.getElementById('editSourceUrl');
+const editCancel = document.getElementById('editCancel');
+const editSave = document.getElementById('editSave');
+const editError = document.getElementById('editError');
+const urlPreview = document.getElementById('urlPreview');
+const normalizedUrl = document.getElementById('normalizedUrl');
+const totalJumpmarksElement = document.getElementById('totalJumpmarks');
+const storageUsageElement = document.getElementById('storageUsage');
+const storageProgressElement = document.getElementById('storageProgress');
 
 // 初期化
 document.addEventListener('DOMContentLoaded', async () => {
@@ -80,8 +96,8 @@ function setupEventListeners() {
   selectAllCheckbox.addEventListener('change', toggleSelectAll);
   
   // ページネーション
-  prevPageButton.addEventListener('click', () => changePage(currentPage - 1));
-  nextPageButton.addEventListener('click', () => changePage(currentPage + 1));
+  prevPageButton.addEventListener('click', async () => await changePage(currentPage - 1));
+  nextPageButton.addEventListener('click', async () => await changePage(currentPage + 1));
   
   // モーダル
   confirmCancel.addEventListener('click', closeConfirmModal);
@@ -90,6 +106,16 @@ function setupEventListeners() {
       closeConfirmModal();
     }
   });
+  
+  // 編集モーダル
+  editCancel.addEventListener('click', closeEditModal);
+  editModal.addEventListener('click', (e) => {
+    if (e.target === editModal) {
+      closeEditModal();
+    }
+  });
+  editForm.addEventListener('submit', handleEditFormSubmit);
+  editUrl.addEventListener('input', debounce(handleUrlPreview, 300));
   
   // ストレージ変更の監視
   chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -136,11 +162,14 @@ async function loadJumpmarks() {
     filteredJumpmarks = [...allJumpmarks];
     
     // 現在のフィルタとソートを適用
-    applyFilters();
+    await applyFilters();
     applySorting();
     
     // 表示を更新
-    updateDisplay();
+    await updateDisplay();
+    
+    // 統計を更新
+    await updateStorageStats();
     
     showStatusMessage(`${allJumpmarks.length}件のJumpmarkを読み込みました`);
   } catch (error) {
@@ -150,7 +179,7 @@ async function loadJumpmarks() {
 }
 
 // 検索を処理
-function handleSearch() {
+async function handleSearch() {
   const query = searchInput.value.toLowerCase().trim();
   
   if (query === '') {
@@ -164,33 +193,41 @@ function handleSearch() {
   }
   
   currentPage = 1;
-  updateDisplay();
+  await updateDisplay();
 }
 
 // ソートを処理
-function handleSort() {
+async function handleSort() {
   applySorting();
-  updateDisplay();
+  await updateDisplay();
 }
 
 // フィルタを処理
-function handleFilter() {
+async function handleFilter() {
   applyFilters();
-  updateDisplay();
+  await updateDisplay();
 }
 
 // フィルタを適用
-function applyFilters() {
+async function applyFilters() {
   const filter = filterBy.value;
   const query = searchInput.value.toLowerCase().trim();
   
-  filteredJumpmarks = allJumpmarks.filter(jumpmark => {
+  // 全てのJumpmarkに対してフィルタを適用
+  const filteredResults = [];
+  
+  for (const jumpmark of allJumpmarks) {
     // タイプフィルタ
     let typeMatch = true;
-    if (filter === 'original') {
-      typeMatch = jumpmark.bidirectional === true;
-    } else if (filter === 'bidirectional') {
-      typeMatch = jumpmark.bidirectional === false;
+    if (filter === 'single' || filter === 'bidirectional') {
+      const partner = await findBidirectionalPartner(jumpmark);
+      const hasPart = !!partner;
+      
+      if (filter === 'single') {
+        typeMatch = !hasPart;
+      } else if (filter === 'bidirectional') {
+        typeMatch = hasPart;
+      }
     }
     
     // 検索フィルタ
@@ -201,8 +238,12 @@ function applyFilters() {
                    jumpmark.sourceUrl.toLowerCase().includes(query);
     }
     
-    return typeMatch && searchMatch;
-  });
+    if (typeMatch && searchMatch) {
+      filteredResults.push(jumpmark);
+    }
+  }
+  
+  filteredJumpmarks = filteredResults;
 }
 
 // ソートを適用
@@ -223,13 +264,13 @@ function applySorting() {
 }
 
 // 表示を更新
-function updateDisplay() {
+async function updateDisplay() {
   hideLoading();
   
   if (filteredJumpmarks.length === 0) {
     showEmptyState();
   } else {
-    showJumpmarksList();
+    await showJumpmarksList();
   }
   
   updatePagination();
@@ -256,7 +297,7 @@ function showEmptyState() {
 }
 
 // Jumpmarksリストを表示
-function showJumpmarksList() {
+async function showJumpmarksList() {
   emptyState.style.display = 'none';
   jumpmarkTableContainer.style.display = 'block';
   
@@ -268,11 +309,11 @@ function showJumpmarksList() {
   // テーブルボディをクリア
   jumpmarkTableBody.innerHTML = '';
   
-  // 各Jumpmarkの行を作成
-  pageJumpmarks.forEach(jumpmark => {
-    const row = createJumpmarkRow(jumpmark);
+  // 各Jumpmarkの行を作成（非同期）
+  for (const jumpmark of pageJumpmarks) {
+    const row = await createJumpmarkRow(jumpmark);
     jumpmarkTableBody.appendChild(row);
-  });
+  }
   
   // ページネーションを表示
   if (filteredJumpmarks.length > itemsPerPage) {
@@ -283,12 +324,15 @@ function showJumpmarksList() {
 }
 
 // Jumpmarkの行を作成
-function createJumpmarkRow(jumpmark) {
+async function createJumpmarkRow(jumpmark) {
   const row = document.createElement('tr');
   
   const isSelected = selectedJumpmarks.has(jumpmark.id);
-  const typeClass = jumpmark.bidirectional ? 'type-original' : 'type-bidirectional';
-  const typeText = jumpmark.bidirectional ? 'オリジナル' : '双方向';
+  
+  // 双方向パートナーの有無を確認
+  const partner = await findBidirectionalPartner(jumpmark);
+  const typeClass = partner ? 'type-bidirectional' : 'type-single';
+  const typeText = partner ? '双方向' : '単独';
   
   row.innerHTML = `
     <td class="checkbox-column">
@@ -334,7 +378,7 @@ function createJumpmarkRow(jumpmark) {
   editButton.addEventListener('click', () => editJumpmark(jumpmark));
   
   const deleteButton = row.querySelector('.action-delete');
-  deleteButton.addEventListener('click', () => deleteJumpmark(jumpmark));
+  deleteButton.addEventListener('click', () => deleteJumpmarkWithConfirm(jumpmark));
   
   // 行クリックで移動
   row.addEventListener('click', (e) => {
@@ -357,12 +401,12 @@ function updatePagination() {
 }
 
 // ページを変更
-function changePage(page) {
+async function changePage(page) {
   const totalPages = Math.ceil(filteredJumpmarks.length / itemsPerPage);
   
   if (page >= 1 && page <= totalPages) {
     currentPage = page;
-    updateDisplay();
+    await updateDisplay();
   }
 }
 
@@ -480,37 +524,234 @@ function exportJumpmarks(jumpmarks) {
 
 // Jumpmarkを編集
 function editJumpmark(jumpmark) {
-  // 簡易版：アラートで表示
-  const newTitle = prompt('新しいタイトル:', jumpmark.title);
-  if (newTitle !== null && newTitle.trim() !== '') {
-    updateJumpmark(jumpmark.id, { title: newTitle.trim() })
-      .then(() => {
-        loadJumpmarks();
-        showStatusMessage('Jumpmarkを更新しました');
-      })
-      .catch(error => {
-        console.error('更新エラー:', error);
-        showStatusMessage('更新に失敗しました', 'error');
-      });
+  // モーダルフォームに値を設定
+  editModalTitle.textContent = 'Jumpmarkを編集';
+  editTitle.value = jumpmark.title || '';
+  editUrl.value = jumpmark.url || '';
+  editIcon.value = jumpmark.icon || '🔗';
+  editCreateReverse.checked = false; // 編集時はデフォルトでOFF
+  editSourceUrl.textContent = jumpmark.sourceUrl || '';
+  
+  // 編集対象のJumpmarkを記録
+  editModal.setAttribute('data-editing-id', jumpmark.id);
+  
+  // エラーをクリア
+  clearEditError();
+  
+  // URL正規化プレビューを更新
+  handleUrlPreview();
+  
+  // モーダルを表示
+  editModal.classList.add('active');
+  editTitle.focus();
+}
+
+// 編集モーダルを閉じる
+function closeEditModal() {
+  editModal.classList.remove('active');
+  editForm.reset();
+  clearEditError();
+}
+
+// 編集フォーム送信処理
+async function handleEditFormSubmit(e) {
+  e.preventDefault();
+  
+  try {
+    clearEditError();
+    
+    // フォームの値を取得
+    const title = editTitle.value.trim();
+    const url = editUrl.value.trim();
+    const icon = editIcon.value.trim() || '🔗';
+    const createReverse = editCreateReverse.checked;
+    
+    // バリデーション
+    if (!title) {
+      showEditError('タイトルを入力してください');
+      editTitle.focus();
+      return;
+    }
+    
+    if (!url) {
+      showEditError('URLを入力してください');
+      editUrl.focus();
+      return;
+    }
+    
+    if (!validateUrl(url)) {
+      showEditError('有効なURLを入力してください');
+      editUrl.focus();
+      return;
+    }
+    
+    // 編集対象のIDを取得
+    const jumpmarkId = editModal.getAttribute('data-editing-id');
+    if (!jumpmarkId) {
+      showEditError('編集対象が見つかりません');
+      return;
+    }
+    
+    // 更新データを準備
+    const updateData = {
+      title,
+      url,
+      icon
+    };
+    
+    // Jumpmarkを更新
+    await updateJumpmark(jumpmarkId, updateData);
+    
+    // 戻りリンク作成がチェックされている場合、新しい戻りリンクを作成
+    if (createReverse) {
+      // 編集中のJumpmarkを取得
+      const allJumpmarks = await getAllJumpmarks();
+      const currentJumpmark = allJumpmarks.find(jm => jm.id === jumpmarkId);
+      
+      if (currentJumpmark) {
+        const reverseJumpmarkData = {
+          title: `← ${title}`,
+          url: `https://${currentJumpmark.sourceUrl}`,
+          icon: icon,
+          sourceUrl: normalizeUrl(url)
+        };
+        
+        await saveJumpmark(reverseJumpmarkData);
+      }
+    }
+    
+    // モーダルを閉じる
+    closeEditModal();
+    
+    // リストを再読み込み
+    await loadJumpmarks();
+    
+    showStatusMessage('Jumpmarkを更新しました');
+    
+  } catch (error) {
+    console.error('編集エラー:', error);
+    showEditError('更新に失敗しました: ' + error.message);
   }
 }
 
+// URL正規化プレビューを処理
+function handleUrlPreview() {
+  const url = editUrl.value.trim();
+  
+  if (url && validateUrl(url)) {
+    const normalized = normalizeUrl(url);
+    normalizedUrl.textContent = normalized;
+    urlPreview.style.display = 'block';
+  } else {
+    urlPreview.style.display = 'none';
+  }
+}
+
+// 編集エラーを表示
+function showEditError(message) {
+  const errorMessageElement = editError.querySelector('.error-message');
+  errorMessageElement.textContent = message;
+  editError.style.display = 'block';
+}
+
+// 編集エラーをクリア
+function clearEditError() {
+  editError.style.display = 'none';
+}
+
 // Jumpmarkを削除
-function deleteJumpmark(jumpmark) {
-  showConfirmModal(
-    'Jumpmarkを削除',
-    `「${jumpmark.title}」を削除します。この操作は取り消せません。`,
-    async () => {
-      try {
-        await deleteJumpmark(jumpmark.id);
-        await loadJumpmarks();
-        showStatusMessage('Jumpmarkを削除しました');
-      } catch (error) {
-        console.error('削除エラー:', error);
-        showStatusMessage('削除に失敗しました', 'error');
-      }
+async function deleteJumpmarkWithConfirm(jumpmark) {
+  try {
+    // 双方向パートナーを検索
+    const partner = await findBidirectionalPartner(jumpmark);
+    
+    if (partner) {
+      // パートナーがある場合：選択肢を提示
+      showBidirectionalDeleteModal(jumpmark, partner);
+    } else {
+      // パートナーがない場合：通常の削除確認
+      showConfirmModal(
+        'Jumpmarkを削除',
+        `「${jumpmark.title}」を削除します。この操作は取り消せません。`,
+        async () => {
+          try {
+            await deleteJumpmark(jumpmark.id);
+            await loadJumpmarks();
+            showStatusMessage('Jumpmarkを削除しました');
+          } catch (error) {
+            console.error('削除エラー:', error);
+            showStatusMessage('削除に失敗しました', 'error');
+          }
+        }
+      );
     }
-  );
+  } catch (error) {
+    console.error('削除処理エラー:', error);
+    showStatusMessage('削除処理でエラーが発生しました', 'error');
+  }
+}
+
+// 双方向削除の選択モーダル
+function showBidirectionalDeleteModal(jumpmark, partner) {
+  const modalHtml = `
+    <div class="modal active" id="bidirectionalDeleteModal">
+      <div class="modal-content">
+        <h3>関連するJumpmarkがあります</h3>
+        <p>「${jumpmark.title}」と対になる「${partner.title}」があります。</p>
+        <div class="modal-actions">
+          <button id="deleteOnlyThis" class="btn btn-secondary">このJumpmarkのみ削除</button>
+          <button id="deleteBoth" class="btn btn-danger">両方削除</button>
+          <button id="deleteCancel" class="btn btn-primary">キャンセル</button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // 既存のモーダルがあれば削除
+  const existingModal = document.getElementById('bidirectionalDeleteModal');
+  if (existingModal) {
+    existingModal.remove();
+  }
+  
+  // 新しいモーダルを追加
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  const modal = document.getElementById('bidirectionalDeleteModal');
+  
+  // イベントリスナーを設定
+  document.getElementById('deleteOnlyThis').addEventListener('click', async () => {
+    modal.remove();
+    try {
+      await deleteJumpmark(jumpmark.id);
+      // ストレージ変更監視で自動的にloadJumpmarks()が呼ばれるため、手動呼び出しは不要
+      showStatusMessage('Jumpmarkを削除しました');
+    } catch (error) {
+      console.error('削除エラー:', error);
+      showStatusMessage('削除に失敗しました', 'error');
+    }
+  });
+  
+  document.getElementById('deleteBoth').addEventListener('click', async () => {
+    modal.remove();
+    try {
+      await deleteBidirectionalPair(jumpmark.id, partner.id);
+      // ストレージ変更監視で自動的にloadJumpmarks()が呼ばれるため、手動呼び出しは不要
+      showStatusMessage('両方のJumpmarkを削除しました');
+    } catch (error) {
+      console.error('削除エラー:', error);
+      showStatusMessage('削除に失敗しました', 'error');
+    }
+  });
+  
+  document.getElementById('deleteCancel').addEventListener('click', () => {
+    modal.remove();
+  });
+  
+  // モーダル外クリックで閉じる
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
 }
 
 // 確認モーダルを表示
@@ -545,4 +786,44 @@ function showStatusMessage(message, type = 'success') {
     statusMessage.textContent = '準備完了';
     statusMessage.className = 'status-message';
   }, 3000);
+}
+
+// ストレージ情報を更新
+async function updateStorageStats() {
+  try {
+    const stats = await getStorageStats();
+    
+    // 総Jumpmark数
+    totalJumpmarksElement.textContent = stats.totalJumpmarks;
+    
+    // ストレージ使用量（小数点1桁まで）
+    storageUsageElement.textContent = `${stats.storageUsed}KB`;
+    
+    // 使用率の計算（Chrome Sync制限: 102KB）
+    const maxStorage = 102; // KB
+    const usagePercent = Math.min((stats.storageUsed / maxStorage) * 100, 100);
+    
+    // プログレスバーの更新
+    storageProgressElement.style.width = `${usagePercent}%`;
+    
+    // 使用量に応じてプログレスバーの色を変更
+    storageProgressElement.classList.remove('warning', 'danger');
+    if (usagePercent >= 90) {
+      storageProgressElement.classList.add('danger');
+    } else if (usagePercent >= 70) {
+      storageProgressElement.classList.add('warning');
+    }
+    
+    // 容量警告の表示（控えめに）
+    if (usagePercent >= 95) {
+      showStatusMessage('ストレージ容量が満杯に近づいています', 'error');
+    }
+    
+  } catch (error) {
+    console.error('統計更新エラー:', error);
+    // エラー時はプレースホルダーを表示
+    totalJumpmarksElement.textContent = '-';
+    storageUsageElement.textContent = '-';
+    storageProgressElement.style.width = '0%';
+  }
 }

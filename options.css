@@ -129,15 +129,62 @@ body {
   font-size: 14px;
 }
 
+/* ストレージ情報 */
+.storage-info {
+  margin-bottom: 16px;
+}
+
+.storage-summary {
+  padding: 12px 16px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border: 1px solid #e8eaed;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.storage-text {
+  font-size: 13px;
+  color: #5f6368;
+  flex-shrink: 0;
+}
+
+.storage-bar {
+  flex: 1;
+  height: 6px;
+  background-color: #e8eaed;
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 100px;
+}
+
+.storage-progress {
+  height: 100%;
+  background-color: #4285f4;
+  border-radius: 3px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+  width: 0%;
+}
+
+.storage-progress.warning {
+  background-color: #f9ab00;
+}
+
+.storage-progress.danger {
+  background-color: #ea4335;
+}
+
 /* コントロール */
 .controls {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  margin-bottom: 24px;
-  padding: 20px;
+  margin-bottom: 20px;
+  padding: 16px;
   background-color: #f8f9fa;
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .search-controls {
@@ -345,14 +392,14 @@ body {
   font-weight: 500;
 }
 
-.type-original {
-  background-color: #e8f0fe;
-  color: #4285f4;
+.type-single {
+  background-color: #e8f5e8;
+  color: #137333;
 }
 
 .type-bidirectional {
-  background-color: #fce8e6;
-  color: #ea4335;
+  background-color: #e8f0fe;
+  color: #4285f4;
 }
 
 .jumpmark-created {
@@ -455,6 +502,122 @@ body {
   justify-content: flex-end;
 }
 
+/* 編集モーダル */
+.modal-large {
+  max-width: 600px;
+}
+
+.edit-form {
+  margin-bottom: 24px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 500;
+  color: #202124;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="url"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e8eaed;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="url"]:focus {
+  outline: none;
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+}
+
+.form-group input[type="text"]:invalid,
+.form-group input[type="url"]:invalid {
+  border-color: #ea4335;
+}
+
+.form-help {
+  display: block;
+  color: #5f6368;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.checkbox-text {
+  font-size: 14px;
+  color: #202124;
+}
+
+.source-info {
+  background-color: #f8f9fa;
+  padding: 12px;
+  border-radius: 4px;
+  border: 1px solid #e8eaed;
+}
+
+.source-info label {
+  font-size: 12px;
+  color: #5f6368;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.source-url {
+  font-size: 13px;
+  color: #202124;
+  word-break: break-all;
+  font-family: 'Monaco', 'Consolas', monospace;
+}
+
+.url-preview {
+  background-color: #e8f0fe;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+.preview-text {
+  color: #4285f4;
+  font-size: 12px;
+}
+
+.edit-error {
+  background-color: #fce8e6;
+  color: #ea4335;
+  padding: 12px;
+  border-radius: 4px;
+  margin-top: 16px;
+  border: 1px solid #f9ab00;
+}
+
+.error-message {
+  font-size: 14px;
+  font-weight: 500;
+}
+
 /* プレースホルダー */
 .placeholder {
   text-align: center;
@@ -487,6 +650,16 @@ body {
   .search-controls {
     flex-direction: column;
     align-items: stretch;
+  }
+  
+  .storage-summary {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  
+  .storage-text {
+    text-align: center;
   }
   
   .bulk-actions {
@@ -588,5 +761,65 @@ body {
   .placeholder {
     background-color: #303134;
     border-color: #5f6368;
+  }
+  
+  /* 編集モーダル（ダークモード） */
+  .form-group input[type="text"],
+  .form-group input[type="url"] {
+    background-color: #202124;
+    border-color: #5f6368;
+    color: #e8eaed;
+  }
+  
+  .form-group input[type="text"]:focus,
+  .form-group input[type="url"]:focus {
+    border-color: #4285f4;
+    box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3);
+  }
+  
+  .form-group label {
+    color: #e8eaed;
+  }
+  
+  .checkbox-text {
+    color: #e8eaed;
+  }
+  
+  .source-info {
+    background-color: #303134;
+    border-color: #5f6368;
+  }
+  
+  .source-info label {
+    color: #9aa0a6;
+  }
+  
+  .source-url {
+    color: #e8eaed;
+  }
+  
+  .url-preview {
+    background-color: #1a3d4a;
+    border-color: #4285f4;
+  }
+  
+  .edit-error {
+    background-color: #3c1a1a;
+    color: #f28b82;
+    border-color: #ea4335;
+  }
+  
+  /* ストレージ情報（ダークモード） */
+  .storage-summary {
+    background-color: #303134;
+    border-color: #5f6368;
+  }
+  
+  .storage-text {
+    color: #9aa0a6;
+  }
+  
+  .storage-bar {
+    background-color: #5f6368;
   }
 }
