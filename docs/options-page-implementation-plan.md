@@ -30,11 +30,12 @@ This document outlines the implementation plan for adding an options page to the
   "options_page": "options.html",
   "permissions": [
     "storage",
-    "tabs",
-    "downloads" // For export functionality
+    "tabs"
   ]
 }
 ```
+
+Note: `downloads` permission will be added in Phase 3 for advanced export functionality.
 
 #### 1.2 File Structure
 ```
@@ -118,6 +119,19 @@ async function manageBidirectionalLinks(jumpmarkId, newBidirectional) {
 - Bulk deletion with safety checks
 
 ### Phase 3: Import/Export System
+
+**Prerequisites:**
+- Add `downloads` permission to manifest.json for file export functionality
+- Update manifest.json:
+```json
+{
+  "permissions": [
+    "storage",
+    "tabs",
+    "downloads"
+  ]
+}
+```
 
 #### 3.1 Export Functionality
 **Export Formats:**
