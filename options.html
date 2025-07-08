@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jumpmark Dock - オプション</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <div class="logo">
+          <img src="icons/icon_48x48.png" alt="Jumpmark Dock" class="logo-icon">
+          <h1>Jumpmark Dock</h1>
+        </div>
+        <div class="version">
+          <span id="versionInfo">v1.0.1</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="manage">
+        <span class="tab-icon">📋</span>
+        <span class="tab-label">管理</span>
+      </button>
+      <button class="nav-tab" data-tab="import-export">
+        <span class="tab-icon">📂</span>
+        <span class="tab-label">インポート/エクスポート</span>
+      </button>
+      <button class="nav-tab" data-tab="analytics">
+        <span class="tab-icon">📊</span>
+        <span class="tab-label">分析</span>
+      </button>
+      <button class="nav-tab" data-tab="settings">
+        <span class="tab-icon">⚙️</span>
+        <span class="tab-label">設定</span>
+      </button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Manage Tab -->
+      <div id="manageTab" class="tab-content active">
+        <div class="tab-header">
+          <h2>Jumpmark管理</h2>
+          <p>すべてのJumpmarkを表示・編集・削除できます</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+          <div class="search-controls">
+            <input type="search" id="searchInput" placeholder="タイトルやURLで検索..." class="search-input">
+            <select id="sortBy" class="sort-select">
+              <option value="created">作成日順</option>
+              <option value="title">タイトル順</option>
+              <option value="url">URL順</option>
+            </select>
+            <select id="filterBy" class="filter-select">
+              <option value="all">すべて</option>
+              <option value="original">オリジナルのみ</option>
+              <option value="bidirectional">双方向のみ</option>
+            </select>
+          </div>
+
+          <div class="bulk-actions">
+            <button id="selectAll" class="btn btn-secondary">すべて選択</button>
+            <button id="deleteSelected" class="btn btn-danger" disabled>選択を削除</button>
+            <button id="exportSelected" class="btn btn-primary" disabled>選択をエクスポート</button>
+          </div>
+        </div>
+
+        <!-- Jumpmark List -->
+        <div class="jumpmark-list" id="jumpmarkList">
+          <div class="loading" id="loadingIndicator">
+            <div class="spinner"></div>
+            <span>読み込み中...</span>
+          </div>
+          <div class="empty-state" id="emptyState" style="display: none;">
+            <div class="empty-icon">🔗</div>
+            <h3>Jumpmarkがありません</h3>
+            <p>ポップアップからJumpmarkを作成してください</p>
+          </div>
+          <div class="jumpmark-table-container" id="jumpmarkTableContainer" style="display: none;">
+            <table class="jumpmark-table">
+              <thead>
+                <tr>
+                  <th class="checkbox-column">
+                    <input type="checkbox" id="selectAllCheckbox">
+                  </th>
+                  <th class="icon-column">アイコン</th>
+                  <th class="title-column">タイトル</th>
+                  <th class="url-column">URL</th>
+                  <th class="type-column">タイプ</th>
+                  <th class="created-column">作成日</th>
+                  <th class="actions-column">操作</th>
+                </tr>
+              </thead>
+              <tbody id="jumpmarkTableBody">
+                <!-- Dynamic content -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="pagination" id="pagination" style="display: none;">
+          <button id="prevPage" class="btn btn-secondary">前のページ</button>
+          <span id="pageInfo">1 / 1</span>
+          <button id="nextPage" class="btn btn-secondary">次のページ</button>
+        </div>
+      </div>
+
+      <!-- Import/Export Tab -->
+      <div id="importExportTab" class="tab-content">
+        <div class="tab-header">
+          <h2>インポート/エクスポート</h2>
+          <p>Jumpmarkデータのバックアップと復元</p>
+        </div>
+        <div class="placeholder">
+          <p>Phase 3で実装予定</p>
+        </div>
+      </div>
+
+      <!-- Analytics Tab -->
+      <div id="analyticsTab" class="tab-content">
+        <div class="tab-header">
+          <h2>分析</h2>
+          <p>Jumpmarkの使用状況と統計情報</p>
+        </div>
+        <div class="placeholder">
+          <p>Phase 4で実装予定</p>
+        </div>
+      </div>
+
+      <!-- Settings Tab -->
+      <div id="settingsTab" class="tab-content">
+        <div class="tab-header">
+          <h2>設定</h2>
+          <p>拡張機能の設定とカスタマイズ</p>
+        </div>
+        <div class="placeholder">
+          <p>Phase 5で実装予定</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- Status Bar -->
+    <div class="status-bar" id="statusBar">
+      <span id="statusMessage">準備完了</span>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal" id="confirmModal">
+    <div class="modal-content">
+      <h3 id="confirmTitle">確認</h3>
+      <p id="confirmMessage">この操作を実行しますか？</p>
+      <div class="modal-actions">
+        <button id="confirmCancel" class="btn btn-secondary">キャンセル</button>
+        <button id="confirmOk" class="btn btn-primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
