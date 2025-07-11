@@ -16,7 +16,7 @@
           <h1>Jumpmark Dock</h1>
         </div>
         <div class="version">
-          <span id="versionInfo">v1.0.1</span>
+          <span id="versionInfo">v1.1.0</span>
         </div>
       </div>
     </header>
@@ -119,13 +119,143 @@
       </div>
 
       <!-- Import/Export Tab -->
-      <div id="importExportTab" class="tab-content">
+      <div id="import-exportTab" class="tab-content">
         <div class="tab-header">
           <h2>インポート/エクスポート</h2>
           <p>Jumpmarkデータのバックアップと復元</p>
         </div>
-        <div class="placeholder">
-          <p>Phase 3で実装予定</p>
+
+        <!-- Export Section -->
+        <div class="export-section">
+          <h3>エクスポート</h3>
+          <p>Jumpmarkデータをファイルに書き出します。</p>
+          
+          <div class="export-options">
+            <div class="format-selection">
+              <h4>フォーマット</h4>
+              <div class="format-buttons">
+                <button id="exportJson" class="btn btn-primary format-btn">
+                  <span class="format-icon">📄</span>
+                  <div class="format-details">
+                    <div class="format-name">JSON</div>
+                    <div class="format-desc">完全なデータ（推奨）</div>
+                  </div>
+                </button>
+                <button id="exportCsv" class="btn btn-secondary format-btn">
+                  <span class="format-icon">📊</span>
+                  <div class="format-details">
+                    <div class="format-name">CSV</div>
+                    <div class="format-desc">表計算アプリ用</div>
+                  </div>
+                </button>
+                <button id="exportHtml" class="btn btn-secondary format-btn">
+                  <span class="format-icon">🌐</span>
+                  <div class="format-details">
+                    <div class="format-name">HTML</div>
+                    <div class="format-desc">ブラウザで表示</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            
+            <div class="export-filters">
+              <h4>エクスポート範囲</h4>
+              <div class="filter-options">
+                <label class="checkbox-label">
+                  <input type="radio" name="exportRange" value="all" checked>
+                  <span class="checkbox-text">すべてのJumpmark</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="radio" name="exportRange" value="selected">
+                  <span class="checkbox-text">選択されたJumpmark</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="radio" name="exportRange" value="filtered">
+                  <span class="checkbox-text">現在のフィルタ結果</span>
+                </label>
+              </div>
+            </div>
+            
+            <div class="export-stats" id="exportStats">
+              <div class="stats-item">
+                <span class="stats-label">エクスポート対象</span>
+                <span class="stats-value" id="exportCount">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Import Section -->
+        <div class="import-section">
+          <h3>インポート</h3>
+          <p>以前にエクスポートしたJSONファイルからJumpmarkデータを復元します。</p>
+          
+          <div class="import-area">
+            <div class="file-drop-zone" id="fileDropZone">
+              <div class="drop-content">
+                <div class="drop-icon">📁</div>
+                <div class="drop-text">
+                  <div class="drop-primary">ファイルをドラッグ&ドロップ</div>
+                  <div class="drop-secondary">または</div>
+                </div>
+                <button id="selectFile" class="btn btn-primary">ファイルを選択</button>
+                <input type="file" id="importFile" accept=".json" style="display: none;">
+              </div>
+            </div>
+            
+            <div class="import-options" id="importOptions" style="display: none;">
+              <h4>インポート設定</h4>
+              <div class="option-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="importMerge" checked>
+                  <span class="checkbox-text">既存データと統合</span>
+                </label>
+                <small class="form-help">チェックを外すと既存データを完全に置き換えます</small>
+              </div>
+              
+              <div class="option-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="importSkipDuplicates" checked>
+                  <span class="checkbox-text">重複をスキップ</span>
+                </label>
+                <small class="form-help">同じURLのJumpmarkが既に存在する場合、インポートをスキップします</small>
+              </div>
+            </div>
+            
+            <div class="import-preview" id="importPreview" style="display: none;">
+              <h4>インポートプレビュー</h4>
+              <div class="preview-stats">
+                <div class="preview-item">
+                  <span class="preview-label">インポート対象</span>
+                  <span class="preview-value" id="previewTotal">-</span>
+                </div>
+                <div class="preview-item">
+                  <span class="preview-label">新規追加</span>
+                  <span class="preview-value" id="previewNew">-</span>
+                </div>
+                <div class="preview-item">
+                  <span class="preview-label">重複スキップ</span>
+                  <span class="preview-value" id="previewSkipped">-</span>
+                </div>
+              </div>
+              
+              <div class="import-actions">
+                <button id="executeImport" class="btn btn-primary">インポート実行</button>
+                <button id="cancelImport" class="btn btn-secondary">キャンセル</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Import/Export Status -->
+        <div class="ie-status" id="ieStatus" style="display: none;">
+          <div class="status-content">
+            <div class="status-icon" id="statusIcon">⏳</div>
+            <div class="status-text">
+              <div class="status-message" id="statusMessage">処理中...</div>
+              <div class="status-progress" id="statusProgress"></div>
+            </div>
+          </div>
         </div>
       </div>
 

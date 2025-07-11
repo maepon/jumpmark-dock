@@ -160,6 +160,9 @@ function switchTab(tabId) {
   // タブ別の初期化処理
   if (tabId === 'manage') {
     loadJumpmarks();
+  } else if (tabId === 'import-export') {
+    setupImportExportListeners();
+    updateExportStats();
   }
 }
 
@@ -390,12 +393,14 @@ async function createJumpmarkRow(jumpmark) {
   const deleteButton = row.querySelector('.action-delete');
   deleteButton.addEventListener('click', () => deleteJumpmarkWithConfirm(jumpmark));
   
-  // 行クリックで移動
-  row.addEventListener('click', (e) => {
-    if (e.target.type !== 'checkbox' && !e.target.classList.contains('action-btn')) {
+  // URLセルクリックで移動
+  const urlCell = row.querySelector('.jumpmark-url');
+  if (urlCell) {
+    urlCell.addEventListener('click', (e) => {
+      e.stopPropagation();
       navigateToUrl(jumpmark.url);
-    }
-  });
+    });
+  }
   
   return row;
 }
@@ -875,5 +880,632 @@ async function updateStorageStats() {
     totalJumpmarksElement.textContent = '-';
     storageUsageElement.textContent = '-';
     storageProgressElement.style.width = '0%';
+  }
+}
+
+// ==============================================================================
+// インポート/エクスポート機能
+// ==============================================================================
+
+// インポート/エクスポートタブの変数
+let selectedExportFormat = 'json';
+let selectedExportRange = 'all';
+let importFile = null;
+let importData = null;
+let importExportListenersSetup = false;
+
+// インポート/エクスポートのイベントリスナーを設定
+function setupImportExportListeners() {
+  if (importExportListenersSetup) {
+    return;
+  }
+  
+  // エクスポートフォーマット選択
+  const exportJsonBtn = document.getElementById('exportJson');
+  const exportCsvBtn = document.getElementById('exportCsv');
+  const exportHtmlBtn = document.getElementById('exportHtml');
+  
+  exportJsonBtn?.addEventListener('click', () => selectExportFormat('json'));
+  exportCsvBtn?.addEventListener('click', () => selectExportFormat('csv'));
+  exportHtmlBtn?.addEventListener('click', () => selectExportFormat('html'));
+  
+  // エクスポート範囲選択
+  const exportRangeRadios = document.querySelectorAll('input[name="exportRange"]');
+  exportRangeRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      selectedExportRange = radio.value;
+      updateExportStats();
+    });
+  });
+  
+  // インポートファイル選択
+  const selectFileBtn = document.getElementById('selectFile');
+  const importFileInput = document.getElementById('importFile');
+  const fileDropZone = document.getElementById('fileDropZone');
+  
+  selectFileBtn?.addEventListener('click', () => importFileInput?.click());
+  importFileInput?.addEventListener('change', handleFileSelect);
+  
+  // ドラッグ&ドロップ
+  fileDropZone?.addEventListener('dragover', handleDragOver);
+  fileDropZone?.addEventListener('dragleave', handleDragLeave);
+  fileDropZone?.addEventListener('drop', handleFileDrop);
+  
+  // インポート関連
+  const executeImportBtn = document.getElementById('executeImport');
+  const cancelImportBtn = document.getElementById('cancelImport');
+  const importMerge = document.getElementById('importMerge');
+  const importSkipDuplicates = document.getElementById('importSkipDuplicates');
+  
+  executeImportBtn?.addEventListener('click', executeImport);
+  cancelImportBtn?.addEventListener('click', cancelImport);
+  importMerge?.addEventListener('change', updateImportPreview);
+  importSkipDuplicates?.addEventListener('change', updateImportPreview);
+  
+  importExportListenersSetup = true;
+}
+
+// エクスポートフォーマットを選択
+function selectExportFormat(format) {
+  selectedExportFormat = format;
+  
+  // ボタンの状態を更新
+  const formatButtons = document.querySelectorAll('.format-btn');
+  formatButtons.forEach(btn => {
+    btn.classList.remove('selected');
+    if (btn.id === `export${format.charAt(0).toUpperCase() + format.slice(1)}`) {
+      btn.classList.add('selected');
+    }
+  });
+  
+  updateExportStats();
+  
+  // フォーマットに応じてエクスポートを実行
+  executeExport();
+}
+
+// エクスポート統計を更新
+function updateExportStats() {
+  const exportCountElement = document.getElementById('exportCount');
+  if (!exportCountElement) return;
+  
+  let count = 0;
+  
+  switch (selectedExportRange) {
+    case 'all':
+      count = allJumpmarks.length;
+      break;
+    case 'selected':
+      count = selectedJumpmarks.size;
+      break;
+    case 'filtered':
+      count = filteredJumpmarks.length;
+      break;
+  }
+  
+  exportCountElement.textContent = count;
+}
+
+// エクスポート実行
+async function executeExport() {
+  try {
+    showIEStatus('⏳', 'エクスポート準備中...', '');
+    
+    // エクスポート対象のデータを取得
+    let dataToExport = [];
+    
+    switch (selectedExportRange) {
+      case 'all':
+        dataToExport = allJumpmarks;
+        break;
+      case 'selected':
+        if (selectedJumpmarks.size === 0) {
+          hideIEStatus();
+          showStatusMessage('エクスポートするJumpmarkを選択してください', 'error');
+          return;
+        }
+        dataToExport = allJumpmarks.filter(jm => selectedJumpmarks.has(jm.id));
+        break;
+      case 'filtered':
+        dataToExport = filteredJumpmarks;
+        break;
+    }
+    
+    if (dataToExport.length === 0) {
+      hideIEStatus();
+      showStatusMessage('エクスポートするデータがありません', 'error');
+      return;
+    }
+    
+    showIEStatus('⏳', 'エクスポート中...', `${dataToExport.length}件のJumpmarkを処理中`);
+    
+    // フォーマットに応じてエクスポート
+    let content, filename, mimeType;
+    
+    switch (selectedExportFormat) {
+      case 'json':
+        ({ content, filename, mimeType } = exportToJson(dataToExport));
+        break;
+      case 'csv':
+        ({ content, filename, mimeType } = exportToCsv(dataToExport));
+        break;
+      case 'html':
+        ({ content, filename, mimeType } = exportToHtml(dataToExport));
+        break;
+      default:
+        throw new Error('未知のエクスポートフォーマット');
+    }
+    
+    // ファイルをダウンロード
+    downloadFile(content, filename, mimeType);
+    
+    showIEStatus('✅', 'エクスポート完了', `${dataToExport.length}件のJumpmarkをエクスポートしました`);
+    
+    setTimeout(hideIEStatus, 3000);
+    
+  } catch (error) {
+    console.error('エクスポートエラー:', error);
+    showIEStatus('❌', 'エクスポートエラー', error.message);
+    setTimeout(hideIEStatus, 5000);
+  }
+}
+
+// JSONエクスポート
+function exportToJson(jumpmarks) {
+  const exportData = {
+    version: '1.0',
+    exportDate: new Date().toISOString(),
+    jumpmarks: jumpmarks,
+    metadata: {
+      totalCount: jumpmarks.length,
+      exportedBy: 'Jumpmark Dock',
+      format: 'json'
+    }
+  };
+  
+  const content = JSON.stringify(exportData, null, 2);
+  const timestamp = new Date().toISOString().slice(0, 16).replace(/[:\-]/g, '').replace('T', '_');
+  const filename = `jumpmarks_${timestamp}.json`;
+  const mimeType = 'application/json';
+  
+  return { content, filename, mimeType };
+}
+
+// CSVエクスポート
+function exportToCsv(jumpmarks) {
+  const headers = ['ID', 'Title', 'URL', 'Icon', 'Source URL', 'Type', 'Created'];
+  const rows = jumpmarks.map(jm => {
+    const bidirectionalPartner = findBidirectionalPartner(jm);
+    const type = bidirectionalPartner ? 'Bidirectional' : 'Single';
+    
+    return [
+      escapeCSV(jm.id),
+      escapeCSV(jm.title),
+      escapeCSV(jm.url),
+      escapeCSV(jm.icon || '🔗'),
+      escapeCSV(jm.sourceUrl || ''),
+      escapeCSV(type),
+      escapeCSV(new Date(jm.created).toLocaleDateString('ja-JP'))
+    ];
+  });
+  
+  const content = [headers, ...rows].map(row => row.join(',')).join('\n');
+  const timestamp = new Date().toISOString().slice(0, 16).replace(/[:\-]/g, '').replace('T', '_');
+  const filename = `jumpmarks_${timestamp}.csv`;
+  const mimeType = 'text/csv';
+  
+  return { content, filename, mimeType };
+}
+
+// HTMLエクスポート
+function exportToHtml(jumpmarks) {
+  const timestamp = new Date().toLocaleString('ja-JP');
+  
+  const html = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jumpmark Dock - エクスポート</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background-color: #f5f5f5; }
+    .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    h1 { color: #4285f4; margin-bottom: 10px; }
+    .meta { color: #666; margin-bottom: 30px; }
+    .jumpmark { border: 1px solid #e0e0e0; border-radius: 6px; padding: 16px; margin-bottom: 12px; }
+    .jumpmark-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .jumpmark-icon { font-size: 20px; }
+    .jumpmark-title { font-weight: 600; color: #202124; }
+    .jumpmark-type { font-size: 12px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
+    .type-single { background-color: #e8f5e8; color: #137333; }
+    .type-bidirectional { background-color: #e8f0fe; color: #4285f4; }
+    .jumpmark-url { color: #1a73e8; text-decoration: none; font-size: 14px; }
+    .jumpmark-url:hover { text-decoration: underline; }
+    .jumpmark-meta { font-size: 12px; color: #666; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔗 Jumpmark Dock</h1>
+    <div class="meta">
+      エクスポート日時: ${timestamp}<br>
+      総件数: ${jumpmarks.length}件
+    </div>
+    ${jumpmarks.map(jm => {
+      const bidirectionalPartner = findBidirectionalPartner(jm);
+      const type = bidirectionalPartner ? 'Bidirectional' : 'Single';
+      const typeClass = bidirectionalPartner ? 'type-bidirectional' : 'type-single';
+      
+      return `
+        <div class="jumpmark">
+          <div class="jumpmark-header">
+            <span class="jumpmark-icon">${jm.icon || '🔗'}</span>
+            <span class="jumpmark-title">${escapeHtml(jm.title)}</span>
+            <span class="jumpmark-type ${typeClass}">${type}</span>
+          </div>
+          <a href="${jm.url}" class="jumpmark-url" target="_blank">${escapeHtml(jm.url)}</a>
+          <div class="jumpmark-meta">
+            作成日: ${new Date(jm.created).toLocaleDateString('ja-JP')}${jm.sourceUrl ? ` | 作成元: ${escapeHtml(jm.sourceUrl)}` : ''}
+          </div>
+        </div>
+      `;
+    }).join('')}
+  </div>
+</body>
+</html>`;
+  
+  const timestamp2 = new Date().toISOString().slice(0, 16).replace(/[:\-]/g, '').replace('T', '_');
+  const filename = `jumpmarks_${timestamp2}.html`;
+  const mimeType = 'text/html';
+  
+  return { content: html, filename, mimeType };
+}
+
+// CSV用エスケープ
+function escapeCSV(str) {
+  if (str == null) return '';
+  const stringValue = String(str);
+  if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
+}
+
+// HTML用エスケープ
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ファイルをダウンロード
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  
+  URL.revokeObjectURL(url);
+}
+
+// ドラッグオーバー処理
+function handleDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+}
+
+// ドラッグリーブ処理
+function handleDragLeave(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+}
+
+// ファイルドロップ処理
+function handleFileDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  
+  const files = e.dataTransfer.files;
+  if (files.length > 0) {
+    const file = files[0];
+    processImportFile(file);
+  }
+}
+
+// ファイル選択処理
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) {
+    processImportFile(file);
+  }
+}
+
+// インポートファイル処理
+async function processImportFile(file) {
+  try {
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      showStatusMessage('JSONファイルを選択してください', 'error');
+      return;
+    }
+    
+    if (file.size > 5 * 1024 * 1024) { // 5MB制限
+      showStatusMessage('ファイルサイズが大きすぎます（5MB以下にしてください）', 'error');
+      return;
+    }
+    
+    showIEStatus('⏳', 'ファイル読み込み中...', '');
+    
+    const content = await readFileAsText(file);
+    const data = JSON.parse(content);
+    
+    // データ形式の検証
+    if (!validateImportData(data)) {
+      throw new Error('無効なファイル形式です');
+    }
+    
+    importFile = file;
+    importData = data;
+    
+    // インポートオプションとプレビューを表示
+    showImportOptions();
+    updateImportPreview();
+    
+    hideIEStatus();
+    
+  } catch (error) {
+    console.error('ファイル処理エラー:', error);
+    showIEStatus('❌', 'ファイル処理エラー', error.message);
+    setTimeout(hideIEStatus, 5000);
+  }
+}
+
+// ファイルをテキストとして読み込み
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('ファイル読み込みエラー'));
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+
+// インポートデータの検証
+function validateImportData(data) {
+  if (!data || typeof data !== 'object') return false;
+  
+  // jumpmarksプロパティが存在するか
+  if (!Array.isArray(data.jumpmarks)) return false;
+  
+  // 各jumpmarkが必要なプロパティを持っているか
+  return data.jumpmarks.every(jm => 
+    jm && 
+    typeof jm === 'object' &&
+    typeof jm.id === 'string' &&
+    typeof jm.title === 'string' &&
+    typeof jm.url === 'string' &&
+    typeof jm.created === 'string'
+  );
+}
+
+// インポートオプションを表示
+function showImportOptions() {
+  const importOptions = document.getElementById('importOptions');
+  if (importOptions) {
+    importOptions.style.display = 'block';
+  }
+}
+
+// インポートプレビューを更新
+function updateImportPreview() {
+  if (!importData) return;
+  
+  const importMerge = document.getElementById('importMerge');
+  const importSkipDuplicates = document.getElementById('importSkipDuplicates');
+  
+  const mergeMode = importMerge?.checked || false;
+  const skipDuplicates = importSkipDuplicates?.checked || false;
+  
+  const importJumpmarks = importData.jumpmarks || [];
+  let newCount = 0;
+  let skippedCount = 0;
+  
+  if (mergeMode && skipDuplicates) {
+    // 重複チェック
+    importJumpmarks.forEach(importJm => {
+      try {
+        const normalizedImportUrl = normalizeUrl(importJm.url);
+        const normalizedSourceUrl = normalizeUrl(importJm.sourceUrl || '');
+        
+        const exists = allJumpmarks.some(existingJm => {
+          const normalizedExistingUrl = normalizeUrl(existingJm.url);
+          const normalizedExistingSource = normalizeUrl(existingJm.sourceUrl || '');
+          
+          return (normalizedExistingUrl === normalizedImportUrl && 
+                  normalizedExistingSource === normalizedSourceUrl);
+        });
+        
+        if (exists) {
+          skippedCount++;
+        } else {
+          newCount++;
+        }
+      } catch (error) {
+        console.error('URL正規化エラー（プレビュー）:', importJm, error);
+        skippedCount++;
+      }
+    });
+  } else {
+    newCount = importJumpmarks.length;
+  }
+  
+  // プレビュー表示
+  document.getElementById('previewTotal').textContent = importJumpmarks.length;
+  document.getElementById('previewNew').textContent = newCount;
+  document.getElementById('previewSkipped').textContent = skippedCount;
+  
+  const importPreview = document.getElementById('importPreview');
+  if (importPreview) {
+    importPreview.style.display = 'block';
+  }
+}
+
+// インポート実行
+async function executeImport() {
+  try {
+    if (!importData) {
+      showStatusMessage('インポートするファイルが選択されていません', 'error');
+      return;
+    }
+    
+    const importMerge = document.getElementById('importMerge');
+    const importSkipDuplicates = document.getElementById('importSkipDuplicates');
+    
+    const mergeMode = importMerge?.checked || false;
+    const skipDuplicates = importSkipDuplicates?.checked || false;
+    
+    showIEStatus('⏳', 'インポート実行中...', '');
+    
+    const importJumpmarks = importData.jumpmarks || [];
+    let processedCount = 0;
+    let skippedCount = 0;
+    
+    // 既存データの処理
+    let newAllJumpmarks = mergeMode ? [...allJumpmarks] : [];
+    
+    for (const importJm of importJumpmarks) {
+      try {
+        if (skipDuplicates && mergeMode) {
+          // 重複チェック（URL正規化エラーをキャッチ）
+          const normalizedImportUrl = normalizeUrl(importJm.url);
+          const normalizedSourceUrl = normalizeUrl(importJm.sourceUrl || '');
+        
+          const exists = newAllJumpmarks.some(existingJm => {
+            const normalizedExistingUrl = normalizeUrl(existingJm.url);
+            const normalizedExistingSource = normalizeUrl(existingJm.sourceUrl || '');
+            
+            return (normalizedExistingUrl === normalizedImportUrl && 
+                    normalizedExistingSource === normalizedSourceUrl);
+          });
+          
+          if (exists) {
+            skippedCount++;
+            continue;
+          }
+        }
+        
+        // IDの重複を避け、古いフラグをクリーンアップ
+        const newJumpmark = {
+          ...importJm,
+          id: generateUniqueId(),
+          created: importJm.created || new Date().toISOString()
+        };
+        
+        // 古いbidirectionalフラグを削除（Phase2で廃止済み）
+        delete newJumpmark.bidirectional;
+        
+        newAllJumpmarks.push(newJumpmark);
+        processedCount++;
+        
+      } catch (error) {
+        console.error('Jumpmarkインポートエラー:', importJm, error);
+        skippedCount++;
+        continue;
+      }
+    }
+    
+    // ストレージに保存
+    await saveJumpmarksToStorage(newAllJumpmarks);
+    
+    // UIを更新
+    await loadJumpmarks();
+    
+    showIEStatus('✅', 'インポート完了', 
+      `${processedCount}件のJumpmarkをインポートしました${skippedCount > 0 ? `（${skippedCount}件をスキップ）` : ''}`);
+    
+    // インポート関連UIをリセット
+    resetImportUI();
+    
+    setTimeout(hideIEStatus, 3000);
+    
+  } catch (error) {
+    console.error('インポートエラー:', error);
+    showIEStatus('❌', 'インポートエラー', error.message);
+    setTimeout(hideIEStatus, 5000);
+  }
+}
+
+// インポートキャンセル
+function cancelImport() {
+  resetImportUI();
+}
+
+// インポートUIをリセット
+function resetImportUI() {
+  importFile = null;
+  importData = null;
+  
+  const importFileInput = document.getElementById('importFile');
+  if (importFileInput) {
+    importFileInput.value = '';
+  }
+  
+  const importOptions = document.getElementById('importOptions');
+  const importPreview = document.getElementById('importPreview');
+  
+  if (importOptions) importOptions.style.display = 'none';
+  if (importPreview) importPreview.style.display = 'none';
+}
+
+// ユニークIDを生成
+function generateUniqueId() {
+  return 'jm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Jumpmarksをストレージに保存（フラット構造）
+async function saveJumpmarksToStorage(jumpmarks) {
+  const jumpmarksByUrl = {};
+  
+  jumpmarks.forEach(jm => {
+    const normalizedSourceUrl = normalizeUrl(jm.sourceUrl);
+    if (!jumpmarksByUrl[normalizedSourceUrl]) {
+      jumpmarksByUrl[normalizedSourceUrl] = [];
+    }
+    jumpmarksByUrl[normalizedSourceUrl].push(jm);
+  });
+  
+  await chrome.storage.sync.set({ jumpmarks: jumpmarksByUrl });
+}
+
+// I/Eステータスを表示
+function showIEStatus(icon, message, progress) {
+  const ieStatus = document.getElementById('ieStatus');
+  const statusIcon = document.getElementById('statusIcon');
+  const statusMessage = document.getElementById('statusMessage');
+  const statusProgress = document.getElementById('statusProgress');
+  
+  if (ieStatus && statusIcon && statusMessage && statusProgress) {
+    statusIcon.textContent = icon;
+    statusMessage.textContent = message;
+    statusProgress.textContent = progress;
+    ieStatus.style.display = 'block';
+  }
+}
+
+// I/Eステータスを非表示
+function hideIEStatus() {
+  const ieStatus = document.getElementById('ieStatus');
+  if (ieStatus) {
+    ieStatus.style.display = 'none';
   }
 }

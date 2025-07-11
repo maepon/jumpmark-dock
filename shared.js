@@ -5,7 +5,13 @@ function normalizeUrl(url) {
   if (!url) return '';
   
   try {
-    const urlObj = new URL(url);
+    // プロトコルがない場合はhttpsを追加
+    let normalizedUrl = url;
+    if (!url.includes('://')) {
+      normalizedUrl = 'https://' + url;
+    }
+    
+    const urlObj = new URL(normalizedUrl);
     let normalized = urlObj.hostname;
     
     // www.を削除

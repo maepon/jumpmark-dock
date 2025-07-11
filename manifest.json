@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Jumpmark Dock",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "ページごとに個別のリンク集（ショートカット）を管理・呼び出せるChrome拡張です。",
   "icons": {
     "16": "icons/icon_16x16.png",
