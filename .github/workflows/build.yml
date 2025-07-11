@@ -26,6 +26,10 @@ jobs:
         cp popup.html dist/
         cp popup.js dist/
         cp popup.css dist/
+        cp options.html dist/
+        cp options.js dist/
+        cp options.css dist/
+        cp shared.js dist/
         cp -r icons dist/
         
         # zipファイルを作成
