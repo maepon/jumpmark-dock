@@ -79,6 +79,10 @@ jobs:
           cp popup.html package/
           cp popup.js package/
           cp popup.css package/
+          cp options.html package/
+          cp options.js package/
+          cp options.css package/
+          cp shared.js package/
           cp -r icons package/
           
           # ファイル一覧を表示
@@ -95,7 +99,7 @@ jobs:
       - name: Validate package structure
         run: |
           # パッケージの必須ファイル確認
-          REQUIRED_FILES=("manifest.json" "background.js" "popup.html" "popup.js" "popup.css")
+          REQUIRED_FILES=("manifest.json" "background.js" "popup.html" "popup.js" "popup.css" "options.html" "options.js" "options.css" "shared.js")
           
           for file in "${REQUIRED_FILES[@]}"; do
             if [[ ! -f "package/$file" ]]; then
