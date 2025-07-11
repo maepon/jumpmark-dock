@@ -264,6 +264,15 @@ body {
   background-color: #d33b2c;
 }
 
+.btn-warning {
+  background-color: #f9ab00;
+  color: #ffffff;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: #e37400;
+}
+
 /* Jumpmarkリスト */
 .jumpmark-list {
   background-color: #ffffff;
@@ -565,6 +574,30 @@ body {
   margin: 0;
 }
 
+.checkbox-label input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.checkbox-label input[type="checkbox"]:disabled + .checkbox-text {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bidirectional-status {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+}
+
+.bidirectional-status .status-message {
+  color: #856404;
+  font-size: 12px;
+  margin: 0;
+}
+
 .checkbox-text {
   font-size: 14px;
   color: #202124;
@@ -712,6 +745,16 @@ body {
   
   .btn-secondary:hover:not(:disabled) {
     background-color: #5f6368;
+  }
+  
+  .btn-warning {
+    background-color: #ff8f00;
+    color: #000000;
+  }
+  
+  .btn-warning:hover:not(:disabled) {
+    background-color: #e65100;
+    color: #ffffff;
   }
   
   .jumpmark-list {

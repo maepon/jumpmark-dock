@@ -116,6 +116,16 @@ function setupEventListeners() {
   });
   editForm.addEventListener('submit', handleEditFormSubmit);
   editUrl.addEventListener('input', debounce(handleUrlPreview, 300));
+  editUrl.addEventListener('input', debounce(async () => {
+    const editingId = editModal.getAttribute('data-editing-id');
+    if (editingId) {
+      // 編集中の元jumpmarkを取得
+      const originalJumpmark = allJumpmarks.find(jm => jm.id === editingId);
+      if (originalJumpmark) {
+        await updateBidirectionalCheckboxState(originalJumpmark);
+      }
+    }
+  }, 300));
   
   // ストレージ変更の監視
   chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -523,7 +533,7 @@ function exportJumpmarks(jumpmarks) {
 }
 
 // Jumpmarkを編集
-function editJumpmark(jumpmark) {
+async function editJumpmark(jumpmark) {
   // モーダルフォームに値を設定
   editModalTitle.textContent = 'Jumpmarkを編集';
   editTitle.value = jumpmark.title || '';
@@ -537,6 +547,9 @@ function editJumpmark(jumpmark) {
   
   // エラーをクリア
   clearEditError();
+  
+  // 双方向パートナーをチェックして戻りリンク作成チェックボックスを制御
+  await updateBidirectionalCheckboxState(jumpmark);
   
   // URL正規化プレビューを更新
   handleUrlPreview();
@@ -609,22 +622,29 @@ async function handleEditFormSubmit(e) {
       const currentJumpmark = allJumpmarks.find(jm => jm.id === jumpmarkId);
       
       if (currentJumpmark) {
-        const reverseJumpmarkData = {
-          title: `← ${title}`,
-          url: `https://${currentJumpmark.sourceUrl}`,
-          icon: icon,
-          sourceUrl: normalizeUrl(url)
+        // 双方向パートナーが既に存在するかチェック
+        const updatedJumpmark = {
+          ...currentJumpmark,
+          url: url  // 更新されたURLを使用
         };
+        const existingPartner = await findBidirectionalPartner(updatedJumpmark);
         
-        await saveJumpmark(reverseJumpmarkData);
+        if (!existingPartner) {
+          // パートナーが存在しない場合のみ戻りリンクを作成
+          const reverseJumpmarkData = {
+            title: `← ${title}`,
+            url: `https://${currentJumpmark.sourceUrl}`,
+            icon: icon,
+            sourceUrl: normalizeUrl(url)
+          };
+          
+          await saveJumpmark(reverseJumpmarkData);
+        }
       }
     }
     
     // モーダルを閉じる
     closeEditModal();
-    
-    // リストを再読み込み
-    await loadJumpmarks();
     
     showStatusMessage('Jumpmarkを更新しました');
     
@@ -657,6 +677,36 @@ function showEditError(message) {
 // 編集エラーをクリア
 function clearEditError() {
   editError.style.display = 'none';
+}
+
+// 双方向チェックボックスの状態を更新
+async function updateBidirectionalCheckboxState(jumpmark) {
+  try {
+    // 現在の編集対象jumpmarkから新しいjumpmarkオブジェクトを作成してパートナーチェック
+    const currentJumpmark = {
+      ...jumpmark,
+      url: editUrl.value.trim()
+    };
+    
+    const partner = await findBidirectionalPartner(currentJumpmark);
+    const bidirectionalStatus = document.getElementById('editBidirectionalStatus');
+    
+    if (partner) {
+      // パートナーが存在する場合：チェックボックスを無効化
+      editCreateReverse.disabled = true;
+      editCreateReverse.checked = false;
+      bidirectionalStatus.style.display = 'block';
+    } else {
+      // パートナーが存在しない場合：チェックボックスを有効化
+      editCreateReverse.disabled = false;
+      bidirectionalStatus.style.display = 'none';
+    }
+  } catch (error) {
+    console.error('双方向チェックボックス状態更新エラー:', error);
+    // エラー時はチェックボックスを有効化（安全側に倒す）
+    editCreateReverse.disabled = false;
+    document.getElementById('editBidirectionalStatus').style.display = 'none';
+  }
 }
 
 // Jumpmarkを削除
@@ -699,9 +749,9 @@ function showBidirectionalDeleteModal(jumpmark, partner) {
         <h3>関連するJumpmarkがあります</h3>
         <p>「${jumpmark.title}」と対になる「${partner.title}」があります。</p>
         <div class="modal-actions">
-          <button id="deleteOnlyThis" class="btn btn-secondary">このJumpmarkのみ削除</button>
+          <button id="deleteCancel" class="btn btn-secondary">キャンセル</button>
+          <button id="deleteOnlyThis" class="btn btn-warning">このJumpmarkのみ削除</button>
           <button id="deleteBoth" class="btn btn-danger">両方削除</button>
-          <button id="deleteCancel" class="btn btn-primary">キャンセル</button>
         </div>
       </div>
     </div>
