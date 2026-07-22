@@ -184,7 +184,3 @@ jumpmark-dock/
 ## 👨‍💻 作者
 
 **Masayuki Maekawa** ([@maepon](https://github.com/maepon))
-
-## 🙏 謝辞
-
-このプロジェクトは[Claude Code](https://claude.ai/code)を使用して開発されました。
