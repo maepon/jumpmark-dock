@@ -57,6 +57,19 @@
           双方向リンク（相手ページからもこのページへのJumpmarkを作成）
         </label>
       </div>
+
+      <!-- 高度な設定（アコーディオン） -->
+      <div class="advanced-accordion" id="advancedAccordion">
+        <div class="accordion-header" id="accordionHeader">高度な設定（対象URLのカスタマイズ）</div>
+        <div class="accordion-content">
+          <div class="form-group">
+            <label for="sourceUrlPattern">対象とする現在のURL</label>
+            <input type="text" id="sourceUrlPattern" placeholder="github.com/owner/repo*">
+            <span class="info-text">末尾に「*」を付けるとワイルドカードとして機能します。</span>
+            <span id="wildcardNotice" class="warning-text hidden">※ワイルドカード指定時は単方向リンクとなります</span>
+          </div>
+        </div>
+      </div>
       
       <div class="form-actions">
         <button type="button" id="cancelButton" class="cancel-button">キャンセル</button>
@@ -65,6 +78,7 @@
     </form>
   </div>
   
+  <script src="shared.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -2,6 +2,9 @@
 let currentTab = null;
 let currentUrl = '';
 let editingJumpmark = null;
+let editingHasInitialPartner = false;
+let wasWildcard = false;
+let savedCheckedBeforeWildcard = true;
 
 // DOM要素
 const mainView = document.getElementById('mainView');
@@ -14,6 +17,12 @@ const backButton = document.getElementById('backButton');
 const cancelButton = document.getElementById('cancelButton');
 const jumpmarkForm = document.getElementById('jumpmarkForm');
 const formTitle = document.getElementById('formTitle');
+
+// アコーディオン要素
+const advancedAccordion = document.getElementById('advancedAccordion');
+const accordionHeader = document.getElementById('accordionHeader');
+const sourceUrlPattern = document.getElementById('sourceUrlPattern');
+const wildcardNotice = document.getElementById('wildcardNotice');
 
 // 初期化
 document.addEventListener('DOMContentLoaded', async () => {
@@ -48,31 +57,7 @@ async function getCurrentTab() {
   }
 }
 
-// URLの正規化
-function normalizeUrl(url) {
-  try {
-    const urlObj = new URL(url);
-    let normalized = urlObj.hostname;
-    
-    // wwwを除去
-    if (normalized.startsWith('www.')) {
-      normalized = normalized.substring(4);
-    }
-    
-    // パスを追加（ルート以外の場合）
-    if (urlObj.pathname !== '/') {
-      normalized += urlObj.pathname;
-    }
-    
-    // 末尾のスラッシュを除去
-    normalized = normalized.replace(/\/$/, '');
-    
-    return normalized;
-  } catch (error) {
-    console.error('URL正規化エラー:', error);
-    return url;
-  }
-}
+// popup.jsで使っていたローカルなnormalizeUrlは削除し、shared.jsの共通関数を使用します。
 
 // 現在のURLを表示
 function displayCurrentUrl() {
@@ -100,17 +85,7 @@ async function displayJumpmarks() {
   }
 }
 
-// 指定URLのJumpmarksを取得
-async function getJumpmarksForUrl(url) {
-  try {
-    const result = await chrome.storage.sync.get(['jumpmarks']);
-    const allJumpmarks = result.jumpmarks || {};
-    return allJumpmarks[url] || [];
-  } catch (error) {
-    console.error('Jumpmarks取得エラー:', error);
-    return [];
-  }
-}
+// getJumpmarksForUrlは削除し、shared.jsの共通関数を使用します。
 
 // 空状態を表示
 function showEmptyState() {
@@ -158,9 +133,9 @@ function createJumpmarkElement(jumpmark) {
   
   // 編集ボタンのクリックイベント
   const editButton = div.querySelector('.edit-button');
-  editButton.addEventListener('click', (e) => {
+  editButton.addEventListener('click', async (e) => {
     e.stopPropagation();
-    editJumpmark(jumpmark);
+    await editJumpmark(jumpmark);
   });
   
   // 削除ボタンのクリックイベント
@@ -216,22 +191,28 @@ async function navigateToUrl(url) {
   }
 }
 
-// Jumpmarkを削除
 async function deleteJumpmark(jumpmarkId) {
   try {
     const result = await chrome.storage.sync.get(['jumpmarks']);
     const allJumpmarks = result.jumpmarks || {};
     
-    if (allJumpmarks[currentUrl]) {
-      allJumpmarks[currentUrl] = allJumpmarks[currentUrl].filter(
+    let found = false;
+    for (const key in allJumpmarks) {
+      const initialLength = allJumpmarks[key].length;
+      allJumpmarks[key] = allJumpmarks[key].filter(
         jumpmark => jumpmark.id !== jumpmarkId
       );
       
-      // 空になった場合は配列自体を削除
-      if (allJumpmarks[currentUrl].length === 0) {
-        delete allJumpmarks[currentUrl];
+      if (allJumpmarks[key].length !== initialLength) {
+        found = true;
+        if (allJumpmarks[key].length === 0) {
+          delete allJumpmarks[key];
+        }
+        break; // IDは一意なので見つかったらループ終了
       }
-      
+    }
+    
+    if (found) {
       await chrome.storage.sync.set({ jumpmarks: allJumpmarks });
       await displayJumpmarks();
     }
@@ -240,135 +221,7 @@ async function deleteJumpmark(jumpmarkId) {
   }
 }
 
-// Jumpmarkを保存
-async function saveJumpmark(jumpmarkData) {
-  try {
-    const result = await chrome.storage.sync.get(['jumpmarks']);
-    const allJumpmarks = result.jumpmarks || {};
-    
-    // 現在のURLのJumpmarksを取得
-    if (!allJumpmarks[currentUrl]) {
-      allJumpmarks[currentUrl] = [];
-    }
-    
-    // 新しいJumpmarkを追加
-    const newJumpmark = {
-      id: generateId(),
-      title: jumpmarkData.title,
-      url: jumpmarkData.url,
-      icon: jumpmarkData.icon || '🔗',
-      bidirectional: jumpmarkData.bidirectional,
-      created: new Date().toISOString()
-    };
-    
-    allJumpmarks[currentUrl].push(newJumpmark);
-    
-    // 双方向リンクの場合、逆方向も作成
-    if (jumpmarkData.bidirectional) {
-      const targetUrl = normalizeUrl(jumpmarkData.url);
-      if (!allJumpmarks[targetUrl]) {
-        allJumpmarks[targetUrl] = [];
-      }
-      
-      const reverseJumpmark = {
-        id: generateId(),
-        title: `← ${currentTab.title || 'ページ'}`,
-        url: currentTab.url,
-        icon: jumpmarkData.icon || '🔗',
-        bidirectional: false, // 逆方向はfalse
-        created: new Date().toISOString()
-      };
-      
-      allJumpmarks[targetUrl].push(reverseJumpmark);
-    }
-    
-    await chrome.storage.sync.set({ jumpmarks: allJumpmarks });
-    return true;
-  } catch (error) {
-    console.error('Jumpmark保存エラー:', error);
-    return false;
-  }
-}
-
-// Jumpmarkを更新
-async function updateJumpmark(jumpmarkId, jumpmarkData) {
-  try {
-    const result = await chrome.storage.sync.get(['jumpmarks']);
-    const allJumpmarks = result.jumpmarks || {};
-    
-    // 既存のJumpmarkを検索して更新
-    let originalJumpmark = null;
-    let foundUrl = null;
-    
-    for (const url in allJumpmarks) {
-      const jumpmark = allJumpmarks[url].find(jm => jm.id === jumpmarkId);
-      if (jumpmark) {
-        originalJumpmark = jumpmark;
-        foundUrl = url;
-        break;
-      }
-    }
-    
-    if (!originalJumpmark) {
-      console.error('更新対象のJumpmarkが見つかりません');
-      return false;
-    }
-    
-    // 双方向リンクの処理：元のJumpmarkが双方向だった場合、逆方向も削除
-    if (originalJumpmark.bidirectional) {
-      const targetUrl = normalizeUrl(originalJumpmark.url);
-      if (allJumpmarks[targetUrl]) {
-        // 逆方向のJumpmarkを探して削除
-        allJumpmarks[targetUrl] = allJumpmarks[targetUrl].filter(jm => 
-          !(jm.url === currentTab.url && jm.bidirectional === false)
-        );
-        if (allJumpmarks[targetUrl].length === 0) {
-          delete allJumpmarks[targetUrl];
-        }
-      }
-    }
-    
-    // Jumpmarkを更新
-    const jumpmarkIndex = allJumpmarks[foundUrl].findIndex(jm => jm.id === jumpmarkId);
-    allJumpmarks[foundUrl][jumpmarkIndex] = {
-      ...originalJumpmark,
-      title: jumpmarkData.title,
-      url: jumpmarkData.url,
-      icon: jumpmarkData.icon || '🔗',
-      bidirectional: jumpmarkData.bidirectional
-    };
-    
-    // 新しい双方向リンクの処理
-    if (jumpmarkData.bidirectional) {
-      const targetUrl = normalizeUrl(jumpmarkData.url);
-      if (!allJumpmarks[targetUrl]) {
-        allJumpmarks[targetUrl] = [];
-      }
-      
-      const reverseJumpmark = {
-        id: generateId(),
-        title: `← ${currentTab.title || 'ページ'}`,
-        url: currentTab.url,
-        icon: jumpmarkData.icon || '🔗',
-        bidirectional: false,
-        created: new Date().toISOString()
-      };
-      
-      allJumpmarks[targetUrl].push(reverseJumpmark);
-    }
-    
-    await chrome.storage.sync.set({ jumpmarks: allJumpmarks });
-    return true;
-  } catch (error) {
-    console.error('Jumpmark更新エラー:', error);
-    return false;
-  }
-}
-
-// ユニークIDを生成
-function generateId() {
-  return 'jm-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-}
+// saveJumpmark, updateJumpmark, generateIdは削除し、shared.jsの共通関数を使用します。
 
 // ビューを切り替え
 function showFormView() {
@@ -380,10 +233,18 @@ function showFormView() {
   
   // フォームをリセット
   jumpmarkForm.reset();
-  document.getElementById('bidirectional').checked = true;
   
-  // 編集状態をリセット
-  editingJumpmark = null;
+  // セッションとUI状態のリセット
+  resetEditSessionState();
+  updateWildcardUi(false, true);
+  
+  // アコーディオンの状態をリセット
+  advancedAccordion.classList.remove('open');
+  
+  // 現在のURLをパターン初期値に設定
+  if (currentTab) {
+    sourceUrlPattern.value = currentTab.url;
+  }
 }
 
 function showMainView() {
@@ -391,11 +252,11 @@ function showMainView() {
   mainView.classList.remove('hidden');
   
   // 編集状態をリセット
-  editingJumpmark = null;
+  resetEditSessionState();
 }
 
 // Jumpmarkを編集
-function editJumpmark(jumpmark) {
+async function editJumpmark(jumpmark) {
   editingJumpmark = jumpmark;
   
   // フォームタイトルを変更
@@ -405,7 +266,28 @@ function editJumpmark(jumpmark) {
   document.getElementById('jumpmarkTitle').value = jumpmark.title;
   document.getElementById('jumpmarkUrl').value = jumpmark.url;
   document.getElementById('jumpmarkIcon').value = jumpmark.icon || '';
-  document.getElementById('bidirectional').checked = jumpmark.bidirectional;
+  
+  // 双方向判定（動的なパートナー検出を使用）
+  const partner = await findBidirectionalPartner(jumpmark);
+  editingHasInitialPartner = !!partner;
+  
+  // アコーディオンのセット
+  sourceUrlPattern.value = jumpmark.sourceUrl || currentUrl;
+  const initialIsWildcard = sourceUrlPattern.value.endsWith('*');
+  
+  // 状態の計算・保持
+  wasWildcard = initialIsWildcard;
+  savedCheckedBeforeWildcard = editingHasInitialPartner;
+  
+  // アスタリスクが存在すればアコーディオンを開きチェックボックスを無効化
+  if (initialIsWildcard) {
+    advancedAccordion.classList.add('open');
+  } else {
+    advancedAccordion.classList.remove('open');
+  }
+  
+  // UI反映
+  updateWildcardUi(initialIsWildcard, editingHasInitialPartner);
   
   // フォーム画面を表示
   mainView.classList.add('hidden');
@@ -423,16 +305,49 @@ function setupEventListeners() {
   // キャンセルボタン
   cancelButton.addEventListener('click', showMainView);
   
+  // アコーディオンヘッダークリックでトグル
+  accordionHeader.addEventListener('click', () => {
+    advancedAccordion.classList.toggle('open');
+  });
+  
+  // カスタムURLパターンのリアルタイム監視（双方向チェックボックス連動）
+  sourceUrlPattern.addEventListener('input', () => {
+    const val = sourceUrlPattern.value.trim();
+    const isWildcard = val.endsWith('*');
+    const bidirectionalCheckbox = document.getElementById('bidirectional');
+    
+    // 状態遷移の計算
+    let shouldUpdateChecked = false;
+    if (isWildcard) {
+      if (!wasWildcard) {
+        savedCheckedBeforeWildcard = bidirectionalCheckbox.checked;
+      }
+      wasWildcard = true;
+      shouldUpdateChecked = true; // ワイルドカード設定時は一律 checked=false とする
+    } else {
+      if (wasWildcard) {
+        shouldUpdateChecked = true; // ワイルドカード ➔ 通常 URL 遷移時のみ退避状態を復元する
+      }
+      wasWildcard = false;
+    }
+    
+    // UIへの反映
+    updateWildcardUi(isWildcard, savedCheckedBeforeWildcard, shouldUpdateChecked);
+  });
+  
   // フォーム送信
   jumpmarkForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const formData = new FormData(jumpmarkForm);
+    const sourcePattern = sourceUrlPattern.value.trim() || currentTab.url;
+    
     const jumpmarkData = {
       title: formData.get('jumpmarkTitle') || document.getElementById('jumpmarkTitle').value,
       url: formData.get('jumpmarkUrl') || document.getElementById('jumpmarkUrl').value,
       icon: formData.get('jumpmarkIcon') || document.getElementById('jumpmarkIcon').value,
-      bidirectional: document.getElementById('bidirectional').checked
+      createBidirectional: document.getElementById('bidirectional').checked,
+      sourceUrl: sourcePattern
     };
     
     // 基本的なバリデーション
@@ -448,13 +363,26 @@ function setupEventListeners() {
       return;
     }
     
-    let success;
-    if (editingJumpmark) {
-      // 編集モード
-      success = await updateJumpmark(editingJumpmark.id, jumpmarkData);
-    } else {
-      // 新規作成モード
-      success = await saveJumpmark(jumpmarkData);
+    // 防御的バリデーション（ホスト名長さ、中間アスタリスクなど）
+    const validationResult = validateSourceUrlPattern(sourcePattern);
+    if (!validationResult.valid) {
+      alert(validationResult.message);
+      sourceUrlPattern.focus();
+      return;
+    }
+    
+    let success = false;
+    try {
+      if (editingJumpmark) {
+        // 編集モード (shared.jsのupdateJumpmarkを呼ぶ)
+        success = await updateJumpmark(editingJumpmark.id, jumpmarkData);
+      } else {
+        // 新規作成モード (shared.jsのsaveJumpmarkを呼ぶ)
+        const saved = await saveJumpmark(jumpmarkData);
+        success = !!saved;
+      }
+    } catch (err) {
+      console.error(err);
     }
     
     if (success) {
@@ -488,4 +416,37 @@ function applyTheme(isDark) {
   }
   
   // アイコンの切り替えは不要なので、メッセージ送信は削除
+}
+
+/**
+ * 双方向チェックボックスと注意表示の DOM 状態を一括更新する (UI反映関数)
+ * @param {boolean} isWildcard ワイルドカードパターンかどうか
+ * @param {boolean} savedChecked 退避されているチェックボックスの checked 状態（isWildcardがfalseかつupdateCheckedStateがtrueの時のみ反映される）
+ * @param {boolean} updateCheckedState checked 状態を更新するかどうか (通常入力時は false を指定し、ユーザーの手動選択を保持)
+ */
+function updateWildcardUi(isWildcard, savedChecked, updateCheckedState = true) {
+  const bidirectionalCheckbox = document.getElementById('bidirectional');
+  const wildcardNotice = document.getElementById('wildcardNotice');
+  
+  if (isWildcard) {
+    bidirectionalCheckbox.checked = false;
+    bidirectionalCheckbox.disabled = true;
+    wildcardNotice.classList.remove('hidden');
+  } else {
+    bidirectionalCheckbox.disabled = false;
+    wildcardNotice.classList.add('hidden');
+    if (updateCheckedState) {
+      bidirectionalCheckbox.checked = savedChecked;
+    }
+  }
+}
+
+/**
+ * 編集セッションの状態（編集対象データ、退避フラグ等）をすべて初期値に戻す (状態操作)
+ */
+function resetEditSessionState() {
+  editingJumpmark = null;
+  editingHasInitialPartner = false;
+  wasWildcard = false;
+  savedCheckedBeforeWildcard = true;
 }

@@ -3,7 +3,11 @@
 // グローバル変数
 let allJumpmarks = [];
 let filteredJumpmarks = [];
+let currentFilter = 'all';
+let currentSort = 'created';
+let currentSortDir = 'desc';
 let selectedJumpmarks = new Set();
+let editingHasInitialPartner = false;
 let currentPage = 1;
 let itemsPerPage = 20;
 let currentTab = 'manage';
@@ -116,16 +120,28 @@ function setupEventListeners() {
   });
   editForm.addEventListener('submit', handleEditFormSubmit);
   editUrl.addEventListener('input', debounce(handleUrlPreview, 300));
-  editUrl.addEventListener('input', debounce(async () => {
+  
+  const handleEditInputEvent = debounce(async () => {
     const editingId = editModal.getAttribute('data-editing-id');
     if (editingId) {
       // 編集中の元jumpmarkを取得
       const originalJumpmark = allJumpmarks.find(jm => jm.id === editingId);
       if (originalJumpmark) {
-        await updateBidirectionalCheckboxState(originalJumpmark);
+        const srcVal = editSourceUrl.value.trim();
+        if (srcVal.endsWith('*')) {
+          editCreateReverse.checked = false;
+          editCreateReverse.disabled = true;
+          document.getElementById('editWildcardNotice').style.display = 'block';
+        } else {
+          document.getElementById('editWildcardNotice').style.display = 'none';
+          await updateBidirectionalCheckboxState(originalJumpmark);
+        }
       }
     }
-  }, 300));
+  }, 300);
+  
+  editUrl.addEventListener('input', handleEditInputEvent);
+  editSourceUrl.addEventListener('input', handleEditInputEvent);
   
   // ストレージ変更の監視
   chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -230,16 +246,24 @@ async function applyFilters() {
   const filteredResults = [];
   
   for (const jumpmark of allJumpmarks) {
+    const isWild = jumpmark.isWildcard || jumpmark.sourceUrl.endsWith('*');
+    
     // タイプフィルタ
     let typeMatch = true;
-    if (filter === 'single' || filter === 'bidirectional') {
-      const partner = await findBidirectionalPartner(jumpmark);
-      const hasPart = !!partner;
-      
-      if (filter === 'single') {
-        typeMatch = !hasPart;
-      } else if (filter === 'bidirectional') {
-        typeMatch = hasPart;
+    if (filter === 'wildcard') {
+      typeMatch = isWild;
+    } else if (filter === 'single' || filter === 'bidirectional') {
+      if (isWild) {
+        typeMatch = false;
+      } else {
+        const partner = await findBidirectionalPartner(jumpmark);
+        const hasPart = !!partner;
+        
+        if (filter === 'single') {
+          typeMatch = !hasPart;
+        } else if (filter === 'bidirectional') {
+          typeMatch = hasPart;
+        }
       }
     }
     
@@ -343,9 +367,19 @@ async function createJumpmarkRow(jumpmark) {
   const isSelected = selectedJumpmarks.has(jumpmark.id);
   
   // 双方向パートナーの有無を確認
-  const partner = await findBidirectionalPartner(jumpmark);
-  const typeClass = partner ? 'type-bidirectional' : 'type-single';
-  const typeText = partner ? '双方向' : '単独';
+  let typeClass = 'type-single';
+  let typeText = '単独';
+  
+  if (jumpmark.isWildcard || jumpmark.sourceUrl.endsWith('*')) {
+    typeClass = 'type-wildcard';
+    typeText = 'ワイルドカード';
+  } else {
+    const partner = await findBidirectionalPartner(jumpmark);
+    if (partner) {
+      typeClass = 'type-bidirectional';
+      typeText = '双方向';
+    }
+  }
   
   row.innerHTML = `
     <td class="checkbox-column">
@@ -537,7 +571,6 @@ function exportJumpmarks(jumpmarks) {
   showStatusMessage(`${jumpmarks.length}件のJumpmarkをエクスポートしました`);
 }
 
-// Jumpmarkを編集
 async function editJumpmark(jumpmark) {
   // モーダルフォームに値を設定
   editModalTitle.textContent = 'Jumpmarkを編集';
@@ -545,7 +578,11 @@ async function editJumpmark(jumpmark) {
   editUrl.value = jumpmark.url || '';
   editIcon.value = jumpmark.icon || '🔗';
   editCreateReverse.checked = false; // 編集時はデフォルトでOFF
-  editSourceUrl.textContent = jumpmark.sourceUrl || '';
+  editSourceUrl.value = jumpmark.sourceUrl || '';
+  
+  // 編集前の初期状態に基づく双方向パートナーの存在をチェックして記録
+  const initialPartner = await findBidirectionalPartner(jumpmark);
+  editingHasInitialPartner = !!initialPartner;
   
   // 編集対象のJumpmarkを記録
   editModal.setAttribute('data-editing-id', jumpmark.id);
@@ -553,8 +590,16 @@ async function editJumpmark(jumpmark) {
   // エラーをクリア
   clearEditError();
   
-  // 双方向パートナーをチェックして戻りリンク作成チェックボックスを制御
-  await updateBidirectionalCheckboxState(jumpmark);
+  // ワイルドカードチェックとチェックボックス連動初期設定
+  if (editSourceUrl.value.endsWith('*')) {
+    editCreateReverse.checked = false;
+    editCreateReverse.disabled = true;
+    document.getElementById('editWildcardNotice').style.display = 'block';
+  } else {
+    document.getElementById('editWildcardNotice').style.display = 'none';
+    // 双方向パートナーをチェックして戻りリンク作成チェックボックスを制御
+    await updateBidirectionalCheckboxState(jumpmark);
+  }
   
   // URL正規化プレビューを更新
   handleUrlPreview();
@@ -569,6 +614,7 @@ function closeEditModal() {
   editModal.classList.remove('active');
   editForm.reset();
   clearEditError();
+  editingHasInitialPartner = false;
 }
 
 // 編集フォーム送信処理
@@ -610,43 +656,37 @@ async function handleEditFormSubmit(e) {
       return;
     }
     
+    const sourceUrl = editSourceUrl.value.trim();
+    if (!sourceUrl) {
+      showEditError('作成元URLを入力してください');
+      editSourceUrl.focus();
+      return;
+    }
+    
+    // 防御的バリデーション
+    const validationResult = validateSourceUrlPattern(sourceUrl);
+    if (!validationResult.valid) {
+      showEditError(validationResult.message);
+      editSourceUrl.focus();
+      return;
+    }
+    
     // 更新データを準備
     const updateData = {
       title,
       url,
-      icon
+      icon,
+      sourceUrl
     };
     
-    // Jumpmarkを更新
-    await updateJumpmark(jumpmarkId, updateData);
-    
-    // 戻りリンク作成がチェックされている場合、新しい戻りリンクを作成
-    if (createReverse) {
-      // 編集中のJumpmarkを取得
-      const allJumpmarks = await getAllJumpmarks();
-      const currentJumpmark = allJumpmarks.find(jm => jm.id === jumpmarkId);
-      
-      if (currentJumpmark) {
-        // 双方向パートナーが既に存在するかチェック
-        const updatedJumpmark = {
-          ...currentJumpmark,
-          url: url  // 更新されたURLを使用
-        };
-        const existingPartner = await findBidirectionalPartner(updatedJumpmark);
-        
-        if (!existingPartner) {
-          // パートナーが存在しない場合のみ戻りリンクを作成
-          const reverseJumpmarkData = {
-            title: `← ${title}`,
-            url: `https://${currentJumpmark.sourceUrl}`,
-            icon: icon,
-            sourceUrl: normalizeUrl(url)
-          };
-          
-          await saveJumpmark(reverseJumpmarkData);
-        }
-      }
+    // editCreateReverse が有効（disabled でない）な場合のみ明示的なチェック状態をセット
+    // パートナーが存在して disabled の場合は undefined とし、updateJumpmark 側で既存ペアを維持させる
+    if (!editCreateReverse.disabled) {
+      updateData.createBidirectional = editCreateReverse.checked;
     }
+    
+    // Jumpmarkを更新（shared.js 側で古い逆方向の削除および新規生成を一元管理）
+    await updateJumpmark(jumpmarkId, updateData);
     
     // モーダルを閉じる
     closeEditModal();
@@ -687,30 +727,55 @@ function clearEditError() {
 // 双方向チェックボックスの状態を更新
 async function updateBidirectionalCheckboxState(jumpmark) {
   try {
-    // 現在の編集対象jumpmarkから新しいjumpmarkオブジェクトを作成してパートナーチェック
+    const bidirectionalStatus = document.getElementById('editBidirectionalStatus');
+    const wildcardNotice = document.getElementById('editWildcardNotice');
+    const newSourcePattern = editSourceUrl.value.trim();
+    
+    // ワイルドカード入力時のチェック
+    if (newSourcePattern.endsWith('*')) {
+      editCreateReverse.checked = false;
+      editCreateReverse.disabled = true;
+      if (wildcardNotice) wildcardNotice.style.display = 'block';
+      if (bidirectionalStatus) bidirectionalStatus.style.display = 'none';
+      return;
+    } else if (wildcardNotice) {
+      wildcardNotice.style.display = 'none';
+    }
+    
+    // もし編集開始時点で元々双方向パートナーが存在していた場合、
+    // 編集中の URL 変更によって一律単独扱いへ倒れるのを防ぎ、維持ロックを最優先する
+    if (editingHasInitialPartner) {
+      editCreateReverse.disabled = true;
+      editCreateReverse.checked = false;
+      if (bidirectionalStatus) bidirectionalStatus.style.display = 'block';
+      return;
+    }
+    
+    // 現在の編集入力値 (url および sourceUrl の両方) を反映させてパートナーチェック
     const currentJumpmark = {
       ...jumpmark,
-      url: editUrl.value.trim()
+      url: editUrl.value.trim(),
+      sourceUrl: normalizeUrl(newSourcePattern || jumpmark.sourceUrl)
     };
     
     const partner = await findBidirectionalPartner(currentJumpmark);
-    const bidirectionalStatus = document.getElementById('editBidirectionalStatus');
     
     if (partner) {
       // パートナーが存在する場合：チェックボックスを無効化
       editCreateReverse.disabled = true;
       editCreateReverse.checked = false;
-      bidirectionalStatus.style.display = 'block';
+      if (bidirectionalStatus) bidirectionalStatus.style.display = 'block';
     } else {
       // パートナーが存在しない場合：チェックボックスを有効化
       editCreateReverse.disabled = false;
-      bidirectionalStatus.style.display = 'none';
+      if (bidirectionalStatus) bidirectionalStatus.style.display = 'none';
     }
   } catch (error) {
     console.error('双方向チェックボックス状態更新エラー:', error);
     // エラー時はチェックボックスを有効化（安全側に倒す）
     editCreateReverse.disabled = false;
-    document.getElementById('editBidirectionalStatus').style.display = 'none';
+    const bidirectionalStatus = document.getElementById('editBidirectionalStatus');
+    if (bidirectionalStatus) bidirectionalStatus.style.display = 'none';
   }
 }
 
@@ -1075,8 +1140,15 @@ function exportToJson(jumpmarks) {
 function exportToCsv(jumpmarks) {
   const headers = ['ID', 'Title', 'URL', 'Icon', 'Source URL', 'Type', 'Created'];
   const rows = jumpmarks.map(jm => {
-    const bidirectionalPartner = findBidirectionalPartner(jm);
-    const type = bidirectionalPartner ? 'Bidirectional' : 'Single';
+    let type = 'Single';
+    if (jm.isWildcard || jm.sourceUrl.endsWith('*')) {
+      type = 'Wildcard';
+    } else {
+      const bidirectionalPartner = findBidirectionalPartner(jm);
+      if (bidirectionalPartner) {
+        type = 'Bidirectional';
+      }
+    }
     
     return [
       escapeCSV(jm.id),
@@ -1119,6 +1191,7 @@ function exportToHtml(jumpmarks) {
     .jumpmark-type { font-size: 12px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
     .type-single { background-color: #e8f5e8; color: #137333; }
     .type-bidirectional { background-color: #e8f0fe; color: #4285f4; }
+    .type-wildcard { background-color: #f3e5f5; color: #7b1fa2; }
     .jumpmark-url { color: #1a73e8; text-decoration: none; font-size: 14px; }
     .jumpmark-url:hover { text-decoration: underline; }
     .jumpmark-meta { font-size: 12px; color: #666; margin-top: 8px; }
@@ -1132,9 +1205,18 @@ function exportToHtml(jumpmarks) {
       総件数: ${jumpmarks.length}件
     </div>
     ${jumpmarks.map(jm => {
-      const bidirectionalPartner = findBidirectionalPartner(jm);
-      const type = bidirectionalPartner ? 'Bidirectional' : 'Single';
-      const typeClass = bidirectionalPartner ? 'type-bidirectional' : 'type-single';
+      let type = 'Single';
+      let typeClass = 'type-single';
+      if (jm.isWildcard || jm.sourceUrl.endsWith('*')) {
+        type = 'Wildcard';
+        typeClass = 'type-wildcard';
+      } else {
+        const bidirectionalPartner = findBidirectionalPartner(jm);
+        if (bidirectionalPartner) {
+          type = 'Bidirectional';
+          typeClass = 'type-bidirectional';
+        }
+      }
       
       return `
         <div class="jumpmark">
