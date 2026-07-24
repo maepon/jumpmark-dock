@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-24
+
+### Added
+
+#### 🃏 Wildcard URL Support
+- **Wildcard source URLs** by appending `*` to the end of a source URL
+- **Directory and subdomain matching** for pages under the same path prefix
+- **Wildcard-aware badge counting** with service worker cache rebuild support
+
+#### 🔗 Protocol Preservation Improvements
+- **Safer protocol fallback** for localhost, IPv4, IPv6, and ported `.local` hosts
+- **Robust URL parsing** for reverse links when source URLs omit protocol information
+
+### Changed
+
+#### 🏗️ Refactoring
+- **Shared URL parsing** centralized in `parseUrlPattern()` inside `shared.js`
+- **Popup wildcard state handling** separated into state transition logic and UI rendering
+- **Options page edit flow** simplified by consolidating bidirectional checkbox handling
+
+### Fixed
+
+#### 🐛 Bug Fixes
+- **Middle asterisk handling** now preserves patterns such as `foo*bar*`
+- **Wildcard edit behavior** no longer reintroduces checked state during normal typing
+- **IPv6 and local host detection** now handles loopback, ULA, link-local, and ported `.local` cases more safely
+
 ## [1.1.0] - 2025-07-11
 
 ### Added
