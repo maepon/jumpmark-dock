@@ -67,6 +67,7 @@
               <option value="all">すべて</option>
               <option value="single">単独のみ</option>
               <option value="bidirectional">双方向のみ</option>
+              <option value="wildcard">ワイルドカードのみ</option>
             </select>
           </div>
 
@@ -303,8 +304,12 @@
         </div>
 
         <div class="form-group source-info">
-          <label>作成元URL</label>
-          <div class="source-url" id="editSourceUrl"></div>
+          <label for="editSourceUrl">作成元URL *</label>
+          <input type="text" id="editSourceUrl" name="sourceUrl" placeholder="github.com/owner/repo*" required>
+          <small class="form-help">末尾に「*」を付けるとワイルドカードとして機能します。</small>
+          <div class="bidirectional-status" id="editWildcardNotice" style="display: none;">
+            <small class="status-message" style="color: #ea4335; font-weight: 500;">※ワイルドカード指定時は単方向リンクとなります</small>
+          </div>
         </div>
       </form>
       

@@ -388,4 +388,80 @@ body {
     background-color: #5f6368;
     color: #9aa0a6;
   }
+
+  /* ダークモード用アコーディオン調整 */
+  .advanced-accordion {
+    border-color: #3c4043;
+  }
+  .accordion-header {
+    color: #8ab4f8;
+  }
+  .accordion-content {
+    border-left-color: #1a73e8;
+  }
+  .info-text {
+    color: #9aa0a6;
+  }
+  .warning-text {
+    color: #f28b82;
+  }
+}
+
+/* アコーディオンの基本スタイル */
+.advanced-accordion {
+  margin-top: 16px;
+  border-top: 1px solid #e8eaed;
+  padding-top: 12px;
+}
+
+.accordion-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #4285f4;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+}
+
+.accordion-header::before {
+  content: '▶';
+  font-size: 9px;
+  display: inline-block;
+  transition: transform 0.2s;
+}
+
+.advanced-accordion.open .accordion-header::before {
+  transform: rotate(90deg);
+}
+
+.accordion-content {
+  display: none;
+  margin-top: 10px;
+  padding-left: 15px;
+  border-left: 2px solid #e8f0fe;
+}
+
+.advanced-accordion.open .accordion-content {
+  display: block;
+}
+
+.warning-text {
+  font-size: 11px;
+  color: #ea4335;
+  margin-top: 4px;
+  display: block;
+}
+
+.warning-text.hidden {
+  display: none !important;
+}
+
+.info-text {
+  font-size: 11px;
+  color: #5f6368;
+  margin-top: 4px;
+  display: block;
 }

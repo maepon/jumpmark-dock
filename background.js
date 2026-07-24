@@ -1,39 +1,66 @@
 // バックグラウンドスクリプト - Jumpmark Dock
 
-// URLの正規化関数（popup.jsと同じロジック）
-function normalizeUrl(url) {
+// 共通ユーティリティをインポート
+importScripts('shared.js');
+
+// ワイルドカードキーのメモリキャッシュ
+let wildcardKeysCache = [];
+let wildcardCachePromise = null;
+
+// キャッシュの構築を保証する関数（エラー時は null に戻して次回リトライ可能にする）
+function ensureWildcardCache() {
+  if (!wildcardCachePromise) {
+    wildcardCachePromise = rebuildWildcardCache().catch(err => {
+      wildcardCachePromise = null;
+      console.error('ワイルドカードキャッシュ構築エラー:', err);
+    });
+  }
+  return wildcardCachePromise;
+}
+
+// キャッシュを再構築する関数
+async function rebuildWildcardCache() {
   try {
-    const urlObj = new URL(url);
-    let normalized = urlObj.hostname;
+    const result = await chrome.storage.sync.get(['jumpmarks']);
+    const allJumpmarks = result.jumpmarks || {};
     
-    // wwwを除去
-    if (normalized.startsWith('www.')) {
-      normalized = normalized.substring(4);
-    }
-    
-    // パスを追加（ルート以外の場合）
-    if (urlObj.pathname !== '/') {
-      normalized += urlObj.pathname;
-    }
-    
-    // 末尾のスラッシュを除去
-    normalized = normalized.replace(/\/$/, '');
-    
-    return normalized;
+    // 末尾が * で終わるキー（ワイルドカードキー）だけを抽出してキャッシュ
+    wildcardKeysCache = Object.keys(allJumpmarks).filter(key => key.endsWith('*'));
+    console.log('ワイルドカードキャッシュを再構築しました:', wildcardKeysCache);
   } catch (error) {
-    console.error('URL正規化エラー:', error);
-    return url;
+    console.error('ワイルドカードキャッシュ再構築エラー:', error);
+    wildcardKeysCache = [];
+    throw error;
   }
 }
 
-// 指定URLのJumpmark数を取得
+// スクリプト読み込み（Service Worker 起動）時に先行ロード
+ensureWildcardCache();
+
 async function getJumpmarkCountForUrl(url) {
   try {
+    // キャッシュ構築完了を保証
+    await ensureWildcardCache();
+    
     const normalizedUrl = normalizeUrl(url);
     const result = await chrome.storage.sync.get(['jumpmarks']);
     const allJumpmarks = result.jumpmarks || {};
-    const jumpmarks = allJumpmarks[normalizedUrl] || [];
-    return jumpmarks.length;
+    
+    let count = 0;
+    
+    // 1. 完全一致
+    if (allJumpmarks[normalizedUrl]) {
+      count += allJumpmarks[normalizedUrl].length;
+    }
+    
+    // 2. キャッシュされたワイルドカードキーのみを走査してマッチング
+    for (const pattern of wildcardKeysCache) {
+      if (pattern !== normalizedUrl && isUrlMatch(normalizedUrl, pattern)) {
+        count += allJumpmarks[pattern].length;
+      }
+    }
+    
+    return count;
   } catch (error) {
     console.error('Jumpmark数取得エラー:', error);
     return 0;
@@ -105,6 +132,12 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 // ストレージが変更された時のイベントリスナー
 chrome.storage.onChanged.addListener(async (changes, namespace) => {
   if (namespace === 'sync' && changes.jumpmarks) {
+    // キャッシュを再構築
+    wildcardCachePromise = rebuildWildcardCache().catch(err => {
+      wildcardCachePromise = null;
+      console.error('ワイルドカードキャッシュ再構築エラー:', err);
+    });
+    await wildcardCachePromise;
     // Jumpmarksが変更された場合、全てのタブのバッジを更新
     await updateAllTabsBadges();
   }
@@ -114,6 +147,8 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
 chrome.runtime.onInstalled.addListener(async () => {
   console.log('Jumpmark Dock がインストールされました');
   
+  // キャッシュを初期再構築
+  await rebuildWildcardCache();
   // 初期バッジ設定
   await updateAllTabsBadges();
 });
@@ -122,6 +157,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(async () => {
   console.log('Jumpmark Dock が起動しました');
   
+  // キャッシュを初期再構築
+  await rebuildWildcardCache();
   // 起動時バッジ設定
   await updateAllTabsBadges();
 });

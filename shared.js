@@ -1,39 +1,143 @@
-// 共通ユーティリティ関数
+// URLまたはパターン文字列から各種構成要素を安全に解析する共通ヘルパー
+function parseUrlPattern(urlLikeStr) {
+  if (!urlLikeStr) {
+    return { success: false, protocol: '', hostname: '', port: '', host: '', pathname: '', isWildcard: false, normalizedWithoutWildcard: '' };
+  }
+  
+  const trimmed = urlLikeStr.trim();
+  const isWildcard = trimmed.endsWith('*');
+  let cleanUrl = isWildcard ? trimmed.slice(0, -1) : trimmed;
+  
+  // クエリとハッシュの除去
+  if (cleanUrl.includes('?')) cleanUrl = cleanUrl.split('?')[0];
+  if (cleanUrl.includes('#')) cleanUrl = cleanUrl.split('#')[0];
+  
+  // プロトコルの抽出
+  let protocol = '';
+  let urlToParse = cleanUrl;
+  if (cleanUrl.includes('://')) {
+    const parts = cleanUrl.split('://');
+    protocol = parts[0].toLowerCase();
+    urlToParse = cleanUrl;
+  } else {
+    // URL API用に一時補完
+    urlToParse = 'https://' + cleanUrl;
+  }
+  
+  try {
+    const urlObj = new URL(urlToParse);
+    const hostname = urlObj.hostname.toLowerCase();
+    const port = urlObj.port;
+    let host = urlObj.host.toLowerCase();
+    
+    // www. の除去
+    if (host.startsWith('www.')) {
+      host = host.substring(4);
+    }
+    
+    let pathname = urlObj.pathname;
+    if (pathname.endsWith('/')) {
+      pathname = pathname.slice(0, -1);
+    }
+    
+    const normalizedWithoutWildcard = host + pathname;
+    
+    return {
+      success: true,
+      protocol: cleanUrl.includes('://') ? protocol : '',
+      hostname,
+      port,
+      host,
+      pathname,
+      isWildcard,
+      normalizedWithoutWildcard
+    };
+  } catch (error) {
+    console.error('URL解析エラー:', error, urlLikeStr);
+    return {
+      success: false,
+      protocol: '',
+      hostname: '',
+      port: '',
+      host: '',
+      pathname: '',
+      isWildcard,
+      normalizedWithoutWildcard: cleanUrl
+    };
+  }
+}
 
 // URLを正規化（プロトコル、www、末尾スラッシュを削除）
 function normalizeUrl(url) {
-  if (!url) return '';
-  
-  try {
-    // プロトコルがない場合はhttpsを追加
-    let normalizedUrl = url;
-    if (!url.includes('://')) {
-      normalizedUrl = 'https://' + url;
-    }
-    
-    const urlObj = new URL(normalizedUrl);
-    let normalized = urlObj.hostname;
-    
-    // www.を削除
-    if (normalized.startsWith('www.')) {
-      normalized = normalized.substring(4);
-    }
-    
-    // パスを追加（ルートでない場合）
-    if (urlObj.pathname !== '/') {
-      normalized += urlObj.pathname;
-    }
-    
-    // 末尾のスラッシュを削除
-    if (normalized.endsWith('/')) {
-      normalized = normalized.slice(0, -1);
-    }
-    
-    return normalized;
-  } catch (error) {
-    console.error('URL正規化エラー:', error);
-    return url;
+  const parsed = parseUrlPattern(url);
+  if (!parsed.success) return url;
+  return parsed.isWildcard ? parsed.normalizedWithoutWildcard + '*' : parsed.normalizedWithoutWildcard;
+}
+
+// 現在のURLがパターンに適合するかチェック
+function isUrlMatch(currentUrl, pattern) {
+  if (!pattern) return false;
+  if (!pattern.endsWith('*')) {
+    return currentUrl === pattern;
   }
+  
+  const basePattern = pattern.slice(0, -1);
+  // 中間アスタリスクは単なる文字として前方一致判定される
+  return currentUrl === basePattern || currentUrl.startsWith(basePattern + '/');
+}
+
+// プロトコルを保持・判定して完全なURL文字列を生成
+function formatUrlWithProtocol(sourceUrlNormalized, rawInputUrl = '', oldPartnerUrl = '') {
+  if (!sourceUrlNormalized) return '';
+  if (sourceUrlNormalized.includes('://')) return sourceUrlNormalized;
+  
+  // 1. 明示的な http:// の検出（入力生URL または 既存パートナーURL）
+  if ((rawInputUrl && rawInputUrl.startsWith('http://')) || 
+      (oldPartnerUrl && oldPartnerUrl.startsWith('http://'))) {
+    return 'http://' + sourceUrlNormalized;
+  }
+  
+  // 2. 明示的な https:// の検出
+  if ((rawInputUrl && rawInputUrl.startsWith('https://')) || 
+      (oldPartnerUrl && oldPartnerUrl.startsWith('https://'))) {
+    return 'https://' + sourceUrlNormalized;
+  }
+  
+  // 3. URL API のみを使用して hostname を安全に判定（split(':') は使用しない）
+  const parsed = parseUrlPattern(sourceUrlNormalized);
+  const hostname = parsed.hostname;
+  
+  const isLocalHost = hostname === 'localhost' || 
+                      hostname === '127.0.0.1' || 
+                      hostname === '[::1]' || 
+                      hostname === '::1' ||
+                      hostname.startsWith('[fe80:') ||
+                      hostname.startsWith('[fc') ||
+                      hostname.startsWith('[fd') ||
+                      hostname.endsWith('.local') ||
+                      hostname.endsWith('.test') ||
+                      hostname.endsWith('.localhost');
+                      
+  if (isLocalHost) {
+    return 'http://' + sourceUrlNormalized; // ローカル環境は既定 http://
+  }
+  
+  // 4. 一般的なドメインの既定フォールバックは https://
+  return 'https://' + sourceUrlNormalized;
+}
+
+// ソースURLパターンのバリデーション
+function validateSourceUrlPattern(pattern) {
+  if (!pattern || !pattern.trim()) {
+    return { valid: false, message: 'URLパターンを入力してください' };
+  }
+  
+  const parsed = parseUrlPattern(pattern);
+  if (!parsed.host || parsed.host.length < 3) {
+    return { valid: false, message: '対象URLのホスト名部分は3文字以上必要です' };
+  }
+  
+  return { valid: true };
 }
 
 // 一意なIDを生成
@@ -77,7 +181,19 @@ async function getJumpmarksForUrl(url) {
   try {
     const result = await chrome.storage.sync.get(['jumpmarks']);
     const allJumpmarks = result.jumpmarks || {};
-    return allJumpmarks[url] || [];
+    
+    let matchedJumpmarks = [];
+    for (const pattern in allJumpmarks) {
+      if (isUrlMatch(url, pattern)) {
+        allJumpmarks[pattern].forEach(jm => {
+          matchedJumpmarks.push({
+            ...jm,
+            sourceUrl: pattern
+          });
+        });
+      }
+    }
+    return matchedJumpmarks;
   } catch (error) {
     console.error('Jumpmarks取得エラー:', error);
     return [];
@@ -116,6 +232,7 @@ async function saveJumpmark(jumpmarkData) {
     
     const sourceUrl = normalizeUrl(jumpmarkData.sourceUrl);
     const targetUrl = jumpmarkData.url;
+    const isWildcard = sourceUrl.endsWith('*');
     
     // 新しいJumpmarkを作成
     const newJumpmark = {
@@ -126,6 +243,9 @@ async function saveJumpmark(jumpmarkData) {
       sourceUrl: sourceUrl,
       created: new Date().toISOString()
     };
+    if (isWildcard) {
+      newJumpmark.isWildcard = true;
+    }
     
     // ソースURLのJumpmarksに追加
     if (!jumpmarks[sourceUrl]) {
@@ -133,18 +253,19 @@ async function saveJumpmark(jumpmarkData) {
     }
     jumpmarks[sourceUrl].push(newJumpmark);
     
-    // 双方向リンクの場合、逆方向も作成
-    if (jumpmarkData.createBidirectional) {
+    // 双方向リンクの場合、逆方向も作成（ワイルドカードでない場合のみ）
+    if (jumpmarkData.createBidirectional && !isWildcard) {
       const normalizedTargetUrl = normalizeUrl(targetUrl);
       if (!jumpmarks[normalizedTargetUrl]) {
         jumpmarks[normalizedTargetUrl] = [];
       }
       
       // 逆方向のJumpmarkを作成
+      const reverseUrl = formatUrlWithProtocol(sourceUrl, jumpmarkData.sourceUrl);
       const reverseJumpmark = {
         id: generateUniqueId(),
         title: jumpmarkData.reverseTitle || `← ${jumpmarkData.title}`,
-        url: jumpmarkData.sourceUrl,
+        url: reverseUrl,
         icon: jumpmarkData.icon || '🔗',
         sourceUrl: normalizedTargetUrl,
         created: new Date().toISOString()
@@ -161,31 +282,114 @@ async function saveJumpmark(jumpmarkData) {
   }
 }
 
-// Jumpmarkを更新（シンプル版）
+// Jumpmarkを更新（キー移動および逆方向エントリの整合性を維持）
 async function updateJumpmark(jumpmarkId, updateData) {
   try {
     const result = await chrome.storage.sync.get(['jumpmarks']);
     const jumpmarks = result.jumpmarks || {};
     
-    let found = false;
+    let foundJumpmark = null;
+    let oldSourceUrl = null;
     
-    // Jumpmarkを検索して更新
-    Object.entries(jumpmarks).forEach(([url, jumpmarkList]) => {
+    // 編集対象のJumpmarkを検索
+    for (const [url, jumpmarkList] of Object.entries(jumpmarks)) {
       const index = jumpmarkList.findIndex(j => j.id === jumpmarkId);
       if (index !== -1) {
-        // sourceUrlも更新データに含まれている場合は更新
-        const updatedJumpmark = { 
-          ...jumpmarkList[index], 
-          ...updateData,
-          sourceUrl: updateData.sourceUrl || jumpmarkList[index].sourceUrl
-        };
-        jumpmarkList[index] = updatedJumpmark;
-        found = true;
+        foundJumpmark = jumpmarkList[index];
+        oldSourceUrl = url;
+        break;
       }
-    });
+    }
     
-    if (!found) {
+    if (!foundJumpmark) {
       throw new Error('Jumpmarkが見つかりません');
+    }
+    
+    // 更新前の状態に基づく古い双方向パートナーを検索
+    let oldPartner = null;
+    let oldPartnerSourceUrl = null;
+    for (const [url, jumpmarkList] of Object.entries(jumpmarks)) {
+      const partnerIndex = jumpmarkList.findIndex(j => isBidirectionalPair(foundJumpmark, j));
+      if (partnerIndex !== -1) {
+        oldPartner = jumpmarkList[partnerIndex];
+        oldPartnerSourceUrl = url;
+        break;
+      }
+    }
+    
+    // 古いキーから編集対象を削除
+    const oldList = jumpmarks[oldSourceUrl];
+    if (oldList) {
+      const idx = oldList.findIndex(j => j.id === jumpmarkId);
+      if (idx !== -1) oldList.splice(idx, 1);
+      if (oldList.length === 0) delete jumpmarks[oldSourceUrl];
+    }
+    
+    // 古いパートナーが存在した場合は一度ストレージから削除（後で必要に応じて再作成/更新）
+    if (oldPartner && oldPartnerSourceUrl) {
+      const partnerList = jumpmarks[oldPartnerSourceUrl];
+      if (partnerList) {
+        const pIdx = partnerList.findIndex(j => j.id === oldPartner.id);
+        if (pIdx !== -1) partnerList.splice(pIdx, 1);
+        if (partnerList.length === 0) delete jumpmarks[oldPartnerSourceUrl];
+      }
+    }
+    
+    // 新しいsourceUrlとtargetUrlを決定
+    const newSourceUrl = updateData.sourceUrl ? normalizeUrl(updateData.sourceUrl) : oldSourceUrl;
+    const newTargetUrl = updateData.url || foundJumpmark.url;
+    const isWildcard = newSourceUrl.endsWith('*');
+    
+    // 双方向リンクを作成・更新するか判定
+    const createBidirectional = !isWildcard && (
+      updateData.createBidirectional !== undefined ? !!updateData.createBidirectional :
+      (updateData.createReverse !== undefined ? !!updateData.createReverse : !!oldPartner)
+    );
+    
+    // 更新データを適用
+    const updatedJumpmark = { 
+      ...foundJumpmark, 
+      ...updateData,
+      sourceUrl: newSourceUrl,
+      url: newTargetUrl
+    };
+    
+    // 一時フラグを除去
+    delete updatedJumpmark.createBidirectional;
+    delete updatedJumpmark.createReverse;
+    
+    if (isWildcard) {
+      updatedJumpmark.isWildcard = true;
+    } else {
+      delete updatedJumpmark.isWildcard;
+    }
+    
+    // 新しいキーのリストに追加
+    if (!jumpmarks[newSourceUrl]) {
+      jumpmarks[newSourceUrl] = [];
+    }
+    jumpmarks[newSourceUrl].push(updatedJumpmark);
+    
+    // 双方向リンクの場合、逆方向エントリを作成・更新
+    if (createBidirectional) {
+      const normalizedTargetUrl = normalizeUrl(newTargetUrl);
+      if (!jumpmarks[normalizedTargetUrl]) {
+        jumpmarks[normalizedTargetUrl] = [];
+      }
+      
+      const rawInputSource = updateData.sourceUrl || '';
+      const oldPartnerUrl = oldPartner ? oldPartner.url : '';
+      const reverseUrl = formatUrlWithProtocol(newSourceUrl, rawInputSource, oldPartnerUrl);
+      const reverseJumpmark = {
+        id: oldPartner ? oldPartner.id : generateUniqueId(),
+        title: updateData.reverseTitle || (oldPartner ? oldPartner.title : `← ${updatedJumpmark.title}`),
+        url: reverseUrl,
+        icon: updatedJumpmark.icon || '🔗',
+        sourceUrl: normalizedTargetUrl,
+        created: oldPartner ? oldPartner.created : new Date().toISOString()
+      };
+      
+      jumpmarks[normalizedTargetUrl].push(reverseJumpmark);
     }
     
     await chrome.storage.sync.set({ jumpmarks });
