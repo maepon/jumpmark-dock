@@ -227,6 +227,11 @@ async function deleteJumpmark(jumpmarkId) {
 function showFormView() {
   mainView.classList.add('hidden');
   formView.classList.remove('hidden');
+
+  const iconFormGroup = document.getElementById('iconFormGroup');
+  if (iconFormGroup) {
+    iconFormGroup.classList.add('hidden');
+  }
   
   // フォームタイトルを変更
   formTitle.textContent = '新しいJumpmark';
@@ -258,6 +263,11 @@ function showMainView() {
 // Jumpmarkを編集
 async function editJumpmark(jumpmark) {
   editingJumpmark = jumpmark;
+
+  const iconFormGroup = document.getElementById('iconFormGroup');
+  if (iconFormGroup) {
+    iconFormGroup.classList.remove('hidden');
+  }
   
   // フォームタイトルを変更
   formTitle.textContent = 'Jumpmarkを編集';
@@ -345,7 +355,9 @@ function setupEventListeners() {
     const jumpmarkData = {
       title: formData.get('jumpmarkTitle') || document.getElementById('jumpmarkTitle').value,
       url: formData.get('jumpmarkUrl') || document.getElementById('jumpmarkUrl').value,
-      icon: formData.get('jumpmarkIcon') || document.getElementById('jumpmarkIcon').value,
+      icon: editingJumpmark
+        ? (formData.get('jumpmarkIcon') || document.getElementById('jumpmarkIcon').value || editingJumpmark.icon || '🔖')
+        : '🔖',
       createBidirectional: document.getElementById('bidirectional').checked,
       sourceUrl: sourcePattern
     };
