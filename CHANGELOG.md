@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-08-01
+
+### Changed
+
+#### ✨ Popup 新規登録フローの改善
+- **新規追加時のアイコン入力を省略**し、フォームをよりシンプルに
+- **新規保存時のアイコンを `🔖` で明示保存**し、表示とデータの一貫性を向上
+- **編集時のアイコン変更は従来どおり維持**（編集モードではアイコン入力欄を表示）
+
 ## [2.0.0] - 2026-07-24
 
 ### Added
