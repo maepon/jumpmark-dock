@@ -30,6 +30,8 @@ jobs:
         cp options.js dist/
         cp options.css dist/
         cp shared.js dist/
+        cp i18n.js dist/
+        cp -r _locales dist/
         cp -r icons dist/
         
         # zipファイルを作成
