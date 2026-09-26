@@ -291,7 +291,7 @@ phase_impl() {
   round=1
   while : ; do
     : > "$VERDICT_FILE"
-    run_step "指示書との齟齬判定 ${round}/${MAX_ROUNDS} 周" prompts/plan-judge.md "$STRONG"
+    run_step "指示書との齟齬判定 ${round}/${MAX_ROUNDS} 周" prompts/plan-judge.md "$REVIEW_JUDGE"
     verdict=$(read_verdict)
     [ "$verdict" = "APPROVED" ] && break
     [ "$verdict" = "CHANGES_REQUESTED" ] \

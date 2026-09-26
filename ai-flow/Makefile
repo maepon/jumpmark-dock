@@ -20,9 +20,9 @@ ISSUE_URL = $(REPO_URL)/issues/$(ISSUE)
 # 各自の設定。.env は git 管理外（.env.example 参照）
 -include .env
 
-# 実装レビューの判定モデルだけ差し替えられる。fast / strong か、生のモデルIDを受ける。
+# impl内レビューの判定モデルだけ差し替えられる。fast / strong か、生のモデルIDを受ける。
 # 未設定なら run-phase.sh が強モデルを使う
-REVIEW_JUDGE_MODEL ?=
+REVIEW_JUDGE_MODEL ?= $(FAST_MODEL)
 
 export SLACK_WEBHOOK_URL STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL
 
