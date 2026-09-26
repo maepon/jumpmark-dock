@@ -73,7 +73,7 @@ fail "ブランチ名が feature/ で始まっていません（${branch}）" # 
 
 - リポジトリが GitHub にあり、`gh` が認証済みであること
 - **Issue を使う運用であること。** このフローは状態を Issue コメントに持ちます
-- 既定ブランチ（PR のベース）の名前を `Makefile` の `BASE_BRANCH`（既定 `main`）と合わせておくこと
+- 既定ブランチ（PR のベース）の名前を `Makefile` の `BASE_BRANCH`（このリポジトリでは `master`）と合わせておくこと
 
 ### Slack
 
@@ -174,7 +174,7 @@ make help                    # フェーズの一覧
 `review` を単独で叩くのは、`impl` が収束せずに止まったあと、手で直して再開するときです。
 `code-review` 単独は、PR はできたのに投稿だけ失敗したときの入口です。
 
-変数: `ISSUE`（対象Issue番号）、`MAX_ROUNDS`（判定の最大周回数、既定3）、`BASE_BRANCH`（PR のベースブランチ、既定 `main`）、
+変数: `ISSUE`（対象Issue番号）、`MAX_ROUNDS`（判定の最大周回数、既定3）、`BASE_BRANCH`（PR のベースブランチ、このリポジトリでは既定 `master`）、
 `REVIEW_JUDGE_MODEL`（実装レビューの判定モデル。`strong` / `fast` か生のモデルIDを受ける。未設定なら強モデル）。
 
 実装レビューの判定だけ高速モデルで足りるかを試せます（`make impl ISSUE=n REVIEW_JUDGE_MODEL=fast`）。

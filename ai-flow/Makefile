@@ -4,7 +4,8 @@ ISSUE ?= 1
 MAX_ROUNDS ?= 3
 
 # PR のベースにするブランチ。scripts/ と prompts/ はこの値だけを使う（直書きは make check が落とす）
-BASE_BRANCH ?= main
+# このリポジトリの既定ブランチは master（main ではない）
+BASE_BRANCH ?= master
 
 # フローが使うモデルは2ティア。どのフェーズにどちらを割り当てるかは run-phase.sh 側にある。
 # 製品名ではなく能力で名付けてあるのは、割り当てが名前ではなく方針だから
