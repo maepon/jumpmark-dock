@@ -83,6 +83,8 @@ jobs:
           cp options.js package/
           cp options.css package/
           cp shared.js package/
+          cp i18n.js package/
+          cp -r _locales package/
           cp -r icons package/
           
           # ファイル一覧を表示
@@ -99,18 +101,24 @@ jobs:
       - name: Validate package structure
         run: |
           # パッケージの必須ファイル確認
-          REQUIRED_FILES=("manifest.json" "background.js" "popup.html" "popup.js" "popup.css" "options.html" "options.js" "options.css" "shared.js")
-          
+          REQUIRED_FILES=("manifest.json" "background.js" "popup.html" "popup.js" "popup.css" "options.html" "options.js" "options.css" "shared.js" "i18n.js")
+
           for file in "${REQUIRED_FILES[@]}"; do
             if [[ ! -f "package/$file" ]]; then
               echo "Error: Required file $file is missing from package"
               exit 1
             fi
           done
-          
+
           # アイコンディレクトリの確認
           if [[ ! -d "package/icons" ]]; then
             echo "Error: icons directory is missing from package"
+            exit 1
+          fi
+
+          # _locales ディレクトリの確認
+          if [[ ! -d "package/_locales" ]]; then
+            echo "Error: _locales directory is missing from package"
             exit 1
           fi
           

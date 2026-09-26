@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-09-26
+
+### Added
+
+#### 🌐 多言語対応（英語）
+- **`_locales/en`・`_locales/ja` によるメッセージリソース**を追加し、`chrome.i18n` ベースの英語UI対応を実装
+- **`i18n.js`** を新規追加し、`data-i18n` / `data-i18n-placeholder` / `data-i18n-title` / `data-i18n-unit` 属性を持つ静的DOM要素へ翻訳メッセージを適用
+- **`manifest.json` に `default_locale: "en"` を追加**し、Chromeの表示言語設定に応じて英語/日本語のUIが自動的に切り替わるように
+
+### Changed
+
+- **popup / options の全UI文字列を `chrome.i18n` 経由の翻訳メッセージに変更**
+- **日付整形を `ja-JP` 固定から表示ロケール追従（`getUiLocale()`）に変更**（画面表示・CSV/HTMLエクスポート双方）
+- **`options.css` の `content: "件"` を `content: attr(data-unit)` に変更**し、単位表示もロケールに追従
+- **GitHub Actionsのパッケージ対象に `_locales` と `i18n.js` を追加**（`build.yml` / `package.yml`）
+- **既存ユーザーへの影響**: Chromeの表示言語を日本語以外に設定しているユーザーは、本リリース以降UIが英語表示になります
+
 ## [2.1.0] - 2026-08-01
 
 ### Changed

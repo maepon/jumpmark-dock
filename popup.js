@@ -1,36 +1,36 @@
 // グローバル変数
 let currentTab = null;
-let currentUrl = '';
+let currentUrl = "";
 let editingJumpmark = null;
 let editingHasInitialPartner = false;
 let wasWildcard = false;
 let savedCheckedBeforeWildcard = true;
 
 // DOM要素
-const mainView = document.getElementById('mainView');
-const formView = document.getElementById('formView');
-const currentUrlDiv = document.getElementById('currentUrl');
-const jumpmarksContainer = document.getElementById('jumpmarksContainer');
-const emptyState = document.getElementById('emptyState');
-const addButton = document.getElementById('addButton');
-const backButton = document.getElementById('backButton');
-const cancelButton = document.getElementById('cancelButton');
-const jumpmarkForm = document.getElementById('jumpmarkForm');
-const formTitle = document.getElementById('formTitle');
+const mainView = document.getElementById("mainView");
+const formView = document.getElementById("formView");
+const currentUrlDiv = document.getElementById("currentUrl");
+const jumpmarksContainer = document.getElementById("jumpmarksContainer");
+const emptyState = document.getElementById("emptyState");
+const addButton = document.getElementById("addButton");
+const backButton = document.getElementById("backButton");
+const cancelButton = document.getElementById("cancelButton");
+const jumpmarkForm = document.getElementById("jumpmarkForm");
+const formTitle = document.getElementById("formTitle");
 
 // アコーディオン要素
-const advancedAccordion = document.getElementById('advancedAccordion');
-const accordionHeader = document.getElementById('accordionHeader');
-const sourceUrlPattern = document.getElementById('sourceUrlPattern');
-const wildcardNotice = document.getElementById('wildcardNotice');
+const advancedAccordion = document.getElementById("advancedAccordion");
+const accordionHeader = document.getElementById("accordionHeader");
+const sourceUrlPattern = document.getElementById("sourceUrlPattern");
+const wildcardNotice = document.getElementById("wildcardNotice");
 
 // 初期化
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener("DOMContentLoaded", async () => {
   try {
     await init();
     setupThemeDetection();
   } catch (error) {
-    console.error('初期化エラー:', error);
+    console.error("初期化エラー:", error);
   }
 });
 
@@ -42,17 +42,20 @@ async function init() {
     displayCurrentUrl();
     await displayJumpmarks();
   }
-  
+
   setupEventListeners();
 }
 
 // 現在のタブ情報を取得
 async function getCurrentTab() {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     return tab;
   } catch (error) {
-    console.error('タブ情報取得エラー:', error);
+    console.error("タブ情報取得エラー:", error);
     return null;
   }
 }
@@ -62,9 +65,10 @@ async function getCurrentTab() {
 // 現在のURLを表示
 function displayCurrentUrl() {
   if (currentTab) {
-    const displayUrl = currentTab.url.length > 50 
-      ? currentTab.url.substring(0, 47) + '...'
-      : currentTab.url;
+    const displayUrl =
+      currentTab.url.length > 50
+        ? currentTab.url.substring(0, 47) + "..."
+        : currentTab.url;
     currentUrlDiv.textContent = displayUrl;
   }
 }
@@ -73,14 +77,14 @@ function displayCurrentUrl() {
 async function displayJumpmarks() {
   try {
     const jumpmarks = await getJumpmarksForUrl(currentUrl);
-    
+
     if (jumpmarks.length === 0) {
       showEmptyState();
     } else {
       showJumpmarksList(jumpmarks);
     }
   } catch (error) {
-    console.error('Jumpmarks表示エラー:', error);
+    console.error("Jumpmarks表示エラー:", error);
     showEmptyState();
   }
 }
@@ -92,17 +96,17 @@ function showEmptyState() {
   jumpmarksContainer.innerHTML = `
     <div class="empty-state">
       <div class="empty-icon">⚓</div>
-      <p>このページにはまだJumpmarkがありません</p>
-      <p class="empty-subtitle">関連ページへのショートカットを追加しましょう</p>
+      <p>${t("popupEmptyTitle")}</p>
+      <p class="empty-subtitle">${t("popupEmptySubtitle")}</p>
     </div>
   `;
 }
 
 // Jumpmarksリストを表示
 function showJumpmarksList(jumpmarks) {
-  jumpmarksContainer.innerHTML = '';
-  
-  jumpmarks.forEach(jumpmark => {
+  jumpmarksContainer.innerHTML = "";
+
+  jumpmarks.forEach((jumpmark) => {
     const jumpmarkElement = createJumpmarkElement(jumpmark);
     jumpmarksContainer.appendChild(jumpmarkElement);
   });
@@ -110,47 +114,50 @@ function showJumpmarksList(jumpmarks) {
 
 // Jumpmark要素を作成
 function createJumpmarkElement(jumpmark) {
-  const div = document.createElement('div');
-  div.className = 'jumpmark-item';
+  const div = document.createElement("div");
+  div.className = "jumpmark-item";
   div.innerHTML = `
-    <div class="jumpmark-icon">${jumpmark.icon || '🔗'}</div>
+    <div class="jumpmark-icon">${jumpmark.icon || "🔗"}</div>
     <div class="jumpmark-content">
       <div class="jumpmark-title">${escapeHtml(jumpmark.title)}</div>
       <div class="jumpmark-url">${escapeHtml(jumpmark.url)}</div>
     </div>
     <div class="jumpmark-actions">
-      <button class="edit-button" data-id="${jumpmark.id}">編集</button>
-      <button class="delete-button" data-id="${jumpmark.id}">削除</button>
+      <button class="edit-button" data-id="${jumpmark.id}">${t("actionEdit")}</button>
+      <button class="delete-button" data-id="${jumpmark.id}">${t("actionDelete")}</button>
     </div>
   `;
-  
+
   // クリックイベント（ボタン以外）
-  div.addEventListener('click', (e) => {
-    if (!e.target.classList.contains('delete-button') && !e.target.classList.contains('edit-button')) {
+  div.addEventListener("click", (e) => {
+    if (
+      !e.target.classList.contains("delete-button") &&
+      !e.target.classList.contains("edit-button")
+    ) {
       navigateToUrl(jumpmark.url);
     }
   });
-  
+
   // 編集ボタンのクリックイベント
-  const editButton = div.querySelector('.edit-button');
-  editButton.addEventListener('click', async (e) => {
+  const editButton = div.querySelector(".edit-button");
+  editButton.addEventListener("click", async (e) => {
     e.stopPropagation();
     await editJumpmark(jumpmark);
   });
-  
+
   // 削除ボタンのクリックイベント
-  const deleteButton = div.querySelector('.delete-button');
-  deleteButton.addEventListener('click', (e) => {
+  const deleteButton = div.querySelector(".delete-button");
+  deleteButton.addEventListener("click", (e) => {
     e.stopPropagation();
     deleteJumpmark(jumpmark.id);
   });
-  
+
   return div;
 }
 
 // HTMLエスケープ
 function escapeHtml(text) {
-  const div = document.createElement('div');
+  const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
 }
@@ -160,49 +167,49 @@ async function navigateToUrl(url) {
   try {
     // 全てのタブを取得
     const tabs = await chrome.tabs.query({});
-    
+
     // 完全に同じURLのタブを探す
-    const exactTab = tabs.find(tab => {
+    const exactTab = tabs.find((tab) => {
       return tab.url === url;
     });
-    
+
     if (exactTab) {
       // 同じURLのタブがある場合：フォーカスのみ（リロードしない）
       await chrome.tabs.update(exactTab.id, { active: true });
       await chrome.windows.update(exactTab.windowId, { focused: true });
     } else {
       // 同じURLのタブがない場合：新しいタブを作成
-      await chrome.tabs.create({ 
+      await chrome.tabs.create({
         url: url,
-        active: true 
+        active: true,
       });
     }
-    
+
     window.close();
   } catch (error) {
-    console.error('ナビゲーションエラー:', error);
+    console.error("ナビゲーションエラー:", error);
     // エラーが発生した場合は従来通り新しいタブで開く
     try {
       await chrome.tabs.create({ url: url });
       window.close();
     } catch (fallbackError) {
-      console.error('フォールバックナビゲーションエラー:', fallbackError);
+      console.error("フォールバックナビゲーションエラー:", fallbackError);
     }
   }
 }
 
 async function deleteJumpmark(jumpmarkId) {
   try {
-    const result = await chrome.storage.sync.get(['jumpmarks']);
+    const result = await chrome.storage.sync.get(["jumpmarks"]);
     const allJumpmarks = result.jumpmarks || {};
-    
+
     let found = false;
     for (const key in allJumpmarks) {
       const initialLength = allJumpmarks[key].length;
       allJumpmarks[key] = allJumpmarks[key].filter(
-        jumpmark => jumpmark.id !== jumpmarkId
+        (jumpmark) => jumpmark.id !== jumpmarkId,
       );
-      
+
       if (allJumpmarks[key].length !== initialLength) {
         found = true;
         if (allJumpmarks[key].length === 0) {
@@ -211,13 +218,13 @@ async function deleteJumpmark(jumpmarkId) {
         break; // IDは一意なので見つかったらループ終了
       }
     }
-    
+
     if (found) {
       await chrome.storage.sync.set({ jumpmarks: allJumpmarks });
       await displayJumpmarks();
     }
   } catch (error) {
-    console.error('Jumpmark削除エラー:', error);
+    console.error("Jumpmark削除エラー:", error);
   }
 }
 
@@ -225,27 +232,27 @@ async function deleteJumpmark(jumpmarkId) {
 
 // ビューを切り替え
 function showFormView() {
-  mainView.classList.add('hidden');
-  formView.classList.remove('hidden');
+  mainView.classList.add("hidden");
+  formView.classList.remove("hidden");
 
-  const iconFormGroup = document.getElementById('iconFormGroup');
+  const iconFormGroup = document.getElementById("iconFormGroup");
   if (iconFormGroup) {
-    iconFormGroup.classList.add('hidden');
+    iconFormGroup.classList.add("hidden");
   }
-  
+
   // フォームタイトルを変更
-  formTitle.textContent = '新しいJumpmark';
-  
+  formTitle.textContent = t("popupFormTitleNew");
+
   // フォームをリセット
   jumpmarkForm.reset();
-  
+
   // セッションとUI状態のリセット
   resetEditSessionState();
   updateWildcardUi(false, true);
-  
+
   // アコーディオンの状態をリセット
-  advancedAccordion.classList.remove('open');
-  
+  advancedAccordion.classList.remove("open");
+
   // 現在のURLをパターン初期値に設定
   if (currentTab) {
     sourceUrlPattern.value = currentTab.url;
@@ -253,9 +260,9 @@ function showFormView() {
 }
 
 function showMainView() {
-  formView.classList.add('hidden');
-  mainView.classList.remove('hidden');
-  
+  formView.classList.add("hidden");
+  mainView.classList.remove("hidden");
+
   // 編集状態をリセット
   resetEditSessionState();
 }
@@ -264,68 +271,68 @@ function showMainView() {
 async function editJumpmark(jumpmark) {
   editingJumpmark = jumpmark;
 
-  const iconFormGroup = document.getElementById('iconFormGroup');
+  const iconFormGroup = document.getElementById("iconFormGroup");
   if (iconFormGroup) {
-    iconFormGroup.classList.remove('hidden');
+    iconFormGroup.classList.remove("hidden");
   }
-  
+
   // フォームタイトルを変更
-  formTitle.textContent = 'Jumpmarkを編集';
-  
+  formTitle.textContent = t("editJumpmarkTitle");
+
   // フォームに既存データを入力
-  document.getElementById('jumpmarkTitle').value = jumpmark.title;
-  document.getElementById('jumpmarkUrl').value = jumpmark.url;
-  document.getElementById('jumpmarkIcon').value = jumpmark.icon || '';
-  
+  document.getElementById("jumpmarkTitle").value = jumpmark.title;
+  document.getElementById("jumpmarkUrl").value = jumpmark.url;
+  document.getElementById("jumpmarkIcon").value = jumpmark.icon || "";
+
   // 双方向判定（動的なパートナー検出を使用）
   const partner = await findBidirectionalPartner(jumpmark);
   editingHasInitialPartner = !!partner;
-  
+
   // アコーディオンのセット
   sourceUrlPattern.value = jumpmark.sourceUrl || currentUrl;
-  const initialIsWildcard = sourceUrlPattern.value.endsWith('*');
-  
+  const initialIsWildcard = sourceUrlPattern.value.endsWith("*");
+
   // 状態の計算・保持
   wasWildcard = initialIsWildcard;
   savedCheckedBeforeWildcard = editingHasInitialPartner;
-  
+
   // アスタリスクが存在すればアコーディオンを開きチェックボックスを無効化
   if (initialIsWildcard) {
-    advancedAccordion.classList.add('open');
+    advancedAccordion.classList.add("open");
   } else {
-    advancedAccordion.classList.remove('open');
+    advancedAccordion.classList.remove("open");
   }
-  
+
   // UI反映
   updateWildcardUi(initialIsWildcard, editingHasInitialPartner);
-  
+
   // フォーム画面を表示
-  mainView.classList.add('hidden');
-  formView.classList.remove('hidden');
+  mainView.classList.add("hidden");
+  formView.classList.remove("hidden");
 }
 
 // イベントリスナーの設定
 function setupEventListeners() {
   // 追加ボタン
-  addButton.addEventListener('click', showFormView);
-  
+  addButton.addEventListener("click", showFormView);
+
   // 戻るボタン
-  backButton.addEventListener('click', showMainView);
-  
+  backButton.addEventListener("click", showMainView);
+
   // キャンセルボタン
-  cancelButton.addEventListener('click', showMainView);
-  
+  cancelButton.addEventListener("click", showMainView);
+
   // アコーディオンヘッダークリックでトグル
-  accordionHeader.addEventListener('click', () => {
-    advancedAccordion.classList.toggle('open');
+  accordionHeader.addEventListener("click", () => {
+    advancedAccordion.classList.toggle("open");
   });
-  
+
   // カスタムURLパターンのリアルタイム監視（双方向チェックボックス連動）
-  sourceUrlPattern.addEventListener('input', () => {
+  sourceUrlPattern.addEventListener("input", () => {
     const val = sourceUrlPattern.value.trim();
-    const isWildcard = val.endsWith('*');
-    const bidirectionalCheckbox = document.getElementById('bidirectional');
-    
+    const isWildcard = val.endsWith("*");
+    const bidirectionalCheckbox = document.getElementById("bidirectional");
+
     // 状態遷移の計算
     let shouldUpdateChecked = false;
     if (isWildcard) {
@@ -340,41 +347,52 @@ function setupEventListeners() {
       }
       wasWildcard = false;
     }
-    
+
     // UIへの反映
-    updateWildcardUi(isWildcard, savedCheckedBeforeWildcard, shouldUpdateChecked);
+    updateWildcardUi(
+      isWildcard,
+      savedCheckedBeforeWildcard,
+      shouldUpdateChecked,
+    );
   });
-  
+
   // フォーム送信
-  jumpmarkForm.addEventListener('submit', async (e) => {
+  jumpmarkForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    
+
     const formData = new FormData(jumpmarkForm);
     const sourcePattern = sourceUrlPattern.value.trim() || currentTab.url;
-    
+
     const jumpmarkData = {
-      title: formData.get('jumpmarkTitle') || document.getElementById('jumpmarkTitle').value,
-      url: formData.get('jumpmarkUrl') || document.getElementById('jumpmarkUrl').value,
+      title:
+        formData.get("jumpmarkTitle") ||
+        document.getElementById("jumpmarkTitle").value,
+      url:
+        formData.get("jumpmarkUrl") ||
+        document.getElementById("jumpmarkUrl").value,
       icon: editingJumpmark
-        ? (formData.get('jumpmarkIcon') || document.getElementById('jumpmarkIcon').value || editingJumpmark.icon || '🔖')
-        : '🔖',
-      createBidirectional: document.getElementById('bidirectional').checked,
-      sourceUrl: sourcePattern
+        ? formData.get("jumpmarkIcon") ||
+          document.getElementById("jumpmarkIcon").value ||
+          editingJumpmark.icon ||
+          "🔖"
+        : "🔖",
+      createBidirectional: document.getElementById("bidirectional").checked,
+      sourceUrl: sourcePattern,
     };
-    
+
     // 基本的なバリデーション
     if (!jumpmarkData.title || !jumpmarkData.url) {
-      alert('タイトルとURLは必須です');
+      alert(t("popupErrorTitleUrlRequired"));
       return;
     }
-    
+
     try {
       new URL(jumpmarkData.url);
     } catch {
-      alert('有効なURLを入力してください');
+      alert(t("errorInvalidUrl"));
       return;
     }
-    
+
     // 防御的バリデーション（ホスト名長さ、中間アスタリスクなど）
     const validationResult = validateSourceUrlPattern(sourcePattern);
     if (!validationResult.valid) {
@@ -382,7 +400,7 @@ function setupEventListeners() {
       sourceUrlPattern.focus();
       return;
     }
-    
+
     let success = false;
     try {
       if (editingJumpmark) {
@@ -396,12 +414,16 @@ function setupEventListeners() {
     } catch (err) {
       console.error(err);
     }
-    
+
     if (success) {
       showMainView();
       await displayJumpmarks();
     } else {
-      alert(editingJumpmark ? '更新に失敗しました' : '保存に失敗しました');
+      alert(
+        editingJumpmark
+          ? t("popupErrorUpdateFailed")
+          : t("popupErrorSaveFailed"),
+      );
     }
   });
 }
@@ -409,24 +431,24 @@ function setupEventListeners() {
 // テーマ検出とスタイル切り替え
 function setupThemeDetection() {
   // システムテーマの初期検出
-  const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  const darkModeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
   applyTheme(darkModeMediaQuery.matches);
-  
+
   // テーマ変更の監視
-  darkModeMediaQuery.addEventListener('change', (e) => {
+  darkModeMediaQuery.addEventListener("change", (e) => {
     applyTheme(e.matches);
   });
 }
 
 function applyTheme(isDark) {
   const body = document.body;
-  
+
   if (isDark) {
-    body.setAttribute('data-theme', 'dark');
+    body.setAttribute("data-theme", "dark");
   } else {
-    body.removeAttribute('data-theme');
+    body.removeAttribute("data-theme");
   }
-  
+
   // アイコンの切り替えは不要なので、メッセージ送信は削除
 }
 
@@ -437,16 +459,16 @@ function applyTheme(isDark) {
  * @param {boolean} updateCheckedState checked 状態を更新するかどうか (通常入力時は false を指定し、ユーザーの手動選択を保持)
  */
 function updateWildcardUi(isWildcard, savedChecked, updateCheckedState = true) {
-  const bidirectionalCheckbox = document.getElementById('bidirectional');
-  const wildcardNotice = document.getElementById('wildcardNotice');
-  
+  const bidirectionalCheckbox = document.getElementById("bidirectional");
+  const wildcardNotice = document.getElementById("wildcardNotice");
+
   if (isWildcard) {
     bidirectionalCheckbox.checked = false;
     bidirectionalCheckbox.disabled = true;
-    wildcardNotice.classList.remove('hidden');
+    wildcardNotice.classList.remove("hidden");
   } else {
     bidirectionalCheckbox.disabled = false;
-    wildcardNotice.classList.add('hidden');
+    wildcardNotice.classList.add("hidden");
     if (updateCheckedState) {
       bidirectionalCheckbox.checked = savedChecked;
     }
