@@ -171,8 +171,20 @@ read_verdict() {
 # 書いた人のコメントや、このフローについて論じたコメントに当たってゲートが通ってしまう
 # （このメッセージ自身がその形をしている）。フローで唯一の人間ゲートを機械的に担保している
 # 場所なので、緩い一致で済ませてはいけない。
+#
+# gh issue view の出力を直接 grep -q にパイプしないこと（実測でハマった）。
+# コメントが増えて出力が大きくなると、grep -q は先頭付近でマッチした時点で読み込みをやめて
+# 終了するため、まだ書き込み中の gh 側が SIGPIPE を受けて終了コード 141 で終わる。
+# set -o pipefail の下では、grep 自身はマッチに成功していてもパイプライン全体が失敗扱いになり、
+# 指示書が実在するのに「指示書がありません」で落ちる。一時ファイルに落としてから grep すれば
+# 書き込み側にパイプが無くなるので、この競合は起きない。
 require_instruction() {
-  gh issue view "$ISSUE" --comments 2>/dev/null | grep -q '^<!-- AI-TAG: INSTRUCTION -->' \
+  local tmp matched=1
+  tmp=$(mktemp) || fail "一時ファイルを作れませんでした。"
+  gh issue view "$ISSUE" --comments >"$tmp" 2>/dev/null
+  grep -q '^<!-- AI-TAG: INSTRUCTION -->' "$tmp" || matched=0
+  rm -f "$tmp"
+  [ "$matched" -eq 1 ] \
     || fail "Issue #$ISSUE に指示書がありません。先に make spec を実行し、指示書を人が確認してください。"
 }
 
