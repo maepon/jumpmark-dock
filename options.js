@@ -843,7 +843,7 @@ function showBidirectionalDeleteModal(jumpmark, partner) {
     <div class="modal active" id="bidirectionalDeleteModal">
       <div class="modal-content">
         <h3>${t("bidiDeleteTitle")}</h3>
-        <p>${t("bidiDeleteMessage", [jumpmark.title, partner.title])}</p>
+        <p>${t("bidiDeleteMessage", [escapeHtml(jumpmark.title), escapeHtml(partner.title)])}</p>
         <div class="modal-actions">
           <button id="deleteCancel" class="btn btn-secondary">${t("actionCancel")}</button>
           <button id="deleteOnlyThis" class="btn btn-warning">${t("bidiDeleteOnlyThis")}</button>

@@ -3,6 +3,9 @@ function t(key, substitutions) {
   if (typeof chrome !== "undefined" && chrome.i18n && chrome.i18n.getMessage) {
     const message = chrome.i18n.getMessage(key, substitutions);
     if (message) return message;
+    // キー未定義・_locales の破損・default_locale の誤字などで空文字列が返ったケース。
+    // 例外にはならず画面には生のキー名がそのまま出るだけなので、devtools から気付けるようにする
+    console.warn(`i18n: メッセージが見つかりません（key="${key}"）`);
   }
   return key;
 }
