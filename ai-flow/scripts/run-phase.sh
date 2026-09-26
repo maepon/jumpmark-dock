@@ -1,5 +1,5 @@
 #!/bin/bash
-# フェーズを1つ回す。使い方: ./scripts/run-phase.sh <spec|impl|review|code-review|pr-review> <Issue番号> <IssueURL>
+# フェーズを1つ回す。使い方: ./scripts/run-phase.sh <spec|impl|review|code-review|pr-review|create-pr> <Issue番号> <IssueURL>
 #
 # 人間ゲートは spec の後の1箇所だけ。
 #   spec        : 質問状 または 指示書 を投稿して止まる（人が指示書を確認する）
@@ -10,6 +10,10 @@
 #                 単独で叩くのは、PRはできたのに投稿だけ失敗したときの再実行用
 #   pr-review   : PR への反論（Devil's Advocate）。コストを見て現在メインフローから外してある。
 #                 受入基準そのものを疑わせたいときに人が単独で叩く
+#   create-pr   : push と PR 作成（create_pr）だけを再試行する。レビュー承認・コミット・
+#                 PR タイトル/本文の生成（pr.md）まで済んでいるのに、BASE_BRANCH の設定違いなど
+#                 create_pr 側の事情だけで review の最後が失敗して止まったときに使う。
+#                 review をやり直さない＝レビューコメントやコミットを重複させない
 #
 # 状態は GitHub Issue のコメントに持つ（AI-TAG で種別を識別）。人が同じ場所で経緯を読めるようにするため。
 # ローカルの tmp/ は作業用で、消えても Issue から再開できる。
@@ -343,6 +347,23 @@ $RESULT"
   create_pr
 }
 
+# review の最後（コミット・PR本文の作成 → push・PR作成）のうち、push・PR作成側だけをやり直す。
+# 対象は BASE_BRANCH の設定違いなど create_pr 自身の事情による失敗（origin/<branch> が無い、
+# 一時的な push/API 失敗など）。review-judge やコミットからやり直すと、Issue にレビューコメントが
+# 重複したり、pr.md がもう一度コミットしようとして「差分がない」で失敗したりする。
+# pr.md（コミットと PR 本文の作成）は既に済んでいる前提なので、ここでは呼ばない。
+#
+# create_pr() の通知メッセージは review ループの $round / $RESULT を参照するが、
+# ここでは review をやっていないのでどちらも実体が無い。place-holder を入れて代替する。
+phase_create_pr() {
+  PHASE=create-pr
+  [ -s "$PR_TITLE_FILE" ] && [ -s "$PR_BODY_FILE" ] \
+    || fail "$PR_TITLE_FILE か $PR_BODY_FILE が空です。先に make review でコミットと PR 本文の作成まで進めてください。"
+  round="-"
+  RESULT="(make create-pr で単独実行。実装・レビューの経緯は Issue のコメントを参照してください)"
+  create_pr
+}
+
 # PR ができた後の純粋なコードレビュー。判定ではないので、ここで何が出ても PR は閉じない
 # （マージの判断は人）。review-judge は AC を満たしているかしか見ないため、AC に書かれていない
 # バグ・セキュリティ・エラー処理の抜けをここで補う。
@@ -440,5 +461,6 @@ case "$PHASE" in
   review)      phase_review; phase_code_review ;;
   code-review) phase_code_review ;;
   pr-review)   phase_pr_review ;;
-  *)           fail "不明なフェーズです: ${PHASE}（spec / impl / review / code-review / pr-review のいずれか）" ;;
+  create-pr)   phase_create_pr ;;
+  *)           fail "不明なフェーズです: ${PHASE}（spec / impl / review / code-review / pr-review / create-pr のいずれか）" ;;
 esac

@@ -169,10 +169,14 @@ make help                    # フェーズの一覧
 | `make review ISSUE=n` | `impl` の後半（レビュー以降）だけを回す | PR ができる |
 | `make code-review ISSUE=n` | PR への純粋なコードレビューだけを回す | PR にコメントが付く |
 | `make pr-review ISSUE=n` | PR への反論レビュー（Devil's Advocate）。メインフローからは外してある | PR にコメントが付く |
+| `make create-pr ISSUE=n` | push と PR 作成（`create_pr`）だけをやり直す | PR ができる |
 | `make check` | 静的検査だけを走らせる（各フェーズの前に自動で通る） | — |
 
 `review` を単独で叩くのは、`impl` が収束せずに止まったあと、手で直して再開するときです。
 `code-review` 単独は、PR はできたのに投稿だけ失敗したときの入口です。
+`create-pr` 単独は、レビューは承認済みでコミットも PR タイトル/本文の生成（`pr.md`）も終わっているのに、
+`origin/<BASE_BRANCH>` が見つからない等 `create_pr` 側の事情だけで `review` の最後が失敗して止まったときの
+入口です。`review-judge` からやり直すと Issue にレビューコメントが重複するので、そこはやり直しません。
 
 変数: `ISSUE`（対象Issue番号）、`MAX_ROUNDS`（判定の最大周回数、既定3）、`BASE_BRANCH`（PR のベースブランチ、このリポジトリでは既定 `master`）、
 `REVIEW_JUDGE_MODEL`（実装レビューの判定モデル。`strong` / `fast` か生のモデルIDを受ける。未設定なら強モデル）。
@@ -475,8 +479,8 @@ tmp/                                 作業ファイル（git 管理外。消し
 | `… が基盤ファイルを書き換えました` | `git` で戻してから再実行。**フェーズ中に人が触った場合もこれになります** |
 | `… が整形チェックを通らないファイルを残しました` | フォーマッタを掛けてから `make review` で再開。整形済みなのに出るなら、フォーマッタが入っていないか構文エラー（チェック自体の失敗も止める側に倒してある） |
 | `ブランチ名が feature/ で始まっていません` | 規約。エージェントの実装は残っているのでブランチを切り直す |
-| `案件のコミットに基盤ファイルが混ざっています` | 別コミットに分ける |
-| `origin/… が見つかりません` | `Makefile` の `BASE_BRANCH` が既定ブランチと合っていない。直して `make review` で再開 |
+| `案件のコミットに基盤ファイルが混ざっています` | 別コミットに分ける。**案件ブランチの分岐元が古く、その後 `BASE_BRANCH` に基盤ファイルの更新が積まれただけ**でも起きる（`origin/<BASE_BRANCH>..<branch>` の差分に基盤側の変更が逆向きに出るため）。その場合は案件ブランチを `git rebase origin/<BASE_BRANCH>` してから `make create-pr` |
+| `origin/… が見つかりません` | `Makefile` の `BASE_BRANCH` が既定ブランチと合っていない。直したら、レビューをやり直さず `make create-pr` で再開（`review` から再開すると `review-judge` のコメントが重複する） |
 | `origin/… と差がありません` | エージェントがコミットしていない。`make review` で再開 |
 | `PR が見つかりません` | `code-review` / `pr-review` を単独で叩いたとき、現在のブランチに PR が無い |
 | `MAX_ROUNDS 周しても…承認されませんでした` | **受入基準が曖昧なときにこうなります。** 指示書を見直す |

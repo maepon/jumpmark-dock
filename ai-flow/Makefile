@@ -27,7 +27,7 @@ REVIEW_JUDGE_MODEL ?= $(FAST_MODEL)
 
 export SLACK_WEBHOOK_URL STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL
 
-.PHONY: help spec impl review code-review pr-review check check-env
+.PHONY: help spec impl review code-review pr-review create-pr check check-env
 
 .DEFAULT_GOAL := help
 
@@ -54,6 +54,11 @@ help:
 	@echo
 	@echo "  make pr-review ISSUE=n  PR への反論（Devil's Advocate）だけを回す"
 	@echo "                        現在メインフローから外してある。必要なときに単独で実行する"
+	@echo
+	@echo "  make create-pr ISSUE=n  push と PR 作成（review の最後の一手）だけをやり直す"
+	@echo "                        review 自体は承認済み・コミットも PR 本文もできているのに、"
+	@echo "                        BASE_BRANCH の設定違いなど push/PR作成側の事情だけで"
+	@echo "                        review が失敗して止まったときに使う。review はやり直さない"
 	@echo
 	@echo "  make check            基盤ファイル（scripts / .claude / prompts）の静的検査だけを走らせる"
 	@echo "                        上の各フェーズの前に自動で通るので、普段は単独で呼ばなくてよい"
@@ -96,3 +101,6 @@ code-review: check check-env
 
 pr-review: check check-env
 	@./scripts/run-phase.sh pr-review $(ISSUE) "$(ISSUE_URL)"
+
+create-pr: check check-env
+	@./scripts/run-phase.sh create-pr $(ISSUE) "$(ISSUE_URL)"
