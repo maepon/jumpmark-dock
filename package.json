@@ -1,0 +1,14 @@
+{
+  "name": "jumpmark-dock",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Jumpmark Dock Chrome extension",
+  "scripts": {
+    "format": "prettier --write \"**/*.{js,css,html}\"",
+    "format:check": "prettier --check \"**/*.{js,css,html}\"",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
+  }
+}

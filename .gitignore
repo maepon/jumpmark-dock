@@ -3,8 +3,10 @@
 *.pem
 .DS_Store
 
-# Claude Code settings
-.claude/
+# Claude Code settings（ディレクトリ全体ではなく個人設定ファイルだけを無視する。
+# ai-flow/.claude/*-permissions.json はフロー本体の共有ファイルなのでコミット対象）
+.claude/settings.json
+.claude/settings.local.json
 
 # Temporary files
 *.tmp
@@ -42,3 +44,15 @@ jumpmark-dock-v*.zip
 # Logs
 logs/
 *.log
+
+# Environment variables
+.env
+
+# Temporary files on ai-flow
+tmp/
+ai-flow/tmp/
+
+# グローバル gitignore の `.claude` ルールで無視されるため明示的に復活させる
+# （settings.json / settings.local.json のような個人設定ファイル名は対象に含めない）
+!ai-flow/.claude/
+!ai-flow/.claude/*-permissions.json

@@ -10,11 +10,17 @@ Jumpmark Dock is a Chrome Extension (Manifest V3) that allows users to create bi
 
 ## Development Commands
 
-This is a Chrome extension project with no build process. Development is done directly with the source files:
+This is a Chrome extension project with no build process for the extension itself. Development is done directly with the source files:
 
 ```bash
-# No build/lint/test commands - Chrome extension loads files directly
 # Load extension in Chrome: chrome://extensions/ → "Load unpacked" → select project directory
+
+# Format check / auto-format (Prettier, covers *.js/*.css/*.html)
+npm run format:check
+npm run format
+
+# Run the smoke tests (Node's built-in test runner, targets shared.js logic)
+npm test
 ```
 
 ## Architecture
@@ -90,6 +96,12 @@ Current status: Phase 3 completed. Full-featured import/export system implemente
 - **Cross-device sync**: Jumpmarks automatically sync across devices when Chrome Sync is enabled
 - **Fallback behavior**: Functions as local storage when Chrome Sync is disabled
 - **Limitations**: 102KB storage limit, 512 items max, 4096 bytes per item
+
+## AI-Assisted Development Flow (`ai-flow/`)
+
+`ai-flow/` holds a separate, Claude-Code-headless automation pipeline (spec → plan → implement → review → PR) driven by GitHub Issues (`make spec ISSUE=n`, `make impl ISSUE=n` from inside `ai-flow/`). It is tooling for *this repo's own development process*, not part of the extension. See `ai-flow/docs/ai-workflow-setup.md` for setup and day-to-day operation, and `ai-flow/docs/porting-guide.md` if adapting this flow for another repo.
+
+Files under `ai-flow/Makefile`, `ai-flow/scripts/`, `ai-flow/prompts/`, `ai-flow/.claude/`, `ai-flow/docs/` are "tooling" files maintained by humans directly on the default branch — the automated flow refuses to let agent-driven issue work modify them.
 
 ## Work Session Continuity
 
