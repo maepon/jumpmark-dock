@@ -2,6 +2,7 @@
   "//": "PR 作成後に走るフェーズ（code-review と pr-review）の権限。ベースの phase-permissions.json との違いは2つで、git restore を足し、gh issue comment を外してある。投稿先が Issue ではなく PR で、投稿は run-phase.sh が行うため。ファイル名を settings.json にしない理由は scripts/claude-run.sh の冒頭に書いてある。",
   "//restore": "pr-review の主張2（テストが実装を追認しているだけではないか）を確かめるには、実装を意図的に壊して npm test が落ちるかを見る必要がある。壊したら戻さなければならないので git restore を許可する。これらのフェーズは PR 作成後に走るため差分はコミット済みで、restore で失われるものが無い。implement / review では未コミットの実装が消えるので、ベースのプロファイルには入れない。code-review 側は実装を壊さないので restore は要らないが、どちらのフェーズも run-phase.sh が作業ツリーの前後比較で書き換えを捕まえるため、プロファイルは分けていない。",
   "//pr": "gh pr は deny のまま。反論の本文はファイルに書かせて、PR への投稿は run-phase.sh が行う。コロン形の deny は前置一致でベースコマンドの allow にも勝つ（実測）。",
+  "//node": "node --test:* は、使い捨てのテストファイルで境界入力（new URL() の解釈など）を実行して確かめるために通す。npm test と git restore で任意の実行はすでにできるので、実行面は広がらない。node -e / -p と裸の node は、1コマンドで Read(./.env) の deny を素通りできるので通さない（check-scripts.sh が弾く）。",
   "permissions": {
     "allow": [
       "Bash(gh issue view:*)",
@@ -11,6 +12,7 @@
       "Bash(git status:*)",
       "Bash(git restore:*)",
       "Bash(npm test:*)",
+      "Bash(node --test:*)",
       "Bash(npx prettier:*)",
       "Bash(echo:*)",
       "Bash(node --version)",
