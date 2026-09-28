@@ -117,7 +117,7 @@ function createJumpmarkElement(jumpmark) {
   const div = document.createElement("div");
   div.className = "jumpmark-item";
   div.innerHTML = `
-    <div class="jumpmark-icon">${jumpmark.icon || "🔗"}</div>
+    <div class="jumpmark-icon">${escapeHtml(jumpmark.icon || "🔗")}</div>
     <div class="jumpmark-content">
       <div class="jumpmark-title">${escapeHtml(jumpmark.title)}</div>
       <div class="jumpmark-url">${escapeHtml(jumpmark.url)}</div>

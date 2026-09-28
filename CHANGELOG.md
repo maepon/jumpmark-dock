@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-09-28
+
+### Security
+
+インポートしたJSONの `icon` / `url` に由来するHTML / 属性注入を防ぐため、描画時のエスケープ処理を強化しました。
+
+- **`popup.js`** のJumpmark一覧のアイコン表示を `escapeHtml()` 経由にした
+- **`options.js`** の管理テーブルのアイコン表示を `escapeHtml()` 経由にした
+- **`options.js`** のHTMLエクスポートのアイコン表示を `escapeHtml()` 経由にした
+- **`options.js`** のHTMLエクスポートの `href` 属性値を `escapeHtml()` 経由にした
+
 ## [2.2.0] - 2026-09-26
 
 ### Added

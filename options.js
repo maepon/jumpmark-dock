@@ -395,7 +395,7 @@ async function createJumpmarkRow(jumpmark) {
       <input type="checkbox" ${isSelected ? "checked" : ""} data-id="${jumpmark.id}">
     </td>
     <td class="icon-column">
-      <span class="jumpmark-icon">${jumpmark.icon || "🔗"}</span>
+      <span class="jumpmark-icon">${escapeHtml(jumpmark.icon || "🔗")}</span>
     </td>
     <td class="title-column">
       <div class="jumpmark-title">${escapeHtml(jumpmark.title)}</div>
@@ -1277,11 +1277,11 @@ function exportToHtml(jumpmarks) {
         return `
         <div class="jumpmark">
           <div class="jumpmark-header">
-            <span class="jumpmark-icon">${jm.icon || "🔗"}</span>
+            <span class="jumpmark-icon">${escapeHtml(jm.icon || "🔗")}</span>
             <span class="jumpmark-title">${escapeHtml(jm.title)}</span>
             <span class="jumpmark-type ${typeClass}">${type}</span>
           </div>
-          <a href="${jm.url}" class="jumpmark-url" target="_blank">${escapeHtml(jm.url)}</a>
+          <a href="${escapeHtml(jm.url)}" class="jumpmark-url" target="_blank">${escapeHtml(jm.url)}</a>
           <div class="jumpmark-meta">
             ${t("htmlExportCreated", [new Date(jm.created).toLocaleDateString(getUiLocale())])}${jm.sourceUrl ? ` | ${t("htmlExportSource", [escapeHtml(jm.sourceUrl)])}` : ""}
           </div>
