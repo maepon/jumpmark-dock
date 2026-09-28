@@ -98,6 +98,7 @@ test("options.html script order keeps the quote-escaping escapeHtml() active in 
 
   const sandbox = {
     console,
+    URL,
     document: {
       createElement,
       getElementById: () => null,
@@ -127,6 +128,12 @@ test("options.html script order keeps the quote-escaping escapeHtml() active in 
   assert.ok(
     result.content.includes("&quot;"),
     'exportToHtml() href should escape " via the options.js escapeHtml(), not silently fall back to a version that does not escape quotes',
+  );
+  assert.ok(
+    result.content.includes(
+      '<a href="https://example.com/&quot;&gt;&lt;script&gt;',
+    ),
+    "exportToHtml() should render an https URL as an <a href> anchor (not fall back to the unsafe-scheme <span>)",
   );
   assert.strictEqual(
     result.content.includes('"><script>alert(1)</script>'),

@@ -1249,6 +1249,8 @@ function exportToHtml(jumpmarks) {
     .type-wildcard { background-color: #f3e5f5; color: #7b1fa2; }
     .jumpmark-url { color: #1a73e8; text-decoration: none; font-size: 14px; }
     .jumpmark-url:hover { text-decoration: underline; }
+    .jumpmark-url-unsafe { color: #666; }
+    .jumpmark-url-unsafe:hover { text-decoration: none; }
     .jumpmark-meta { font-size: 12px; color: #666; margin-top: 8px; }
   </style>
 </head>
@@ -1281,7 +1283,11 @@ function exportToHtml(jumpmarks) {
             <span class="jumpmark-title">${escapeHtml(jm.title)}</span>
             <span class="jumpmark-type ${typeClass}">${type}</span>
           </div>
-          <a href="${escapeHtml(jm.url)}" class="jumpmark-url" target="_blank">${escapeHtml(jm.url)}</a>
+          ${
+            isSafeLinkUrl(jm.url)
+              ? `<a href="${escapeHtml(jm.url)}" class="jumpmark-url" target="_blank">${escapeHtml(jm.url)}</a>`
+              : `<span class="jumpmark-url jumpmark-url-unsafe">${escapeHtml(jm.url)}</span>`
+          }
           <div class="jumpmark-meta">
             ${t("htmlExportCreated", [new Date(jm.created).toLocaleDateString(getUiLocale())])}${jm.sourceUrl ? ` | ${t("htmlExportSource", [escapeHtml(jm.sourceUrl)])}` : ""}
           </div>
@@ -1316,6 +1322,17 @@ function escapeCSV(str) {
     return `"${stringValue.replace(/"/g, '""')}"`;
   }
   return stringValue;
+}
+
+// エクスポートHTMLでリンク化してよいURLか判定（http/https のみ許可）
+function isSafeLinkUrl(url) {
+  if (typeof url !== "string") return false;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "http:" || protocol === "https:";
+  } catch (error) {
+    return false;
+  }
 }
 
 // HTML用エスケープ
