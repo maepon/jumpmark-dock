@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Jumpmark Dock",
   "default_locale": "en",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "__MSG_extDescription__",
   "icons": {
     "16": "icons/icon_16x16.png",

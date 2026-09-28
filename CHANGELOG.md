@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-09-29
+
+### Security
+
+HTMLエクスポートで、`javascript:` などの危険なスキームを持つURLがクリック可能なリンクとして書き出されるのを防ぎました。
+
+- **`options.js`** のHTMLエクスポートで、`http:` / `https:` 以外のスキームの URL を `<a href>` ではなくリンクでないテキスト（`<span>`）として出力するようにした
+- **`options.js`** に判定関数 `isSafeLinkUrl()` を追加した（`new URL().protocol` で判定し、パース失敗・文字列以外は安全側で非リンク扱い）
+
 ## [2.2.1] - 2026-09-28
 
 ### Security
