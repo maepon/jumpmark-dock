@@ -4,6 +4,7 @@
   "//write": "Write / Edit にパスを付けたルールは allow も deny も一切マッチしない（実測）。裸で渡すしかないので、基盤ファイルの保護は run-phase.sh の作業ツリー検査で行う（data/ は gitignore 対象で検査に出ないので、プロンプトで禁じるしかない）。Read のパス指定は効くので .env は deny できる。",
   "//grep": "grep / cat / sed / awk / head は allow しない。ファイルを読める汎用コマンドを1つ通すと Read(./.env) の deny を素通りできるため。エージェントが grep へのパイプを拒否されるのは想定どおりで、Read で代替させる。",
   "//git-c": "git -C <path> ... も allow しない。Bash のマッチは前置文字列なので、git -C . push が git push の deny をすり抜けるため。エージェントが繰り返し試すが、通してはいけない。",
+  "//node": "node --test:* は、使い捨てのテストファイルで挙動（new URL() の解釈など）を単体で確かめるために通す。npm test で任意の JS がすでに走るので、実行面は広がらない。node -e / -p と裸の node は、1コマンドで Read(./.env) の deny を素通りできるので通さない（check-scripts.sh が弾く）。",
   "permissions": {
     "allow": [
       "Bash(gh issue view:*)",
@@ -13,6 +14,7 @@
       "Bash(git log:*)",
       "Bash(git status:*)",
       "Bash(npm test:*)",
+      "Bash(node --test:*)",
       "Bash(npx prettier:*)",
       "Bash(echo:*)",
       "Bash(node --version)",
