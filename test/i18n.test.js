@@ -67,8 +67,9 @@ function extractCallArguments(source, calleeName) {
 
 // source 中の `.textContent =` / `.innerHTML =`（`+=` も対象。プロパティ名と `=` の間・
 // `=` の後ろの空白や改行は許容。`==`/`===`/`!==` は対象外）の代入右辺を、
-// バッククォート文字列の開閉を追跡しつつ、深さ0の `;` またはファイル末尾までを終端
-// として切り出し、右辺の生テキストを配列で返す。
+// 文字列/テンプレートリテラルの開閉を追跡しつつ、深さ0の `;`、代入を包んでいる括弧が
+// 閉じる位置（深さが 0 未満になる位置。閉じ括弧自体は右辺に含めない）、またはファイル
+// 末尾までを終端として切り出し、右辺の生テキストを配列で返す。
 function extractAssignmentRhs(source, propertyNames) {
   const results = [];
 
@@ -107,6 +108,7 @@ function extractAssignmentRhs(source, propertyNames) {
           depth++;
         } else if (ch === ")" || ch === "]" || ch === "}") {
           depth--;
+          if (depth < 0) break;
         } else if (ch === ";" && depth === 0) {
           break;
         }
@@ -595,6 +597,56 @@ test("detects Japanese message keys passed to t()", () => {
     detects('x.textContent = t("日本語");'),
     true,
     "AC-9: Japanese key",
+  );
+});
+
+test("extractAssignmentRhs stops at the closing bracket that wraps the assignment", () => {
+  const wrapped =
+    'els.forEach((el) => (el.textContent = t("a")));\nfoo();\n// 日本語のコメント\nx.innerHTML = "ok";\n';
+  assert.deepStrictEqual(
+    extractAssignmentRhs(wrapped, ["textContent", "innerHTML"]),
+    [' t("a")', ' "ok"'],
+    "AC-1: extractAssignmentRhs stops at wrapping )",
+  );
+  assert.deepStrictEqual(
+    findUntranslatedJapanese(wrapped, "synthetic"),
+    [],
+    "AC-2: trailing Japanese comment is not reported",
+  );
+  assert.deepStrictEqual(
+    extractAssignmentRhs(
+      'els.forEach((el) => (el.textContent = t("a")));\nx.textContent = "b";\n',
+      ["textContent"],
+    ),
+    [' t("a")', ' "b"'],
+    "AC-3: later assignment to the same property is extracted separately",
+  );
+  assert.strictEqual(
+    detects(
+      'els.forEach((el) => (el.textContent = t("a")));\nx.textContent = "日本語";\n',
+    ),
+    true,
+    "AC-4: Japanese in a later assignment is still detected",
+  );
+  assert.deepStrictEqual(
+    extractAssignmentRhs(
+      'els.forEach((el) => { el.textContent = t("a") });\n// 日本語のコメント\n',
+      ["textContent"],
+    ),
+    [' t("a") '],
+    "AC-5: extractAssignmentRhs stops at wrapping }",
+  );
+  assert.deepStrictEqual(
+    extractAssignmentRhs('x.textContent = t("k", [f(a), g(b)]);', [
+      "textContent",
+    ]),
+    [' t("k", [f(a), g(b)])'],
+    "AC-6: inner closing brackets do not stop the scan",
+  );
+  assert.deepStrictEqual(
+    extractAssignmentRhs("x.innerHTML = `<p>)}]</p>`;", ["innerHTML"]),
+    [" `<p>)}]</p>`"],
+    "AC-7: closing brackets inside template literals do not stop the scan",
   );
 });
 
