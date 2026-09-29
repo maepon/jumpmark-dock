@@ -182,12 +182,22 @@ read_verdict() {
 # set -o pipefail の下では、grep 自身はマッチに成功していてもパイプライン全体が失敗扱いになり、
 # 指示書が実在するのに「指示書がありません」で落ちる。一時ファイルに落としてから grep すれば
 # 書き込み側にパイプが無くなるので、この競合は起きない。
+#
+# gh の失敗は「指示書が無い」と区別して止める。以前は stderr を捨てていたため、認証切れや
+# 一時的な API エラーでも「指示書がありません」と出て、原因が分からなかった（実測）。
 require_instruction() {
-  local tmp matched=1
+  local tmp err matched=1
   tmp=$(mktemp) || fail "一時ファイルを作れませんでした。"
-  gh issue view "$ISSUE" --comments >"$tmp" 2>/dev/null
+  err=$(mktemp) || { rm -f "$tmp"; fail "一時ファイルを作れませんでした。"; }
+  if ! gh issue view "$ISSUE" --comments >"$tmp" 2>"$err"; then
+    local msg
+    msg=$(tail -n 5 "$err")
+    rm -f "$tmp" "$err"
+    fail "Issue #${ISSUE} を gh で取得できませんでした（指示書の有無は未確認）。gh auth status を確認して再実行してください:
+${msg}"
+  fi
   grep -q '^<!-- AI-TAG: INSTRUCTION -->' "$tmp" || matched=0
-  rm -f "$tmp"
+  rm -f "$tmp" "$err"
   [ "$matched" -eq 1 ] \
     || fail "Issue #$ISSUE に指示書がありません。先に make spec を実行し、指示書を人が確認してください。"
 }
