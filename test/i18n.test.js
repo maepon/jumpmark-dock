@@ -65,21 +65,22 @@ function extractCallArguments(source, calleeName) {
   return results;
 }
 
-// source 中の `.textContent =` / `.innerHTML =`（`===`/`!==` は対象外）の代入右辺を、
+// source 中の `.textContent =` / `.innerHTML =`（`+=` も対象。プロパティ名と `=` の間・
+// `=` の後ろの空白や改行は許容。`==`/`===`/`!==` は対象外）の代入右辺を、
 // バッククォート文字列の開閉を追跡しつつ、深さ0の `;` またはファイル末尾までを終端
 // として切り出し、右辺の生テキストを配列で返す。
 function extractAssignmentRhs(source, propertyNames) {
   const results = [];
 
   for (const prop of propertyNames) {
-    const marker = `.${prop} = `;
-    let searchFrom = 0;
+    const escapedProp = prop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const markerRe = new RegExp(`\\.${escapedProp}\\s*\\+?=(?![=>])`, "g");
 
     while (true) {
-      const idx = source.indexOf(marker, searchFrom);
-      if (idx === -1) break;
+      const match = markerRe.exec(source);
+      if (match === null) break;
 
-      const start = idx + marker.length;
+      const start = match.index + match[0].length;
       let i = start;
       let depth = 0;
       let inTemplate = false;
@@ -113,15 +114,16 @@ function extractAssignmentRhs(source, propertyNames) {
       }
 
       results.push(source.slice(start, i));
-      searchFrom = i + 1;
+      markerRe.lastIndex = i + 1;
     }
   }
 
   return results;
 }
 
-// text 中に含まれる t(...) 呼び出し（extractCallArguments と同じ括弧深さ追跡）を
-// 呼び出し全体ごと取り除いたテキストを返す。
+// text 中に含まれる t(...) 呼び出しのうち、`t(` とメッセージキー（英数字と `_` のみの
+// 第1引数の文字列リテラル）だけを取り除いたテキストを返す。第2引数以降（substitution）は
+// 検査対象として残す。キーが英数字と `_` 以外を含む場合は何も除去しない。
 function stripTranslatedCalls(text) {
   let result = "";
   let i = 0;
@@ -133,38 +135,11 @@ function stripTranslatedCalls(text) {
       text[i + 1] === "(" &&
       !/[A-Za-z0-9_$]/.test(prevCh)
     ) {
-      let depth = 1;
-      let j = i + 2;
-      let inTemplate = false;
-      let inSingle = false;
-      let inDouble = false;
-
-      while (j < text.length && depth > 0) {
-        const ch = text[j];
-        const prevCh2 = text[j - 1];
-
-        if (inTemplate) {
-          if (ch === "`" && prevCh2 !== "\\") inTemplate = false;
-        } else if (inSingle) {
-          if (ch === "'" && prevCh2 !== "\\") inSingle = false;
-        } else if (inDouble) {
-          if (ch === '"' && prevCh2 !== "\\") inDouble = false;
-        } else if (ch === "`") {
-          inTemplate = true;
-        } else if (ch === "'") {
-          inSingle = true;
-        } else if (ch === '"') {
-          inDouble = true;
-        } else if (ch === "(") {
-          depth++;
-        } else if (ch === ")") {
-          depth--;
-        }
-        j++;
+      const keyMatch = /^\s*(["'])[A-Za-z0-9_]+\1/.exec(text.slice(i + 2));
+      if (keyMatch) {
+        i += 2 + keyMatch[0].length;
+        continue;
       }
-
-      i = j;
-      continue;
     }
 
     result += text[i];
@@ -455,38 +430,172 @@ test("data-i18n* attribute values reference defined en keys", () => {
   assert.deepStrictEqual(missing, []);
 });
 
-test("UI sinks (.textContent=/.innerHTML=/alert/showStatusMessage/showIEStatus/showEditError/new Error) never receive untranslated Japanese text", () => {
-  const files = ["popup.js", "options.js", "shared.js", "i18n.js"];
+const SINK_CALLS = [
+  "alert",
+  "showStatusMessage",
+  "showIEStatus",
+  "showEditError",
+  "new Error",
+];
+const SINK_PROPERTIES = ["textContent", "innerHTML"];
+
+// 呼び出し引数と代入右辺の 2 段階判定を source に適用し、違反の説明文字列を配列で返す。
+// label は違反メッセージの先頭に付ける（実ファイルではファイル名）。
+function findUntranslatedJapanese(source, label) {
   const violations = [];
 
-  for (const file of files) {
-    const source = readSource(file);
-
-    for (const sink of [
-      "alert",
-      "showStatusMessage",
-      "showIEStatus",
-      "showEditError",
-      "new Error",
-    ]) {
-      for (const arg of extractCallArguments(source, sink)) {
-        if (hasUntranslatedJapanese(arg)) {
-          violations.push(`${file}: ${sink}(${arg})`);
-        }
-      }
-    }
-
-    for (const rhs of extractAssignmentRhs(source, [
-      "textContent",
-      "innerHTML",
-    ])) {
-      if (hasUntranslatedJapanese(rhs)) {
-        violations.push(`${file}: assignment = ${rhs}`);
+  for (const sink of SINK_CALLS) {
+    for (const arg of extractCallArguments(source, sink)) {
+      if (hasUntranslatedJapanese(arg)) {
+        violations.push(`${label}: ${sink}(${arg})`);
       }
     }
   }
 
+  for (const rhs of extractAssignmentRhs(source, SINK_PROPERTIES)) {
+    if (hasUntranslatedJapanese(rhs)) {
+      violations.push(`${label}: assignment = ${rhs}`);
+    }
+  }
+
+  return violations;
+}
+
+test("UI sinks (.textContent=/+=, .innerHTML=/+=, alert/showStatusMessage/showIEStatus/showEditError/new Error) never receive untranslated Japanese text", () => {
+  const files = ["popup.js", "options.js", "shared.js", "i18n.js"];
+  const violations = [];
+
+  for (const file of files) {
+    violations.push(...findUntranslatedJapanese(readSource(file), file));
+  }
+
   assert.deepStrictEqual(violations, []);
+});
+
+function detects(source) {
+  return findUntranslatedJapanese(source, "synthetic").length > 0;
+}
+
+test("detects untranslated Japanese in assignments (newline/whitespace/+=)", () => {
+  assert.strictEqual(
+    detects('x.textContent =\n  "日本語";'),
+    true,
+    "AC-1: newline after =",
+  );
+  assert.strictEqual(
+    detects("x.innerHTML =\n  `<p>日本語</p>`;"),
+    true,
+    "AC-2: template literal on next line",
+  );
+  assert.strictEqual(
+    detects('x.textContent\n  = "日本語";'),
+    true,
+    "AC-3: newline before =",
+  );
+  assert.strictEqual(
+    detects('x.textContent="日本語";'),
+    true,
+    "AC-4: no whitespace around =",
+  );
+  assert.strictEqual(
+    detects('x.textContent += "日本語";'),
+    true,
+    "AC-5: textContent +=",
+  );
+  assert.strictEqual(
+    detects('x.innerHTML +=\n  "<b>日本語</b>";'),
+    true,
+    "AC-5: innerHTML += with newline",
+  );
+});
+
+test("does not treat comparisons as assignments", () => {
+  assert.strictEqual(
+    detects('if (x.textContent === "日本語") {}'),
+    false,
+    "AC-6: ===",
+  );
+  assert.strictEqual(
+    detects('if (x.textContent == "日本語") {}'),
+    false,
+    "AC-6: ==",
+  );
+  assert.strictEqual(
+    detects('if (x.innerHTML !== "日本語") {}'),
+    false,
+    "AC-6: !==",
+  );
+});
+
+test("detects Japanese literals inside t() substitutions", () => {
+  assert.strictEqual(
+    detects('x.textContent = t("someKey", ["日本語"]);'),
+    true,
+    "AC-7: single-line substitution",
+  );
+  assert.strictEqual(
+    detects('x.textContent =\n  t("someKey", [\n    "日本語",\n  ]);'),
+    true,
+    "AC-7: multi-line substitution",
+  );
+  assert.strictEqual(
+    detects('showStatusMessage(t("someKey", [String(n), "日本語"]));'),
+    true,
+    "AC-7: showStatusMessage argument",
+  );
+  assert.strictEqual(
+    detects('x.textContent = t("someKey", [t("otherKey", ["日本語"])]);'),
+    true,
+    "AC-7: nested t() substitution",
+  );
+});
+
+test("does not flag properly translated t() usage", () => {
+  assert.strictEqual(
+    detects('x.textContent = t("someKey");'),
+    false,
+    "AC-8: plain key",
+  );
+  assert.strictEqual(
+    detects("x.textContent = t('someKey');"),
+    false,
+    "AC-8: single-quoted key",
+  );
+  assert.strictEqual(
+    detects('x.textContent = t("someKey", [String(count)]);'),
+    false,
+    "AC-8: substitution without literal",
+  );
+  assert.strictEqual(
+    detects('x.textContent = t("someKey", [t("otherKey")]);'),
+    false,
+    "AC-8: nested t() without literal",
+  );
+  assert.strictEqual(
+    detects('x.innerHTML = `<p>${t("someKey", [escapeHtml(title)])}</p>`;'),
+    false,
+    "AC-8: t() inside template literal",
+  );
+  assert.strictEqual(
+    detects("el.textContent = t(el.dataset.i18n);"),
+    false,
+    "AC-8: non-literal key",
+  );
+  assert.strictEqual(
+    detects(
+      'showStatusMessage(t("statusLoaded", [String(allJumpmarks.length)]));',
+    ),
+    false,
+    "AC-8: showStatusMessage with t()",
+  );
+});
+
+test("detects Japanese message keys passed to t()", () => {
+  assert.strictEqual(
+    detects('x.textContent = t("日本語");'),
+    true,
+    "AC-9: Japanese key",
+  );
 });
 
 test("HTML text nodes in popup.html/options.html contain no untranslated Japanese", () => {
