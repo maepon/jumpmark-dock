@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/chrome-store-description.md` の tabs 権限の説明を同様に改訂した
 - `docs/privacy-policy.md` から根拠のない「暗号化」の記述を削除し、「外部送信・外部通信なし」「処理はブラウザ内で完結」の記述を、Chrome 同期を有効にしている場合の Google を経由した同期を除く形に改めた
 - `docs/chrome-store-description.md` の「データ暗号化」「外部サーバーへの通信は一切なし」「処理はブラウザ内で完結」の記述を同様に改めた
+- `docs/privacy-policy.md` の「ローカルで保存」「ローカルストレージ」「ローカルで管理」の記述を、`chrome.storage.sync` に保存し、Chrome 同期を有効にしている場合は Google のサーバーを経由して同期される、という実際の挙動に合わせて改めた。見出し「ローカルストレージ」を「データの保存先」に、「自動削除」を「アンインストール時の扱い」に改め、アンインストールでデータが削除されると断言する記述をやめた
+- `docs/chrome-store-description.md` の storage 権限の用途にある「ローカルストレージに保存」を、`chrome.storage.sync` に保存する旨に改めた
 
 ## [2.2.2] - 2026-09-29
 
