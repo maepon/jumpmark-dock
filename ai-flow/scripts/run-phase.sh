@@ -177,6 +177,26 @@ read_verdict() {
   tr -d '[:space:]' < "$VERDICT_FILE" | tr '[:lower:]' '[:upper:]'
 }
 
+# 計画・実装の判定ループ共通の分岐。APPROVED なら 0（ループを抜ける）、CHANGES_REQUESTED なら 1（次の周へ）。
+# NEEDS_HUMAN は周回を待たずに halt する。判定役が「改訂・修正役にはどう直しても解消できない」
+# と判断したもの（AC どうしの矛盾、指示書の前提違いなど）で、回しても空回りするだけのため
+# （#9 で AC-13 と AC-15 が両立せず、MAX_ROUNDS の3周を空費した）。
+# 使い方: handle_verdict <判定> <段階名> <再開コマンド>
+handle_verdict() {
+  local verdict="$1" stage="$2" resume="$3"
+  case "$verdict" in
+    APPROVED) return 0 ;;
+    CHANGES_REQUESTED) return 1 ;;
+    NEEDS_HUMAN)
+      halt "${stage}の判定が人の判断を求めています（NEEDS_HUMAN）。" ":raising_hand: *${PHASE} — ${stage}に人の判断が必要です*
+判定役が、受入基準の矛盾や指示書の前提違いなど、指示書の範囲では解消できない未達を報告しました。Issue の最新の判定コメントを読み、指示書を直して新しい INSTRUCTION を投稿してから ${resume} で再開してください。
+
+$RESULT" ;;
+    *)
+      fail "判定ファイルの内容が想定外です: '${verdict}'（APPROVED / CHANGES_REQUESTED / NEEDS_HUMAN のいずれかを期待）。" ;;
+  esac
+}
+
 # 人間ゲートの実効化。指示書が無いのに先へ進めない。
 # 行頭のタグそのものを探す。部分一致にすると「指示書（AI-TAG: INSTRUCTION）がありません」と
 # 書いた人のコメントや、このフローについて論じたコメントに当たってゲートが通ってしまう
@@ -314,9 +334,7 @@ phase_impl() {
     : > "$VERDICT_FILE"
     run_step "指示書との齟齬判定 ${round}/${MAX_ROUNDS} 周" prompts/plan-judge.md "$REVIEW_JUDGE"
     verdict=$(read_verdict)
-    [ "$verdict" = "APPROVED" ] && break
-    [ "$verdict" = "CHANGES_REQUESTED" ] \
-      || fail "判定ファイルの内容が想定外です: '$verdict'（APPROVED か CHANGES_REQUESTED を期待）。"
+    handle_verdict "$verdict" "計画" "make impl ISSUE=${ISSUE}" && break
     if [ "$round" -ge "$MAX_ROUNDS" ]; then
       halt "${MAX_ROUNDS}周しても計画が承認されませんでした。" ":raising_hand: *impl — 計画が収束しませんでした*
 ${MAX_ROUNDS}周しても指示書との齟齬が解消しませんでした。Issue のやり取りを読んで、指示書の受入基準を見直してください。受入基準が曖昧なときにこうなります。
@@ -345,9 +363,7 @@ phase_review() {
     : > "$VERDICT_FILE"
     run_step "実装レビュー ${round}/${MAX_ROUNDS} 周" prompts/review-judge.md "$REVIEW_JUDGE"
     verdict=$(read_verdict)
-    [ "$verdict" = "APPROVED" ] && break
-    [ "$verdict" = "CHANGES_REQUESTED" ] \
-      || fail "判定ファイルの内容が想定外です: '$verdict'（APPROVED か CHANGES_REQUESTED を期待）。"
+    handle_verdict "$verdict" "実装" "make review ISSUE=${ISSUE}" && break
     if [ "$round" -ge "$MAX_ROUNDS" ]; then
       halt "${MAX_ROUNDS}周しても実装が承認されませんでした。" ":raising_hand: *review — レビューが収束しませんでした*
 ${MAX_ROUNDS}周しても受入基準の未達が残りました。作業ツリーの差分と Issue のやり取りを確認してください。

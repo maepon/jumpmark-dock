@@ -73,6 +73,18 @@ LC_ALL=C grep -qF '<!-- AI-TAG: INSTRUCTION -->' prompts/spec.md \
 LC_ALL=C grep -qF "'^<!-- AI-TAG: INSTRUCTION -->'" scripts/run-phase.sh \
   || ng "scripts/run-phase.sh の require_instruction が行頭アンカー付きで指示書タグを探していません。本文中の言及に一致してゲートが無効になります。"
 
+# 4b. 判定語の対応。判定役のプロンプトが書かせる語を run-phase.sh の handle_verdict が
+#     全部処理しているか。プロンプトにだけ語を足すと fail（想定外の判定）で止まり、
+#     handle_verdict からだけ消すと NEEDS_HUMAN が「想定外」扱いになって即時停止が効かなくなる。
+for word in APPROVED CHANGES_REQUESTED NEEDS_HUMAN; do
+  for p in prompts/plan-judge.md prompts/review-judge.md; do
+    LC_ALL=C grep -qF "verdict=${word} -->" "${p}" \
+      || ng "${p} が判定タグ verdict=${word} を書かせていません。"
+  done
+  LC_ALL=C grep -qE "^    ${word}\)" scripts/run-phase.sh \
+    || ng "scripts/run-phase.sh の handle_verdict が ${word} を処理していません。"
+done
+
 # 5. ベースブランチの直書き。PR のベースは Makefile の BASE_BRANCH だけで決める。
 #    直書きが1つ残ると、BASE_BRANCH を変えたときにそこだけ古いブランチを見る。
 #    create_pr の混入検査がそうなると git diff のエラーを飲んで素通りする（静かに壊れる）。
