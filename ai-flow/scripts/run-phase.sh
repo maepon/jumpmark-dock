@@ -133,12 +133,16 @@ FORMAT_FIX="npx prettier --write"
 # 変更・追加されたファイルが整形済みかを見る。ここでは整形しない。
 # シェルが勝手に書き換えると、レビュアーが読んだ差分と実際の差分が食い違うため。
 # 対象は作業ツリーに出ているファイルだけなので、コミット済みのファイルは巻き込まない。
+# worktree_paths のパスはリポジトリのルートからの相対なので、ルートを前置してから見る。
+# 前置しないと ai-flow/ から見て存在しないことになり、案件のファイルが全部素通りしていた（実測）。
 unformatted_files() {
-  local f out=""
+  local f root out=""
+  root=$(git rev-parse --show-toplevel) || { printf '(git rev-parse --show-toplevel が失敗)\n'; return; }
   while IFS= read -r f; do
+    [ -n "$f" ] || continue
     format_target "$f" || continue
-    [ -f "$f" ] || continue   # 削除・リネーム元は対象外
-    format_ok "$f" || out="$out$f
+    [ -f "${root}/${f}" ] || continue   # 削除・リネーム元は対象外
+    format_ok "${root}/${f}" || out="$out$f
 "
   done <<EOF
 $(worktree_paths)
