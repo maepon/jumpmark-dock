@@ -141,7 +141,7 @@ tmp/
 cp .env.example .env
 # .env の SLACK_WEBHOOK_URL に Incoming Webhook の URL を書く（Makefile の構文。make が include する）
 
-./scripts/check-scripts.sh   # 静的検査。課金なし
+./scripts/check-scripts.sh   # 静的検査と回帰テスト（selftest.sh）。課金なし
 make check-env               # 環境変数の検査。課金なし
 make help                    # フェーズの一覧
 ```
@@ -171,7 +171,7 @@ make help                    # フェーズの一覧
 | `make code-review ISSUE=n` | PR への純粋なコードレビューだけを回す | PR にコメントが付く |
 | `make pr-review ISSUE=n` | PR への反論レビュー（Devil's Advocate）。メインフローからは外してある | PR にコメントが付く |
 | `make create-pr ISSUE=n` | push と PR 作成（`create_pr`）だけをやり直す | PR ができる |
-| `make check` | 静的検査だけを走らせる（各フェーズの前に自動で通る） | — |
+| `make check` | 静的検査と `run-phase.sh` の回帰テスト（`scripts/selftest.sh`）を走らせる（各フェーズの前に自動で通る） | — |
 
 `review` を単独で叩くのは、`impl` が収束せずに止まったあと、手で直して再開するときです。
 `code-review` 単独は、PR はできたのに投稿だけ失敗したときの入口です。
@@ -397,6 +397,7 @@ scripts/
   run-phase.sh                       フローの筋書き。フェーズの進行、検査、push、PR 作成、通知
   claude-run.sh                      Claude Code を1回ヘッドレス実行する。冒頭に権限の実測メモ
   check-scripts.sh                   基盤ファイルの静的検査（各フェーズの前に走る）
+  selftest.sh                        run-phase.sh の関数の回帰テスト（check-scripts.sh から呼ぶ。gh / npx はスタブ）
   notify-slack.sh                    Slack 通知
 
 prompts/

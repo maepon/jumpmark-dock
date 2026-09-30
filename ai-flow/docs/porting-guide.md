@@ -18,6 +18,7 @@
 | `scripts/run-phase.sh` | 432 | **1箇所書き換え**（整形チェック）＋ コメントの事情説明 |
 | `scripts/claude-run.sh` | 110 | **そのまま**（言語非依存。冒頭の実測メモも一緒に運ぶ） |
 | `scripts/check-scripts.sh` | 87 | **そのまま** |
+| `scripts/selftest.sh` | 179 | **期待値を合わせる**（`TOOLING_PATHS` や整形の対象拡張子を変えたら、`tooling_state` / `unformatted_files` の節の期待値も直す） |
 | `scripts/notify-slack.sh` | 37 | **そのまま** |
 | `prompts/_rules.md` | 54 | **後半を全面書き換え**（最もリポジトリ固有） |
 | `prompts/spec.md` | 63 | 事故例とドキュメント名を差し替え |
@@ -231,6 +232,10 @@ TOOLING_PATHS='^(Makefile|scripts/|prompts/|\.claude/|docs/|\.gitignore|\.env\.e
 前置しないと、フロー自身の `scripts/` などの改変は素通りし、ルートの同名ディレクトリ（案件の `docs/` など）は
 基盤扱いされて止まります（jumpmark-dock では
 `'^(ai-flow/(Makefile|scripts/|prompts/|\.claude/|docs/|\.env\.example)|\.gitignore)'`）。
+同じ理由で、各ステップ後の整形チェック（`unformatted_files`）もルートを前置してファイルを見ます。
+前置しないとサブディレクトリから見て案件のファイルが「存在しない」扱いになり、整形チェックが素通りします。
+どちらも `scripts/selftest.sh` が、`ai-flow/` を持つ使い捨てリポジトリをサブディレクトリから操作して検査しています。
+移植先でパスの定義を変えたら、`selftest.sh` の期待値（`tooling_state` の節）も合わせてください。
 
 移植先では `renovate.json` を実在するものに入れ替え、CI 設定（`.github/workflows/`）を含めるかを決めてください。
 含めると、エージェントに CI を触らせない代わりに、CI 変更を人が別コミットで入れる運用が必須になります。

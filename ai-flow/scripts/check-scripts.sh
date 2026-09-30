@@ -95,5 +95,9 @@ if [ -n "${offenders}" ]; then
 ${offenders}"
 fi
 
+# 6. run-phase.sh の関数の回帰テスト（静的検査では見えない、動かして初めて分かるバグ）。
+#    gh / npx はスタブに差し替えるので課金もネットワークも無い。数秒で終わる
+./scripts/selftest.sh || ng "scripts/selftest.sh の回帰テストが失敗しました（上の NG を参照）。"
+
 [ "${status}" -eq 0 ] && echo "check: 基盤ファイルの静的検査は問題なしです。"
 exit "${status}"
