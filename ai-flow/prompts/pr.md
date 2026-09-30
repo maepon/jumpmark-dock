@@ -18,7 +18,7 @@ Issue #{{ISSUE}} の**承認済みの実装をコミットし、PR の題材を�
 
 4. **この案件の変更だけ**をステージする
 
-   基盤ファイル（`Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.gitignore`、`.env.example`、`renovate.json`）は
+   基盤ファイル（`ai-flow/` 配下の `Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.env.example` と、ルートの `.gitignore`）は
    **絶対に含めない**。この案件の変更と基盤の変更は別コミットにする決まりで、基盤は人が {{BASE_BRANCH}} に
    直接入れる。混ざっていたらステージせず、その旨を返答に書く
    （make が同じ検査をするので、含めるとそこで止まります）

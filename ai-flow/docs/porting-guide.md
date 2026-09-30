@@ -226,6 +226,12 @@ TOOLING_PATHS='^(Makefile|scripts/|prompts/|\.claude/|docs/|\.gitignore|\.env\.e
 これが2箇所で効きます。①各ステップ後にエージェントがここを書き換えていたら中断（`tooling_state()` / `:151-154`）
 ②案件のコミットに混ざっていたら PR を作らない（`create_pr()` / `:199-206`）。
 
+**フローをサブディレクトリ（例: `ai-flow/`）に置く場合は、各パスにそのディレクトリを前置します。**
+`git status --porcelain` / `git diff --name-only` のパスは、どこで実行してもリポジトリのルートからの相対になるためです。
+前置しないと、フロー自身の `scripts/` などの改変は素通りし、ルートの同名ディレクトリ（案件の `docs/` など）は
+基盤扱いされて止まります（jumpmark-dock では
+`'^(ai-flow/(Makefile|scripts/|prompts/|\.claude/|docs/|\.env\.example)|\.gitignore)'`）。
+
 移植先では `renovate.json` を実在するものに入れ替え、CI 設定（`.github/workflows/`）を含めるかを決めてください。
 含めると、エージェントに CI を触らせない代わりに、CI 変更を人が別コミットで入れる運用が必須になります。
 

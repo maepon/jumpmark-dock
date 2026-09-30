@@ -56,8 +56,11 @@ PR_REVIEW_FILE="./tmp/issue$ISSUE-pr-review.md"
 PR_URL=""
 
 # 基盤ファイル。案件のコミットに混ざってはいけない（基盤は人が BASE_BRANCH に直接入れる。一覧は prompts/pr.md と揃える）
-# docs/ はフロー自体の移植手順と導入ガイドの置き場所。案件のドキュメント更新は README.md / CHANGELOG.md なので当たらない。
-TOOLING_PATHS='^(Makefile|scripts/|prompts/|\.claude/|docs/|\.gitignore|\.env\.example|renovate\.json)'
+# git status --porcelain / git diff --name-only のパスは、ai-flow/ で実行してもリポジトリのルートからの相対になる。
+# そのため ai-flow/ を付けて書く。付けないと ai-flow/scripts/ などの改変が素通りし、逆にルートの docs/
+# （プライバシーポリシーなど案件のドキュメント）が基盤扱いされて止まる（#10 で発覚、実測）。
+# ai-flow/docs/ はフロー自体の移植手順と導入ガイドの置き場所。.gitignore はルートにあり ai-flow/ 用の規則を含む。
+TOOLING_PATHS='^(ai-flow/(Makefile|scripts/|prompts/|\.claude/|docs/|\.env\.example)|\.gitignore)'
 
 mkdir -p tmp
 # コストは Issue 1件あたりで積む。起動ごとに切り詰めると、1周を make impl → make review と

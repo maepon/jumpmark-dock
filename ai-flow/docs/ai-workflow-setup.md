@@ -359,8 +359,9 @@ Bash(git reset --hard:*)
 
 ### 基盤ファイルの保護
 
-`run-phase.sh` は各ステップの後に作業ツリーを見て、**基盤ファイル**（`Makefile` / `scripts/` / `prompts/` /
-`.claude/` / `docs/` / `.gitignore` / `.env.example` / `renovate.json`）が書き換わっていたら中断します。
+`run-phase.sh` は各ステップの後に作業ツリーを見て、**基盤ファイル**（`ai-flow/` 配下の `Makefile` / `scripts/` /
+`prompts/` / `.claude/` / `docs/` / `.env.example` と、ルートの `.gitignore`）が書き換わっていたら中断します。
+git が出すパスは `ai-flow/` で実行してもリポジトリのルートからの相対なので、`TOOLING_PATHS` は `ai-flow/` を付けて書きます。
 `Write` / `Edit` にパスを付けられないので、これが唯一の担保です。
 
 対象は `run-phase.sh` の `TOOLING_PATHS` で決まります。エージェントに見せる同じ一覧が

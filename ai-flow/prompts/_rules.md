@@ -44,6 +44,6 @@
 ## この案件の約束
 
 - ルートの `CLAUDE.md` / `README.md` に従う
-- 基盤ファイル（`Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.gitignore`、`.env.example`、`renovate.json`）は変更しない
-  （案件の変更対象になるドキュメントは `README.md` / `CHANGELOG.md` など、この案件側のものだけ）
+- 基盤ファイル（`ai-flow/` 配下の `Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.env.example` と、ルートの `.gitignore`）は変更しない
+  （案件の変更対象になるドキュメントは `README.md` / `CHANGELOG.md` / ルートの `docs/` など、この案件側のものだけ）
 - Slack 通知は自分で送らない。make が送る
