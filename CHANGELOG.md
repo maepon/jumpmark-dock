@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `docs/privacy-policy.md` の tabs 権限・収集しないデータの記述を、実際の挙動（バッジ更新のための全タブの URL 照合、既存タブへの切り替え、タブ一覧機能）に合わせて改訂した
 - `docs/chrome-store-description.md` の tabs 権限の説明を同様に改訂した
+- `docs/privacy-policy.md` から根拠のない「暗号化」の記述を削除し、「外部送信・外部通信なし」「処理はブラウザ内で完結」の記述を、Chrome 同期を有効にしている場合の Google を経由した同期を除く形に改めた
+- `docs/chrome-store-description.md` の「データ暗号化」「外部サーバーへの通信は一切なし」「処理はブラウザ内で完結」の記述を同様に改めた
 
 ## [2.2.2] - 2026-09-29
 
