@@ -385,13 +385,33 @@ phase_create_pr() {
 # ベースのプロファイルと違って gh issue comment を渡していない点が要る（投稿先は PR で、
 # Issue に書かせない）。
 #
+# PR_URL が空なら（code-review / pr-review を単独で叩いたとき）、現在のブランチの PR を引いて入れる。
+# $(...) の中で fail を呼ぶとサブシェルだけ終わるので、値は PR_URL に直接入れる。
+# gh のエラーは捨てずに添える。以前は捨てていたため、作業ツリーが master のままだと
+# 「PR が見つかりません」だけが出て、どのブランチで探したのかが分からなかった（#10 で発生）。
+ensure_pr_url() {
+  [ -n "$PR_URL" ] && return 0
+  local out err branch
+  branch=$(git branch --show-current)
+  # stderr は別に受ける。まとめると、成功時に gh の更新通知などが URL に混ざる
+  err=$(mktemp) || fail "一時ファイルを作れませんでした。"
+  if ! out=$(gh pr view --json url -q .url 2>"$err") || [ -z "$out" ]; then
+    out=$(tail -n 5 "$err")
+    rm -f "$err"
+    fail "PR が見つかりません（現在のブランチ: ${branch:-detached}）。PR のブランチに切り替えてから再実行してください:
+${out}"
+  fi
+  rm -f "$err"
+  PR_URL="$out"
+}
+
 # gh pr はエージェントに渡していないので、本文はファイルに書かせて投稿はここで行う。
 phase_code_review() {
   PHASE=code-review
   local url before after
 
-  url="${PR_URL:-$(gh pr view --json url -q .url 2>/dev/null)}"
-  [ -n "$url" ] || fail "PR が見つかりません。現在のブランチに対応する PR があるか確認してください。"
+  ensure_pr_url
+  url="$PR_URL"
 
   # このフェーズはコードを直さない決まりだが、Write / Edit はパスを絞れないので渡っている。
   # run_step の検査は基盤ファイルと未整形のファイルしか見ず、整形済みの書き換えは素通りする。
@@ -431,8 +451,8 @@ phase_pr_review() {
   PHASE=pr-review
   local url before after
 
-  url="${PR_URL:-$(gh pr view --json url -q .url 2>/dev/null)}"
-  [ -n "$url" ] || fail "PR が見つかりません。現在のブランチに対応する PR があるか確認してください。"
+  ensure_pr_url
+  url="$PR_URL"
 
   # 主張2（テストを壊して落ちるか見る）で書き換えた実装が戻っているかを、前後の比較で見る。
   # 整形チェックは素通りする（壊した行が整形済みなら通る）ので、ここで見るしかない。
