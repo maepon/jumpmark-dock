@@ -9,33 +9,33 @@
 
 ---
 
-## 1. 持っていくファイル（20ファイル / 1,539行）
+## 1. 持っていくファイル（21ファイル / 1,883行）
 
 | ファイル | 行 | 移植時の扱い |
 |---|---|---|
-| `Makefile` | 97 | **ほぼそのまま**（help の文面だけ確認） |
+| `Makefile` | 106 | **ほぼそのまま**（help の文面だけ確認） |
 | `.env.example` | 13 | そのまま（モデルIDを .env に書く例つき） |
-| `scripts/run-phase.sh` | 432 | **1箇所書き換え**（整形チェック）＋ コメントの事情説明 |
+| `scripts/run-phase.sh` | 519 | **1箇所書き換え**（整形チェック）＋ コメントの事情説明 |
 | `scripts/claude-run.sh` | 110 | **そのまま**（言語非依存。冒頭の実測メモも一緒に運ぶ） |
-| `scripts/check-scripts.sh` | 87 | **そのまま** |
+| `scripts/check-scripts.sh` | 103 | **そのまま** |
 | `scripts/selftest.sh` | 179 | **期待値を合わせる**（`TOOLING_PATHS` や整形の対象拡張子を変えたら、`tooling_state` / `unformatted_files` の節の期待値も直す） |
 | `scripts/notify-slack.sh` | 37 | **そのまま** |
-| `prompts/_rules.md` | 54 | **後半を全面書き換え**（最もリポジトリ固有） |
-| `prompts/spec.md` | 63 | 事故例とドキュメント名を差し替え |
+| `prompts/_rules.md` | 61 | **後半を全面書き換え**（最もリポジトリ固有） |
+| `prompts/spec.md` | 72 | 事故例とドキュメント名を差し替え |
 | `prompts/plan.md` | 32 | ドキュメント名だけ |
-| `prompts/plan-judge.md` | 44 | **そのまま** |
+| `prompts/plan-judge.md` | 64 | **そのまま** |
 | `prompts/plan-revise.md` | 24 | **そのまま** |
 | `prompts/implement.md` | 41 | テスト・整形コマンドを差し替え |
-| `prompts/review-judge.md` | 103 | テストコマンド＋事故カタログを差し替え |
+| `prompts/review-judge.md` | 126 | テストコマンド＋事故カタログを差し替え |
 | `prompts/review-fix.md` | 34 | テスト・整形コマンドを差し替え |
 | `prompts/pr.md` | 49 | ブランチ規約を差し替え |
-| `prompts/code-review.md` | 81 | 言語のパスAPI・実行方法・守る成果物を差し替え |
-| `prompts/pr-review.md` | 109 | テストコマンド・事故例・通常運用を差し替え（使わないなら持っていかなくてよい） |
-| `.claude/phase-permissions.json` | 46 | **Go の allow を差し替え** |
-| `.claude/commit-permissions.json` | 39 | **Go の allow を差し替え** |
-| `.claude/pr-review-permissions.json` | 44 | **Go の allow を差し替え** |
+| `prompts/code-review.md` | 79 | 言語のパスAPI・実行方法・守る成果物を差し替え |
+| `prompts/pr-review.md` | 107 | テストコマンド・事故例・通常運用を差し替え（使わないなら持っていかなくてよい） |
+| `.claude/phase-permissions.json` | 44 | **Go の allow を差し替え** |
+| `.claude/commit-permissions.json` | 41 | **Go の allow を差し替え** |
+| `.claude/pr-review-permissions.json` | 42 | **Go の allow を差し替え** |
 
-これに加えて、**導入・運用ガイド [ai-workflow-setup.md](ai-workflow-setup.md)（596行）を移植先の `docs/` に置きます。**
+これに加えて、**導入・運用ガイド [ai-workflow-setup.md](ai-workflow-setup.md)（604行）を移植先の `docs/` に置きます。**
 移植先で最初にセットアップする人と、その後フローを運用する人が読むものです。この手順書は移植元に残します。
 
 ### 持っていかないファイル
