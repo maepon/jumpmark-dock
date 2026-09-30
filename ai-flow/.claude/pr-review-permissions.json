@@ -3,6 +3,8 @@
   "//restore": "pr-review の主張2（テストが実装を追認しているだけではないか）を確かめるには、実装を意図的に壊して npm test が落ちるかを見る必要がある。壊したら戻さなければならないので git restore を許可する。これらのフェーズは PR 作成後に走るため差分はコミット済みで、restore で失われるものが無い。implement / review では未コミットの実装が消えるので、ベースのプロファイルには入れない。code-review 側は実装を壊さないので restore は要らないが、どちらのフェーズも run-phase.sh が作業ツリーの前後比較で書き換えを捕まえるため、プロファイルは分けていない。",
   "//pr": "gh pr は deny のまま。反論の本文はファイルに書かせて、PR への投稿は run-phase.sh が行う。コロン形の deny は前置一致でベースコマンドの allow にも勝つ（実測）。",
   "//node": "node --test:* は、使い捨てのテストファイルで境界入力（new URL() の解釈など）を実行して確かめるために通す。npm test と git restore で任意の実行はすでにできるので、実行面は広がらない。node -e / -p と裸の node は、1コマンドで Read(./.env) の deny を素通りできるので通さない（check-scripts.sh が弾く）。",
+  "//git-grep": "git grep:* は通す。git 管理下のファイルだけを検索するので .env（gitignore 対象）は既定では対象外。--no-index を付ければ読めるが、node --test / npm test ですでに任意の読み込みができるので実行面は広がらない。grep を禁じたままだと、文言の削除などを機械的に確かめられず確認が推論止まりになっていた（#10）。既定では現在のディレクトリ（ai-flow/）以下しか検索しないので、全体は -- ':/' を付けさせる（_rules.md）。",
+  "//format-check": "npm run format:check は、npm がルートの package.json を見つけてルートで実行するので、ai-flow/ から叩いてもリポジトリ全体を検査できる。npx prettier --check \"**/*.js\" はカレント（ai-flow/）以下しか見ない（#9、#13）。",
   "permissions": {
     "allow": [
       "Bash(gh issue view:*)",
@@ -12,6 +14,8 @@
       "Bash(git status:*)",
       "Bash(git restore:*)",
       "Bash(npm test:*)",
+      "Bash(npm run format:check)",
+      "Bash(git grep:*)",
       "Bash(node --test:*)",
       "Bash(npx prettier:*)",
       "Bash(echo:*)",

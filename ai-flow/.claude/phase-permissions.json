@@ -2,9 +2,11 @@
   "//": "spec / impl / review の各フェーズ共通の権限。ファイル名を settings.json にしない理由は scripts/claude-run.sh の冒頭に書いてある。",
   "//deny": "コロン形の deny は前置一致で、ベースコマンドの allow にも勝つ（実測）。git push は全形が塞がる。",
   "//write": "Write / Edit にパスを付けたルールは allow も deny も一切マッチしない（実測）。裸で渡すしかないので、基盤ファイルの保護は run-phase.sh の作業ツリー検査で行う（data/ は gitignore 対象で検査に出ないので、プロンプトで禁じるしかない）。Read のパス指定は効くので .env は deny できる。",
-  "//grep": "grep / cat / sed / awk / head は allow しない。ファイルを読める汎用コマンドを1つ通すと Read(./.env) の deny を素通りできるため。エージェントが grep へのパイプを拒否されるのは想定どおりで、Read で代替させる。",
+  "//grep": "grep / cat / sed / awk / head は allow しない。ファイルを読める汎用コマンドを1つ通すと Read(./.env) の deny を素通りできるため。エージェントが grep へのパイプを拒否されるのは想定どおりで、Read で代替させる。例外は git grep（//git-grep を参照）。",
   "//git-c": "git -C <path> ... も allow しない。Bash のマッチは前置文字列なので、git -C . push が git push の deny をすり抜けるため。エージェントが繰り返し試すが、通してはいけない。",
   "//node": "node --test:* は、使い捨てのテストファイルで挙動（new URL() の解釈など）を単体で確かめるために通す。npm test で任意の JS がすでに走るので、実行面は広がらない。node -e / -p と裸の node は、1コマンドで Read(./.env) の deny を素通りできるので通さない（check-scripts.sh が弾く）。",
+  "//git-grep": "git grep:* は通す。git 管理下のファイルだけを検索するので .env（gitignore 対象）は既定では対象外。--no-index を付ければ読めるが、node --test / npm test ですでに任意の読み込みができるので実行面は広がらない。grep を禁じたままだと、文言の削除などを機械的に確かめられず確認が推論止まりになっていた（#10）。既定では現在のディレクトリ（ai-flow/）以下しか検索しないので、全体は -- ':/' を付けさせる（_rules.md）。",
+  "//format-check": "npm run format:check は、npm がルートの package.json を見つけてルートで実行するので、ai-flow/ から叩いてもリポジトリ全体を検査できる。npx prettier --check \"**/*.js\" はカレント（ai-flow/）以下しか見ない（#9、#13）。",
   "permissions": {
     "allow": [
       "Bash(gh issue view:*)",
@@ -14,6 +16,8 @@
       "Bash(git log:*)",
       "Bash(git status:*)",
       "Bash(npm test:*)",
+      "Bash(npm run format:check)",
+      "Bash(git grep:*)",
       "Bash(node --test:*)",
       "Bash(npx prettier:*)",
       "Bash(echo:*)",

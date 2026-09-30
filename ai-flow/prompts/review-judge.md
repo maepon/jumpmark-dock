@@ -65,9 +65,10 @@ Issue #{{ISSUE}} の**実装が受入基準を満たしているか**を判定�
 書き方: `- **AC-14（-clean ガード）**: … → 達成（コードを読んで推論のみ）`
 
 **証拠として引用するコマンドは、自分が実際に実行したものだけを書く。**
-使えるのは `Read` / `Glob` / `Write` と、`npm test` / `npx prettier --check` / `node` /
-`git diff` / `git status` / `gh issue view` / `mkdir` / `echo` / `cd`。
-`ls` / `find` / `grep` / `wc` などのコマンドは渡していないので拒否される。
+使えるのは `Read` / `Glob` / `Write` と、`npm test` / `npm run format:check` / `npx prettier --check` /
+`node --test` / `git grep` / `git diff` / `git status` / `gh issue view` / `mkdir` / `echo` / `cd`。
+`ls` / `find` / `grep` / `wc` と、`node <ファイル>` / `node -e` などは渡していないので拒否される。
+リポジトリ全体を検索するときは `git grep -n "<パターン>" -- ':/'`（`':/'` が無いと `ai-flow/` 以下しか見ない）。
 拒否されたら、代わりに使った手段か「確認できなかった」を書く。make が拒否の件数を表示するため、
 実行していないコマンドを証拠として書くと食い違いが残る。
 
