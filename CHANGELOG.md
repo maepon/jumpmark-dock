@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 追加フォームに「開いているタブから選ぶ」一覧を追加した。タブを選ぶとタイトルと URL が自動入力される
+- タブ情報は一覧を開いたときだけ取得する。現在のタブ、`http(s)` 以外のページ、シークレット状態が現在のタブと異なるタブは一覧から除外する
+
 ### Changed
 
 - `docs/privacy-policy.md` の tabs 権限・収集しないデータの記述を、実際の挙動（バッジ更新のための全タブの URL 照合、既存タブへの切り替え、タブ一覧機能）に合わせて改訂した

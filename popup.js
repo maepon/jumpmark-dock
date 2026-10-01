@@ -24,6 +24,11 @@ const accordionHeader = document.getElementById("accordionHeader");
 const sourceUrlPattern = document.getElementById("sourceUrlPattern");
 const wildcardNotice = document.getElementById("wildcardNotice");
 
+// タブピッカー要素
+const tabPickerAccordion = document.getElementById("tabPickerAccordion");
+const tabPickerHeader = document.getElementById("tabPickerHeader");
+const tabPickerList = document.getElementById("tabPickerList");
+
 // 初期化
 document.addEventListener("DOMContentLoaded", async () => {
   try {
@@ -198,6 +203,68 @@ async function navigateToUrl(url) {
   }
 }
 
+// 開いているタブの一覧を取得して表示（一覧を開いたときだけ呼ばれる）
+async function loadTabPickerList() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    renderTabPickerList(filterSelectableTabs(tabs, currentTab));
+  } catch (error) {
+    console.error("タブ一覧取得エラー:", error);
+    showTabPickerMessage(t("popupTabPickerError"));
+  }
+}
+
+// タブ一覧を描画（タイトル・URLは外部由来なので textContent で設定する）
+function renderTabPickerList(selectableTabs) {
+  tabPickerList.innerHTML = "";
+
+  if (selectableTabs.length === 0) {
+    showTabPickerMessage(t("popupTabPickerEmpty"));
+    return;
+  }
+
+  selectableTabs.forEach((tab) => {
+    tabPickerList.appendChild(createTabPickerItem(tab));
+  });
+}
+
+// タブ一覧の1行を作成
+function createTabPickerItem(tab) {
+  const item = document.createElement("div");
+  item.className = "tab-picker-item";
+
+  const title = document.createElement("div");
+  title.className = "tab-picker-title";
+  title.textContent = tab.title || tab.url;
+
+  const url = document.createElement("div");
+  url.className = "tab-picker-url";
+  url.textContent = tab.url;
+
+  item.appendChild(title);
+  item.appendChild(url);
+  item.addEventListener("click", () => selectTabForForm(tab));
+
+  return item;
+}
+
+// タブ一覧の領域にメッセージを1つ表示
+function showTabPickerMessage(message) {
+  tabPickerList.innerHTML = "";
+
+  const div = document.createElement("div");
+  div.className = "tab-picker-message";
+  div.textContent = message;
+  tabPickerList.appendChild(div);
+}
+
+// 選んだタブの情報をフォームに入力して一覧を閉じる
+function selectTabForForm(tab) {
+  document.getElementById("jumpmarkTitle").value = tab.title || tab.url;
+  document.getElementById("jumpmarkUrl").value = tab.url;
+  tabPickerAccordion.classList.remove("open");
+}
+
 async function deleteJumpmark(jumpmarkId) {
   try {
     const result = await chrome.storage.sync.get(["jumpmarks"]);
@@ -253,6 +320,10 @@ function showFormView() {
   // アコーディオンの状態をリセット
   advancedAccordion.classList.remove("open");
 
+  // タブピッカーを初期状態（表示・閉じた状態・空）に戻す
+  tabPickerAccordion.classList.remove("hidden", "open");
+  tabPickerList.innerHTML = "";
+
   // 現在のURLをパターン初期値に設定
   if (currentTab) {
     sourceUrlPattern.value = currentTab.url;
@@ -275,6 +346,9 @@ async function editJumpmark(jumpmark) {
   if (iconFormGroup) {
     iconFormGroup.classList.remove("hidden");
   }
+
+  // 編集モードではタブピッカーを表示しない
+  tabPickerAccordion.classList.add("hidden");
 
   // フォームタイトルを変更
   formTitle.textContent = t("editJumpmarkTitle");
@@ -325,6 +399,14 @@ function setupEventListeners() {
   // アコーディオンヘッダークリックでトグル
   accordionHeader.addEventListener("click", () => {
     advancedAccordion.classList.toggle("open");
+  });
+
+  // タブピッカーのヘッダークリック（開いたときだけタブ一覧を取得）
+  tabPickerHeader.addEventListener("click", () => {
+    const isOpen = tabPickerAccordion.classList.toggle("open");
+    if (isOpen) {
+      loadTabPickerList();
+    }
   });
 
   // カスタムURLパターンのリアルタイム監視（双方向チェックボックス連動）
