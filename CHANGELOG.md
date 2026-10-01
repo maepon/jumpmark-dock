@@ -10,10 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - ストア掲載用の説明文の英語版 `docs/chrome-store-description.en.md` を追加した（日本語版 `docs/chrome-store-description.md` と同じ内容・構成）
+- ストアの説明文欄にそのまま貼るプレーンテキスト `docs/chrome-store-listing.ja.txt` / `docs/chrome-store-listing.en.txt` を追加した。掲載中の説明文の構成を土台に、「外部通信なし」「102KB・最大512個」など事実と異なる記述を除き、Chrome 同期で Google を経由すること、双方向リンク、開いているタブからの入力を書き加えた
 
 ### Changed
 
 - `docs/chrome-store-description.md` の「チームでの情報共有」の見出しを、内容（同じ Google アカウントの複数デバイスで同期）に合わせて「自分のデバイス間で共有」に改めた
+- `README.md` / `CLAUDE.md` の `chrome.storage.sync` の上限の記述を、公式ドキュメントの値（1項目8,192バイト）と、全データを1項目に保存しているため実際の上限が約8KBであることに合わせて改めた
+- `docs/chrome-webstore-description-update.md` の冒頭に、事実と異なる記述を含む古い下書きである旨の注記を入れた
 
 ## [2.3.0] - 2026-10-01
 

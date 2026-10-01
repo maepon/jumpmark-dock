@@ -1,6 +1,8 @@
 # Jumpmark Dock - Chrome拡張機能
 
 > 英語版は `docs/chrome-store-description.en.md`。どちらかを変えたら、もう一方も合わせて更新する。
+>
+> Chrome Web Store の説明文欄は Markdown を解釈しない。ストアに貼る文章は、プレーンテキストの `docs/chrome-store-listing.ja.txt` / `docs/chrome-store-listing.en.txt` を使う。
 
 ## アイテム紹介
 

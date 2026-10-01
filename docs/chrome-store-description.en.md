@@ -1,6 +1,8 @@
 # Jumpmark Dock - Chrome Extension
 
 > English version of `docs/chrome-store-description.md`. When you change one, update the other to match.
+>
+> The Chrome Web Store description field does not render Markdown. Paste the plain-text `docs/chrome-store-listing.en.txt` / `docs/chrome-store-listing.ja.txt` into the store instead.
 
 ## Overview
 

@@ -1,0 +1,40 @@
+A Chrome extension for managing and opening a per-page collection of shortcuts.
+
+🧭 What is Jumpmark Dock?
+
+Jumpmark Dock is a Chrome extension that lets you manage a customizable set of links (shortcuts) tied to each page. It's perfect for situations where you want to attach specific links to a specific page — like a ChatGPT thread or a Notion page.
+
+🔧 Key Features
+
+● View a list of shortcut links tied to the currently open URL
+● Add, edit, and delete shortcuts directly from the popup
+● Bidirectional links: when you add a link from page A to page B, a link back from B to A can be created at the same time
+● Fill in the title and URL by picking one of your open tabs ("Choose from open tabs")
+● Wildcard registration supported by adding * to the end of the source URL
+● The extension icon shows how many shortcuts the current page has
+● Export your data as JSON, CSV, or HTML, and import it from JSON
+● Available in English and Japanese, with dark mode support
+
+💡 Example Use Cases
+
+● Save links to reference documents or blog drafts for each ChatGPT thread
+● Organize related URLs (articles, GitHub issues, etc.) tied to a Notion page
+● Keep project bookmarks attached to your own Google Sheets
+● Jump from a GitHub repo's deployment page to its live URL
+
+🔄 About Sync
+
+● Data is stored in Chrome's extension storage (chrome.storage.sync)
+● When Chrome Sync is enabled:
+  - Your Jumpmarks are synced through Google's servers to other devices signed in to Chrome with the same Google account
+  - Existing Jumpmarks become available on your other devices
+● When Chrome Sync is disabled:
+  - Data is kept only in Chrome on this device
+
+🔒 Privacy
+
+● Shortcuts are saved, displayed, and matched within your browser
+● The extension never sends data to external servers on its own (except syncing through Google when Chrome Sync is enabled)
+● Tab URLs and titles are read only for the features above (showing shortcuts for the current page, the badge count, switching to an already-open tab, and the open-tab list), and are not saved unless you register them as a shortcut
+● The list of open tabs is read only when you open it in the add form
+● No browsing history is recorded or tracked

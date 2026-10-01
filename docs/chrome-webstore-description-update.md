@@ -1,5 +1,7 @@
 # Chrome Web Store 説明文修正案
 
+> **この文書は古い下書きです。** 「外部通信なし」「102KB・最大512個」など、事実と異なる記述を含みます。ストアに貼る文章は `docs/chrome-store-listing.ja.txt` / `docs/chrome-store-listing.en.txt` を使ってください。
+
 ## 修正が必要な箇所
 
 ### 現在の記載（問題のある部分）

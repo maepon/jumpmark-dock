@@ -95,7 +95,7 @@ Current status: Phase 3 completed. Full-featured import/export system implemente
 - **Storage API**: Uses `chrome.storage.sync` for automatic synchronization
 - **Cross-device sync**: Jumpmarks automatically sync across devices when Chrome Sync is enabled
 - **Fallback behavior**: Functions as local storage when Chrome Sync is disabled
-- **Limitations**: 102KB storage limit, 512 items max, 4096 bytes per item
+- **Limitations**: `chrome.storage.sync` quotas are 102,400 bytes total, 8,192 bytes per item, 512 items max. All data is stored under the single `jumpmarks` key, so the effective limit is ~8KB total
 
 ## AI-Assisted Development Flow (`ai-flow/`)
 
