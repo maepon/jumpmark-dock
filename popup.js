@@ -292,10 +292,42 @@ async function deleteJumpmark(jumpmarkId) {
     }
   } catch (error) {
     console.error("Jumpmark削除エラー:", error);
+    alert(t("popupErrorDeleteFailed"));
   }
 }
 
 // saveJumpmark, updateJumpmark, generateIdは削除し、shared.jsの共通関数を使用します。
+
+// 追加フォームの容量警告。古い取得結果が後から反映されないよう、呼び出しごとに世代を進める
+let storageWarningRequestId = 0;
+
+function hideStorageWarning() {
+  const warning = document.getElementById("storageWarning");
+  if (warning) warning.classList.add("hidden");
+}
+
+async function updateStorageWarning() {
+  const requestId = ++storageWarningRequestId;
+  hideStorageWarning();
+  try {
+    const result = await chrome.storage.sync.get(["jumpmarks"]);
+    // 新しい要求や編集フォームへの切り替えがあった場合は結果を捨てる
+    if (requestId !== storageWarningRequestId || editingJumpmark) return;
+
+    const percent = calculateStorageUsagePercent(
+      calculateJumpmarksBytes(result.jumpmarks),
+    );
+    if (getStorageUsageLevel(percent) === "danger") {
+      const warning = document.getElementById("storageWarning");
+      warning.textContent = t("popupStorageAlmostFull", [
+        String(Math.floor(percent)),
+      ]);
+      warning.classList.remove("hidden");
+    }
+  } catch (error) {
+    console.error("容量警告の更新エラー:", error);
+  }
+}
 
 // ビューを切り替え
 function showFormView() {
@@ -328,9 +360,13 @@ function showFormView() {
   if (currentTab) {
     sourceUrlPattern.value = currentTab.url;
   }
+
+  // 容量が逼迫していれば警告を出す（フォーム表示は待たせない）
+  updateStorageWarning();
 }
 
 function showMainView() {
+  storageWarningRequestId++;
   formView.classList.add("hidden");
   mainView.classList.remove("hidden");
 
@@ -341,6 +377,10 @@ function showMainView() {
 // Jumpmarkを編集
 async function editJumpmark(jumpmark) {
   editingJumpmark = jumpmark;
+
+  // 新規フォームの警告を残さず、進行中の取得結果も捨てる
+  storageWarningRequestId++;
+  hideStorageWarning();
 
   const iconFormGroup = document.getElementById("iconFormGroup");
   if (iconFormGroup) {
@@ -484,6 +524,7 @@ function setupEventListeners() {
     }
 
     let success = false;
+    let quotaError = false;
     try {
       if (editingJumpmark) {
         // 編集モード (shared.jsのupdateJumpmarkを呼ぶ)
@@ -495,11 +536,14 @@ function setupEventListeners() {
       }
     } catch (err) {
       console.error(err);
+      quotaError = isStorageQuotaError(err);
     }
 
     if (success) {
       showMainView();
       await displayJumpmarks();
+    } else if (quotaError) {
+      alert(t("errorStorageQuotaExceeded"));
     } else {
       alert(
         editingJumpmark

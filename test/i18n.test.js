@@ -193,6 +193,9 @@ const EXPECTED_KEYS = [
   "popupErrorTitleUrlRequired",
   "popupErrorSaveFailed",
   "popupErrorUpdateFailed",
+  "popupErrorDeleteFailed",
+  "popupStorageAlmostFull",
+  "errorStorageQuotaExceeded",
   // 4-3 shared.js
   "errorPatternRequired",
   "errorHostTooShort",

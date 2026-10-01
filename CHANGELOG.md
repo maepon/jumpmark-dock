@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - ストア掲載用の説明文の英語版 `docs/chrome-store-description.en.md` を追加した（日本語版 `docs/chrome-store-description.md` と同じ内容・構成）
+- popup の新規追加フォームを開いたとき、保存容量の使用率が 90% 以上なら警告を表示するようにした
 - ストアの説明文欄にそのまま貼るプレーンテキスト `docs/chrome-store-listing.ja.txt` / `docs/chrome-store-listing.en.txt` を追加した。掲載中の説明文の構成を土台に、「外部通信なし」「102KB・最大512個」など事実と異なる記述を除き、Chrome 同期で Google を経由すること、双方向リンク、開いているタブからの入力を書き加えた
 
 ### Changed
@@ -17,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/chrome-store-description.md` の「チームでの情報共有」の見出しを、内容（同じ Google アカウントの複数デバイスで同期）に合わせて「自分のデバイス間で共有」に改めた
 - `README.md` / `CLAUDE.md` の `chrome.storage.sync` の上限の記述を、公式ドキュメントの値（1項目8,192バイト）と、全データを1項目に保存しているため実際の上限が約8KBであることに合わせて改めた
 - `docs/chrome-webstore-description-update.md` の冒頭に、事実と異なる記述を含む古い下書きである旨の注記を入れた
+
+- オプションページの容量表示を、実際の上限（1項目 8,192 バイト）に対する UTF-8 バイト数で表示するようにした（文言・バー・色・警告の閾値）。これまでは 102KB を上限として文字数で数えていたため、保存できなくなる 8KB 付近でもバーがほとんど伸びなかった
+- 保存・更新・インポートの前にデータの大きさを確かめ、上限を超える場合は保存せず、容量不足と対処を伝える文言を出すようにした
+
+### Fixed
+
+- popup で Jumpmark の削除に失敗したとき、何も表示されなかったのを、エラーを表示するようにした
 
 ## [2.3.0] - 2026-10-01
 

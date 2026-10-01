@@ -717,7 +717,11 @@ async function handleEditFormSubmit(e) {
     showStatusMessage(t("statusUpdated"));
   } catch (error) {
     console.error("編集エラー:", error);
-    showEditError(t("errorUpdateFailedDetail", [error.message]));
+    if (isStorageQuotaError(error)) {
+      showEditError(t("errorStorageQuotaExceeded"));
+    } else {
+      showEditError(t("errorUpdateFailedDetail", [error.message]));
+    }
   }
 }
 
@@ -941,35 +945,33 @@ async function updateStorageStats() {
   try {
     const stats = await getStorageStats();
 
-    // 総Jumpmark数とストレージ使用量（小数点1桁まで）
+    // 総Jumpmark数とストレージ使用量（1項目の上限 8KB に対する UTF-8 バイト数）
     storageSummaryElement.textContent = t("storageSummary", [
       String(stats.totalJumpmarks),
-      `${stats.storageUsed}KB`,
+      formatStorageSize(stats.bytesUsed),
+      formatStorageSize(stats.quotaBytes),
     ]);
 
-    // 使用率の計算（Chrome Sync制限: 102KB）
-    const maxStorage = 102; // KB
-    const usagePercent = Math.min((stats.storageUsed / maxStorage) * 100, 100);
-
     // プログレスバーの更新
-    storageProgressElement.style.width = `${usagePercent}%`;
+    storageProgressElement.style.width = `${stats.usagePercent}%`;
 
     // 使用量に応じてプログレスバーの色を変更
     storageProgressElement.classList.remove("warning", "danger");
-    if (usagePercent >= 90) {
+    const level = getStorageUsageLevel(stats.usagePercent);
+    if (level === "danger") {
       storageProgressElement.classList.add("danger");
-    } else if (usagePercent >= 70) {
+    } else if (level === "warning") {
       storageProgressElement.classList.add("warning");
     }
 
     // 容量警告の表示（控えめに）
-    if (usagePercent >= 95) {
+    if (stats.usagePercent >= 95) {
       showStatusMessage(t("warnStorageAlmostFull"), "error");
     }
   } catch (error) {
     console.error("統計更新エラー:", error);
     // エラー時はプレースホルダーを表示
-    storageSummaryElement.textContent = t("storageSummary", ["-", "-"]);
+    storageSummaryElement.textContent = t("storageSummary", ["-", "-", "-"]);
     storageProgressElement.style.width = "0%";
   }
 }
@@ -1619,7 +1621,13 @@ async function executeImport() {
     setTimeout(hideIEStatus, 3000);
   } catch (error) {
     console.error("インポートエラー:", error);
-    showIEStatus("❌", t("errorImport"), error.message);
+    showIEStatus(
+      "❌",
+      t("errorImport"),
+      isStorageQuotaError(error)
+        ? t("errorStorageQuotaExceeded")
+        : error.message,
+    );
     setTimeout(hideIEStatus, 5000);
   }
 }
@@ -1663,6 +1671,7 @@ async function saveJumpmarksToStorage(jumpmarks) {
     jumpmarksByUrl[normalizedSourceUrl].push(jm);
   });
 
+  assertWithinStorageQuota(jumpmarksByUrl);
   await chrome.storage.sync.set({ jumpmarks: jumpmarksByUrl });
 }
 
