@@ -292,6 +292,58 @@ body {
   cursor: not-allowed;
 }
 
+/* タブピッカー（開いているタブから選ぶ） */
+.tab-picker-accordion {
+  margin-bottom: 16px;
+}
+
+.tab-picker-accordion.open .accordion-content {
+  display: block;
+}
+
+.tab-picker-accordion.open .accordion-header::before {
+  transform: rotate(90deg);
+}
+
+.tab-picker-list {
+  max-height: 200px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.tab-picker-item {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #202124;
+}
+
+.tab-picker-item:hover {
+  background-color: #f8f9fa;
+}
+
+.tab-picker-title,
+.tab-picker-url {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-picker-title {
+  font-weight: 500;
+}
+
+.tab-picker-url {
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.tab-picker-message {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #5f6368;
+}
+
 /* ダークモード対応 */
 @media (prefers-color-scheme: dark) {
   body {
@@ -405,6 +457,19 @@ body {
   }
   .warning-text {
     color: #f28b82;
+  }
+
+  /* ダークモード用タブピッカー */
+  .tab-picker-item {
+    color: #e8eaed;
+    background-color: #292a2d;
+  }
+  .tab-picker-item:hover {
+    background-color: #3c4043;
+  }
+  .tab-picker-url,
+  .tab-picker-message {
+    color: #9aa0a6;
   }
 }
 

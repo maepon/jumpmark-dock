@@ -678,6 +678,40 @@ function isBidirectionalPair(jumpmarkA, jumpmarkB) {
   return urlA === sourceB && urlB === sourceA;
 }
 
+// タブ一覧から選択可能なタブを抽出して並べ替える（純粋関数）
+function filterSelectableTabs(tabs, currentTab) {
+  const list = Array.isArray(tabs) ? tabs : [];
+  const currentIncognito = !!(currentTab && currentTab.incognito);
+
+  const isHttpUrl = (url) => {
+    if (typeof url !== "string") return false;
+    try {
+      const protocol = new URL(url).protocol;
+      return protocol === "http:" || protocol === "https:";
+    } catch {
+      return false;
+    }
+  };
+
+  return list
+    .filter((tab) => {
+      if (!tab) return false;
+      if (currentTab && tab.id === currentTab.id) return false;
+      if (!isHttpUrl(tab.url)) return false;
+      if (!!tab.incognito !== currentIncognito) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (currentTab) {
+        const aCurrent = a.windowId === currentTab.windowId;
+        const bCurrent = b.windowId === currentTab.windowId;
+        if (aCurrent !== bCurrent) return aCurrent ? -1 : 1;
+      }
+      if (a.windowId !== b.windowId) return a.windowId - b.windowId;
+      return (a.index || 0) - (b.index || 0);
+    });
+}
+
 // 指定jumpmarkと対になる双方向リンクを検索
 async function findBidirectionalPartner(targetJumpmark) {
   try {

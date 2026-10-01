@@ -43,6 +43,20 @@
       </div>
 
       <form id="jumpmarkForm" class="jumpmark-form">
+        <!-- 開いているタブから選ぶ（アコーディオン） -->
+        <div class="tab-picker-accordion" id="tabPickerAccordion">
+          <div
+            class="accordion-header"
+            id="tabPickerHeader"
+            data-i18n="popupTabPickerHeader"
+          >
+            Choose from open tabs
+          </div>
+          <div class="accordion-content">
+            <div class="tab-picker-list" id="tabPickerList"></div>
+          </div>
+        </div>
+
         <div class="form-group">
           <label for="jumpmarkTitle" data-i18n="labelTitle">Title</label>
           <input
