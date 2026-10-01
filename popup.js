@@ -154,7 +154,7 @@ function createJumpmarkElement(jumpmark) {
   const deleteButton = div.querySelector(".delete-button");
   deleteButton.addEventListener("click", (e) => {
     e.stopPropagation();
-    deleteJumpmark(jumpmark.id);
+    deleteJumpmarkAndRefresh(jumpmark.id);
   });
 
   return div;
@@ -265,32 +265,14 @@ function selectTabForForm(tab) {
   tabPickerAccordion.classList.remove("open");
 }
 
-async function deleteJumpmark(jumpmarkId) {
+// shared.js の deleteJumpmark で削除し、成功したら一覧を再表示する
+async function deleteJumpmarkAndRefresh(jumpmarkId) {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const allJumpmarks = result.jumpmarks || {};
-
-    let found = false;
-    for (const key in allJumpmarks) {
-      const initialLength = allJumpmarks[key].length;
-      allJumpmarks[key] = allJumpmarks[key].filter(
-        (jumpmark) => jumpmark.id !== jumpmarkId,
-      );
-
-      if (allJumpmarks[key].length !== initialLength) {
-        found = true;
-        if (allJumpmarks[key].length === 0) {
-          delete allJumpmarks[key];
-        }
-        break; // IDは一意なので見つかったらループ終了
-      }
-    }
-
-    if (found) {
-      await chrome.storage.sync.set({ jumpmarks: allJumpmarks });
-      await displayJumpmarks();
-    }
+    await deleteJumpmark(jumpmarkId);
+    await displayJumpmarks();
   } catch (error) {
+    // 対象が既に無い場合は何もしない
+    if (isJumpmarkNotFoundError(error)) return;
     console.error("Jumpmark削除エラー:", error);
     alert(t("popupErrorDeleteFailed"));
   }
@@ -310,12 +292,12 @@ async function updateStorageWarning() {
   const requestId = ++storageWarningRequestId;
   hideStorageWarning();
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
+    const jumpmarks = await readJumpmarksStore();
     // 新しい要求や編集フォームへの切り替えがあった場合は結果を捨てる
     if (requestId !== storageWarningRequestId || editingJumpmark) return;
 
     const percent = calculateStorageUsagePercent(
-      calculateJumpmarksBytes(result.jumpmarks),
+      calculateJumpmarksBytes(jumpmarks),
     );
     if (getStorageUsageLevel(percent) === "danger") {
       const warning = document.getElementById("storageWarning");

@@ -331,20 +331,26 @@ test("popup submit closes form on success", async () => {
   }
 });
 
-test("popup deleteJumpmark alerts on failure", async () => {
+test("popup deleteJumpmarkAndRefresh alerts on failure", async () => {
   const { sandbox, calls } = loadSandbox("popup.js", {});
   sandbox.chrome.storage.sync.get = async () => {
     throw new Error("boom");
   };
-  await sandbox.deleteJumpmark("u1");
+  await sandbox.deleteJumpmarkAndRefresh("u1");
   assert.deepStrictEqual(calls.alert, ["popupErrorDeleteFailed"]);
 });
 
-test("popup deleteJumpmark does not check quota", () => {
-  const { sandbox } = loadSandbox("popup.js", {});
-  assert.ok(
-    !sandbox.deleteJumpmark.toString().includes("assertWithinStorageQuota"),
-  );
+test("popup deleteJumpmarkAndRefresh does not check quota", async () => {
+  // 容量超過の保存済みデータでも、削除は set まで進み alert を出さない
+  const stored = {
+    "b.com": [{ id: "big", title: "x".repeat(QUOTA) }],
+    "a.com": [{ id: "d1", title: "t" }],
+  };
+  const { sandbox, calls } = loadSandbox("popup.js", stored);
+  sandbox.displayJumpmarks = async () => {};
+  await sandbox.deleteJumpmarkAndRefresh("d1");
+  assert.strictEqual(calls.set.length, 1);
+  assert.deepStrictEqual(calls.alert, []);
 });
 
 function setupPopupForm(percentOrError) {

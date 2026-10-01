@@ -136,7 +136,7 @@ jumpmark-dock/
 - **popup.js**: 基本的なJumpmarkの管理とUI制御
 - **options.js**: 高度な管理機能（インポート/エクスポート、一括操作）
 - **background.js**: タブ監視とバッジ更新
-- **shared.js**: URL正規化や共通ユーティリティ関数
+- **shared.js**: URL正規化や共通ユーティリティ関数、ストレージの読み書き・変更監視の入口
 - **i18n.js**: `data-i18n*` 属性を持つ静的DOM要素への翻訳メッセージ適用
 - **Chrome Storage Sync API**: Jumpmarkデータの永続化と同期
 

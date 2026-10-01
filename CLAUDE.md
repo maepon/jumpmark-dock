@@ -37,6 +37,8 @@ npm test
 
 **Bidirectional Linking**: Uses URL-match based detection instead of flags. When creating a jumpmark A→B, an optional reverse jumpmark B→A can be created. Bidirectional relationships are detected dynamically by comparing `sourceUrl` and `url` fields.
 
+**Storage Access**: All access to `chrome.storage` goes through the entry points in `shared.js` (`readJumpmarksStore` / `writeJumpmarksStore` / `onJumpmarksChanged`). Other files must not call `chrome.storage` directly.
+
 **Storage Schema**:
 ```javascript
 {

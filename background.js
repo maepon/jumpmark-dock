@@ -21,8 +21,7 @@ function ensureWildcardCache() {
 // キャッシュを再構築する関数
 async function rebuildWildcardCache() {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const allJumpmarks = result.jumpmarks || {};
+    const allJumpmarks = await readJumpmarksStore();
 
     // 末尾が * で終わるキー（ワイルドカードキー）だけを抽出してキャッシュ
     wildcardKeysCache = Object.keys(allJumpmarks).filter((key) =>
@@ -45,8 +44,7 @@ async function getJumpmarkCountForUrl(url) {
     await ensureWildcardCache();
 
     const normalizedUrl = normalizeUrl(url);
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const allJumpmarks = result.jumpmarks || {};
+    const allJumpmarks = await readJumpmarksStore();
 
     let count = 0;
 
@@ -136,17 +134,15 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 });
 
 // ストレージが変更された時のイベントリスナー
-chrome.storage.onChanged.addListener(async (changes, namespace) => {
-  if (namespace === "sync" && changes.jumpmarks) {
-    // キャッシュを再構築
-    wildcardCachePromise = rebuildWildcardCache().catch((err) => {
-      wildcardCachePromise = null;
-      console.error("ワイルドカードキャッシュ再構築エラー:", err);
-    });
-    await wildcardCachePromise;
-    // Jumpmarksが変更された場合、全てのタブのバッジを更新
-    await updateAllTabsBadges();
-  }
+onJumpmarksChanged(async () => {
+  // キャッシュを再構築
+  wildcardCachePromise = rebuildWildcardCache().catch((err) => {
+    wildcardCachePromise = null;
+    console.error("ワイルドカードキャッシュ再構築エラー:", err);
+  });
+  await wildcardCachePromise;
+  // Jumpmarksが変更された場合、全てのタブのバッジを更新
+  await updateAllTabsBadges();
 });
 
 // 拡張機能インストール時の初期化
