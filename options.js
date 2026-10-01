@@ -151,10 +151,8 @@ function setupEventListeners() {
   editSourceUrl.addEventListener("input", handleEditInputEvent);
 
   // ストレージ変更の監視
-  chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === "sync" && changes.jumpmarks) {
-      loadJumpmarks();
-    }
+  onJumpmarksChanged(() => {
+    loadJumpmarks();
   });
 }
 
@@ -1671,8 +1669,7 @@ async function saveJumpmarksToStorage(jumpmarks) {
     jumpmarksByUrl[normalizedSourceUrl].push(jm);
   });
 
-  assertWithinStorageQuota(jumpmarksByUrl);
-  await chrome.storage.sync.set({ jumpmarks: jumpmarksByUrl });
+  await writeJumpmarksStore(jumpmarksByUrl);
 }
 
 // I/Eステータスを表示

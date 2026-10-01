@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/chrome-webstore-description-update.md` の冒頭に、事実と異なる記述を含む古い下書きである旨の注記を入れた
 - オプションページの容量表示を、実際の上限（1項目 8,192 バイト）に対する UTF-8 バイト数で表示するようにした（文言・バー・色・警告の閾値）。これまでは 102KB を上限として文字数で数えていたため、保存できなくなる 8KB 付近でもバーがほとんど伸びなかった
 - 保存・更新・インポートの前にデータの大きさを確かめ、上限を超える場合は保存せず、容量不足と対処を伝える文言を出すようにした
+- `chrome.storage` の読み書きと変更の監視を `shared.js` の入口（`readJumpmarksStore` / `writeJumpmarksStore` / `onJumpmarksChanged`）にまとめた。あわせて、popup の削除が `shared.js` の `deleteJumpmark` を使うようにした（画面の挙動は変わらない）
 
 ### Fixed
 

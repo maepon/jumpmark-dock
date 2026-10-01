@@ -219,8 +219,7 @@ function escapeHtml(text) {
 // 指定URLのJumpmarksを取得
 async function getJumpmarksForUrl(url) {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const allJumpmarks = result.jumpmarks || {};
+    const allJumpmarks = await readJumpmarksStore();
 
     let matchedJumpmarks = [];
     for (const pattern in allJumpmarks) {
@@ -243,8 +242,7 @@ async function getJumpmarksForUrl(url) {
 // 全てのJumpmarksを取得
 async function getAllJumpmarks() {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const allJumpmarks = result.jumpmarks || {};
+    const allJumpmarks = await readJumpmarksStore();
 
     // URLごとのJumpmarksを平坦化
     const jumpmarksList = [];
@@ -267,8 +265,7 @@ async function getAllJumpmarks() {
 // Jumpmarkを保存
 async function saveJumpmark(jumpmarkData) {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const jumpmarks = result.jumpmarks || {};
+    const jumpmarks = await readJumpmarksStore();
 
     const sourceUrl = normalizeUrl(jumpmarkData.sourceUrl);
     const targetUrl = jumpmarkData.url;
@@ -317,8 +314,7 @@ async function saveJumpmark(jumpmarkData) {
       jumpmarks[normalizedTargetUrl].push(reverseJumpmark);
     }
 
-    assertWithinStorageQuota(jumpmarks);
-    await chrome.storage.sync.set({ jumpmarks });
+    await writeJumpmarksStore(jumpmarks);
     return newJumpmark;
   } catch (error) {
     console.error("Jumpmark保存エラー:", error);
@@ -329,8 +325,7 @@ async function saveJumpmark(jumpmarkData) {
 // Jumpmarkを更新（キー移動および逆方向エントリの整合性を維持）
 async function updateJumpmark(jumpmarkId, updateData) {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const jumpmarks = result.jumpmarks || {};
+    const jumpmarks = await readJumpmarksStore();
 
     let foundJumpmark = null;
     let oldSourceUrl = null;
@@ -346,7 +341,7 @@ async function updateJumpmark(jumpmarkId, updateData) {
     }
 
     if (!foundJumpmark) {
-      throw new Error(t("errorJumpmarkNotFound"));
+      throw createJumpmarkNotFoundError();
     }
 
     // 更新前の状態に基づく古い双方向パートナーを検索
@@ -449,8 +444,7 @@ async function updateJumpmark(jumpmarkId, updateData) {
       jumpmarks[normalizedTargetUrl].push(reverseJumpmark);
     }
 
-    assertWithinStorageQuota(jumpmarks);
-    await chrome.storage.sync.set({ jumpmarks });
+    await writeJumpmarksStore(jumpmarks);
     return true;
   } catch (error) {
     console.error("Jumpmark更新エラー:", error);
@@ -461,8 +455,7 @@ async function updateJumpmark(jumpmarkId, updateData) {
 // Jumpmarkを削除（単体）
 async function deleteJumpmark(jumpmarkId) {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const jumpmarks = result.jumpmarks || {};
+    const jumpmarks = await readJumpmarksStore();
 
     let found = false;
 
@@ -481,10 +474,10 @@ async function deleteJumpmark(jumpmarkId) {
     });
 
     if (!found) {
-      throw new Error(t("errorJumpmarkNotFound"));
+      throw createJumpmarkNotFoundError();
     }
 
-    await chrome.storage.sync.set({ jumpmarks });
+    await writeJumpmarksStore(jumpmarks, { checkQuota: false });
     return true;
   } catch (error) {
     console.error("Jumpmark削除エラー:", error);
@@ -495,8 +488,7 @@ async function deleteJumpmark(jumpmarkId) {
 // 双方向ペアを削除
 async function deleteBidirectionalPair(jumpmarkId, partnerId) {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const jumpmarks = result.jumpmarks || {};
+    const jumpmarks = await readJumpmarksStore();
 
     let deletedCount = 0;
 
@@ -516,7 +508,7 @@ async function deleteBidirectionalPair(jumpmarkId, partnerId) {
       });
     });
 
-    await chrome.storage.sync.set({ jumpmarks });
+    await writeJumpmarksStore(jumpmarks, { checkQuota: false });
     return deletedCount;
   } catch (error) {
     console.error("双方向ペア削除エラー:", error);
@@ -527,8 +519,7 @@ async function deleteBidirectionalPair(jumpmarkId, partnerId) {
 // 複数のJumpmarksを削除
 async function deleteJumpmarks(jumpmarkIds) {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const jumpmarks = result.jumpmarks || {};
+    const jumpmarks = await readJumpmarksStore();
 
     let deletedCount = 0;
 
@@ -548,12 +539,57 @@ async function deleteJumpmarks(jumpmarkIds) {
       });
     });
 
-    await chrome.storage.sync.set({ jumpmarks });
+    await writeJumpmarksStore(jumpmarks, { checkQuota: false });
     return deletedCount;
   } catch (error) {
     console.error("複数Jumpmark削除エラー:", error);
     throw error;
   }
+}
+
+// ストレージ変更通知で判定に使う領域名
+const JUMPMARKS_STORAGE_AREA_NAME = "sync";
+
+// Jumpmarks を保存するストレージ領域（呼ばれるたびに参照する）
+function getJumpmarksStorageArea() {
+  return chrome.storage.sync;
+}
+
+// 保存済みの Jumpmarks を読み込む。失敗はそのまま投げる（ログは呼び出し元の catch で出す）
+async function readJumpmarksStore() {
+  const result = await getJumpmarksStorageArea().get(["jumpmarks"]);
+  return result.jumpmarks || {};
+}
+
+// Jumpmarks を書き込む。失敗はそのまま投げる（ログは呼び出し元の catch で出す）
+async function writeJumpmarksStore(jumpmarks, { checkQuota = true } = {}) {
+  if (checkQuota) {
+    assertWithinStorageQuota(jumpmarks);
+  }
+  await getJumpmarksStorageArea().set({ jumpmarks });
+}
+
+// Jumpmarks の変更を監視する（MV3 Service Worker のため同期的に登録する）
+function onJumpmarksChanged(callback) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === JUMPMARKS_STORAGE_AREA_NAME && changes.jumpmarks) {
+      return callback();
+    }
+  });
+}
+
+function createJumpmarkNotFoundError() {
+  const error = new Error(t("errorJumpmarkNotFound"));
+  error.name = "JumpmarkNotFoundError";
+  return error;
+}
+
+function isJumpmarkNotFoundError(error) {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    error.name === "JumpmarkNotFoundError"
+  );
 }
 
 // chrome.storage.sync の1項目あたりの上限（バイト）。全データを "jumpmarks" 1項目に保存している
@@ -612,8 +648,7 @@ function assertWithinStorageQuota(jumpmarks) {
 // ストレージ統計を取得
 async function getStorageStats() {
   try {
-    const result = await chrome.storage.sync.get(["jumpmarks"]);
-    const jumpmarks = result.jumpmarks || {};
+    const jumpmarks = await readJumpmarksStore();
 
     let totalJumpmarks = 0;
     let originalJumpmarks = 0;
