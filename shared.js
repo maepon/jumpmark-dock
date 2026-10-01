@@ -317,6 +317,7 @@ async function saveJumpmark(jumpmarkData) {
       jumpmarks[normalizedTargetUrl].push(reverseJumpmark);
     }
 
+    assertWithinStorageQuota(jumpmarks);
     await chrome.storage.sync.set({ jumpmarks });
     return newJumpmark;
   } catch (error) {
@@ -448,6 +449,7 @@ async function updateJumpmark(jumpmarkId, updateData) {
       jumpmarks[normalizedTargetUrl].push(reverseJumpmark);
     }
 
+    assertWithinStorageQuota(jumpmarks);
     await chrome.storage.sync.set({ jumpmarks });
     return true;
   } catch (error) {
@@ -554,6 +556,59 @@ async function deleteJumpmarks(jumpmarkIds) {
   }
 }
 
+// chrome.storage.sync の1項目あたりの上限（バイト）。全データを "jumpmarks" 1項目に保存している
+const SYNC_QUOTA_BYTES_PER_ITEM = 8192;
+
+// "jumpmarks" キーの UTF-8 バイト数 + JSON.stringify(値) の UTF-8 バイト数
+function calculateJumpmarksBytes(jumpmarks) {
+  const encoder = new TextEncoder();
+  return (
+    encoder.encode("jumpmarks").length +
+    encoder.encode(JSON.stringify(jumpmarks ?? {})).length
+  );
+}
+
+// 上限に対する使用率（%）。100 を超える場合は 100、丸めない
+function calculateStorageUsagePercent(bytes) {
+  return Math.min((bytes / SYNC_QUOTA_BYTES_PER_ITEM) * 100, 100);
+}
+
+function getStorageUsageLevel(percent) {
+  if (percent >= 90) return "danger";
+  if (percent >= 70) return "warning";
+  return "normal";
+}
+
+function formatStorageSize(bytes) {
+  return (bytes / 1024).toFixed(1) + "KB";
+}
+
+function isStorageQuotaExceeded(jumpmarks) {
+  return calculateJumpmarksBytes(jumpmarks) > SYNC_QUOTA_BYTES_PER_ITEM;
+}
+
+function createStorageQuotaError() {
+  const error = new Error(t("errorStorageQuotaExceeded"));
+  error.name = "StorageQuotaError";
+  return error;
+}
+
+// 自前の容量不足エラー、または Chrome 側の QUOTA_BYTES エラーなら true
+function isStorageQuotaError(error) {
+  if (error === null || typeof error !== "object") return false;
+  if (error.name === "StorageQuotaError") return true;
+  return (
+    typeof error.message === "string" && error.message.includes("QUOTA_BYTES")
+  );
+}
+
+// 書き込み前に呼ぶ。上限を超えるなら容量不足エラーを投げる
+function assertWithinStorageQuota(jumpmarks) {
+  if (isStorageQuotaExceeded(jumpmarks)) {
+    throw createStorageQuotaError();
+  }
+}
+
 // ストレージ統計を取得
 async function getStorageStats() {
   try {
@@ -580,16 +635,17 @@ async function getStorageStats() {
       }
     });
 
-    // ストレージ使用量を計算（概算）
-    const dataSize = JSON.stringify(jumpmarks).length;
-    const storageUsed = Math.round((dataSize / 1024) * 100) / 100; // KB単位
+    // ストレージ使用量を計算（1項目の上限に対する UTF-8 バイト数）
+    const bytesUsed = calculateJumpmarksBytes(jumpmarks);
 
     return {
       totalJumpmarks,
       originalJumpmarks,
       bidirectionalJumpmarks,
       urlCount,
-      storageUsed,
+      bytesUsed,
+      quotaBytes: SYNC_QUOTA_BYTES_PER_ITEM,
+      usagePercent: calculateStorageUsagePercent(bytesUsed),
     };
   } catch (error) {
     console.error("ストレージ統計取得エラー:", error);
@@ -598,7 +654,9 @@ async function getStorageStats() {
       originalJumpmarks: 0,
       bidirectionalJumpmarks: 0,
       urlCount: 0,
-      storageUsed: 0,
+      bytesUsed: 0,
+      quotaBytes: SYNC_QUOTA_BYTES_PER_ITEM,
+      usagePercent: 0,
     };
   }
 }
