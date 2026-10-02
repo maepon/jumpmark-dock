@@ -550,31 +550,425 @@ async function deleteJumpmarks(jumpmarkIds) {
 // ストレージ変更通知で判定に使う領域名
 const JUMPMARKS_STORAGE_AREA_NAME = "sync";
 
+// chrome.storage.sync の上限（バイト）。全体 / 1項目 / 項目数
+const SYNC_QUOTA_BYTES = 102400;
+const SYNC_QUOTA_BYTES_PER_ITEM = 8192;
+const SYNC_MAX_ITEMS = 512;
+
+// 作成元 URL のハッシュで振り分けるバケット数
+const JUMPMARKS_BUCKET_COUNT = 64;
+
+// 変更通知をまとめる待ち時間（ミリ秒）
+const JUMPMARKS_CHANGE_NOTIFY_DELAY_MS = 100;
+
+// メタ項目のキーと、v2.3.0 以前の 1 項目形式のキー
+const JUMPMARKS_META_KEY = "jm:meta";
+const LEGACY_JUMPMARKS_KEY = "jumpmarks";
+
 // Jumpmarks を保存するストレージ領域（呼ばれるたびに参照する）
 function getJumpmarksStorageArea() {
   return chrome.storage.sync;
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function fnv1a32(str) {
+  const bytes = new TextEncoder().encode(str);
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+}
+
+// FNV-1a 32bit を 8 桁の小文字 16 進で返す
+function hashStringFnv1a(str) {
+  return fnv1a32(str).toString(16).padStart(8, "0");
+}
+
+// 作成元 URL が入るバケット番号（0〜63）
+function getJumpmarksBucketIndex(sourceUrl) {
+  return fnv1a32(sourceUrl) % JUMPMARKS_BUCKET_COUNT;
+}
+
+// キーの UTF-8 バイト数 + JSON.stringify(値) の UTF-8 バイト数
+function calculateStorageItemBytes(key, value) {
+  const encoder = new TextEncoder();
+  return (
+    encoder.encode(key).length + encoder.encode(JSON.stringify(value)).length
+  );
+}
+
+function calculateStorageItemsBytes(items) {
+  return Object.entries(items).reduce(
+    (sum, [key, value]) => sum + calculateStorageItemBytes(key, value),
+    0,
+  );
+}
+
+// オブジェクトのキーを深い階層まで昇順に並べ替えた複製（toJSON を持つ値はそのまま）
+function sortKeysDeep(value) {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (!isPlainObject(value) || typeof value.toJSON === "function") {
+    return value;
+  }
+  const sorted = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = sortKeysDeep(value[key]);
+  }
+  return sorted;
+}
+
+// キーの順に左右されない JSON 文字列。chrome.storage は読み返すときにオブジェクトのキーを
+// 昇順に並べ替えるため、保存済みの値との比較はこれで行う
+function stableStringify(value) {
+  return JSON.stringify(sortKeysDeep(value));
+}
+
+// 空の配列の作成元 URL を除き、キーを深い階層まで昇順に並べた JSON 文字列（バケットの内容の比較・rev 用）
+function canonicalizeBucketData(data) {
+  const ordered = {};
+  for (const url of Object.keys(data)) {
+    if (Array.isArray(data[url]) && data[url].length > 0) {
+      ordered[url] = data[url];
+    }
+  }
+  return stableStringify(ordered);
+}
+
+function getBucketHeadKey(bucket) {
+  return `jm:${bucket}`;
+}
+
+function getBucketContinuationKey(bucket, index) {
+  return `jm:${bucket}:${index}`;
+}
+
+// jumpmarks を作成元 URL のバケットに振り分ける（バケット番号の昇順、中は作成元 URL の昇順）
+function groupJumpmarksByBucket(jumpmarks) {
+  const source = isPlainObject(jumpmarks) ? jumpmarks : {};
+  const groups = new Map();
+  for (const url of Object.keys(source).sort()) {
+    if (!Array.isArray(source[url]) || source[url].length === 0) continue;
+    const bucket = getJumpmarksBucketIndex(url);
+    if (!groups.has(bucket)) groups.set(bucket, {});
+    groups.get(bucket)[url] = source[url];
+  }
+  return new Map([...groups].sort((a, b) => a[0] - b[0]));
+}
+
+// 1 バケット分のデータを、1 項目 8,192 バイト以下の項目群（先頭項目 + 続き項目）にする
+function buildBucketItems(bucket, data) {
+  const headKey = getBucketHeadKey(bucket);
+  const single = { d: data };
+  if (calculateStorageItemBytes(headKey, single) <= SYNC_QUOTA_BYTES_PER_ITEM) {
+    return { [headKey]: single };
+  }
+
+  // n と r は詰め終わるまで決まらないので、最大幅の仮値で大きさを見積もる
+  const wrap = (index, d) =>
+    index === 0 ? { n: 999, r: "ffffffff", d } : { r: "ffffffff", d };
+  const keyOf = (index) =>
+    index === 0 ? headKey : getBucketContinuationKey(bucket, index);
+
+  const chunks = [{}];
+  for (const url of Object.keys(data)) {
+    for (const jumpmark of data[url]) {
+      const index = chunks.length - 1;
+      const current = chunks[index];
+      const candidate = {
+        ...current,
+        [url]: [...(current[url] ?? []), jumpmark],
+      };
+      const fits =
+        calculateStorageItemBytes(keyOf(index), wrap(index, candidate)) <=
+        SYNC_QUOTA_BYTES_PER_ITEM;
+      if (fits || Object.keys(current).length === 0) {
+        chunks[index] = candidate;
+      } else {
+        chunks.push({ [url]: [jumpmark] });
+      }
+    }
+  }
+
+  if (chunks.length === 1) {
+    return { [headKey]: { d: chunks[0] } };
+  }
+  const rev = hashStringFnv1a(canonicalizeBucketData(data));
+  const items = {};
+  chunks.forEach((d, index) => {
+    items[keyOf(index)] =
+      index === 0 ? { n: chunks.length, r: rev, d } : { r: rev, d };
+  });
+  return items;
+}
+
+// jumpmarks（{ 作成元URL: [Jumpmark, ...] }）を保存用の項目群（キー → 値）にする。純粋・決定的
+function buildJumpmarksStorageItems(jumpmarks) {
+  const items = {};
+  for (const [bucket, data] of groupJumpmarksByBucket(jumpmarks)) {
+    Object.assign(items, buildBucketItems(bucket, data));
+  }
+  return items;
+}
+
+// バケットの項目のキーなら { bucket, index }（先頭項目は index 0）、それ以外は null
+function parseJumpmarksBucketKey(key) {
+  const match = /^jm:(\d+)(?::(\d+))?$/.exec(key);
+  if (!match) return null;
+  const bucket = Number(match[1]);
+  if (bucket >= JUMPMARKS_BUCKET_COUNT) return null;
+  if (match[2] === undefined) return { bucket, index: 0 };
+  const index = Number(match[2]);
+  return index >= 1 ? { bucket, index } : null;
+}
+
+// 1 バケットの項目から内容を読み取る。続き項目が欠けている・食い違うときは、ある分を連結して重複を除く
+function readBucketData(head, continuations) {
+  const headItem = isPlainObject(head) ? head : null;
+  const n =
+    headItem && Number.isInteger(headItem.n) && headItem.n >= 1
+      ? headItem.n
+      : 1;
+
+  let consistent = headItem !== null;
+  for (let i = 1; consistent && i < n; i++) {
+    const item = continuations.get(i);
+    consistent = isPlainObject(item) && item.r === headItem.r;
+  }
+
+  let sources;
+  if (consistent) {
+    sources = [headItem];
+    for (let i = 1; i < n; i++) sources.push(continuations.get(i));
+  } else {
+    sources = headItem ? [headItem] : [];
+    const indexes = [...continuations.keys()].sort((a, b) => a - b);
+    for (const index of indexes) sources.push(continuations.get(index));
+  }
+
+  const data = {};
+  for (const item of sources) {
+    if (!isPlainObject(item) || !isPlainObject(item.d)) continue;
+    for (const [url, list] of Object.entries(item.d)) {
+      if (!Array.isArray(list)) continue;
+      if (!data[url]) data[url] = [];
+      data[url].push(...list);
+    }
+  }
+  if (consistent) return data;
+
+  for (const url of Object.keys(data)) {
+    const seen = new Set();
+    data[url] = data[url].filter((jumpmark) => {
+      const id = isPlainObject(jumpmark) ? jumpmark.id : undefined;
+      const identity =
+        typeof id === "string"
+          ? `id:${id}`
+          : `json:${JSON.stringify(jumpmark)}`;
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    });
+  }
+  return data;
+}
+
+// get(null) の結果から、バケットごとの今の内容と、今あるキーの一覧を集める（バケット番号の昇順）
+function collectBucketsFromItems(items) {
+  const groups = new Map();
+  for (const key of Object.keys(items)) {
+    const parsed = parseJumpmarksBucketKey(key);
+    if (!parsed) continue;
+    if (!groups.has(parsed.bucket)) {
+      groups.set(parsed.bucket, {
+        head: undefined,
+        continuations: new Map(),
+        keys: [],
+      });
+    }
+    const group = groups.get(parsed.bucket);
+    group.keys.push(key);
+    if (parsed.index === 0) {
+      group.head = items[key];
+    } else {
+      group.continuations.set(parsed.index, items[key]);
+    }
+  }
+
+  const buckets = new Map();
+  for (const bucket of [...groups.keys()].sort((a, b) => a - b)) {
+    const { head, continuations, keys } = groups.get(bucket);
+    buckets.set(bucket, { data: readBucketData(head, continuations), keys });
+  }
+  return buckets;
+}
+
+// jm:meta の読み取り。プレーンなオブジェクトでなければ「無い」、legacyIds は空でない文字列だけ使う
+function readJumpmarksMeta(items) {
+  const meta = items[JUMPMARKS_META_KEY];
+  if (!isPlainObject(meta)) return { exists: false, legacyIds: [] };
+  const ids = Array.isArray(meta.legacyIds)
+    ? meta.legacyIds.filter((id) => typeof id === "string" && id !== "")
+    : [];
+  return { exists: true, legacyIds: [...new Set(ids)] };
+}
+
+// 旧形式（jumpmarks 1 項目）の Jumpmark のうち、まだ取り込んでいないものを merged の末尾に足す
+function mergeLegacyJumpmarks(merged, items) {
+  const legacy = items[LEGACY_JUMPMARKS_KEY];
+  if (!isPlainObject(legacy)) return;
+
+  const meta = readJumpmarksMeta(items);
+  const imported = new Set(meta.legacyIds);
+  const present = new Set();
+  for (const list of Object.values(merged)) {
+    for (const jumpmark of list) {
+      if (isPlainObject(jumpmark) && typeof jumpmark.id === "string") {
+        present.add(jumpmark.id);
+      }
+    }
+  }
+
+  for (const [url, list] of Object.entries(legacy)) {
+    if (!Array.isArray(list)) continue;
+    for (const jumpmark of list) {
+      if (!isPlainObject(jumpmark)) continue;
+      const id = jumpmark.id;
+      if (typeof id === "string" && id !== "") {
+        if (imported.has(id) || present.has(id)) continue;
+        present.add(id);
+      } else if (meta.exists) {
+        continue;
+      }
+      if (!merged[url]) merged[url] = [];
+      merged[url].push(jumpmark);
+    }
+  }
+}
+
+// jm:meta の legacyIds。今の値と旧形式の id の和集合（減らない）を昇順で返す
+function computeLegacyIds(items) {
+  const ids = new Set(readJumpmarksMeta(items).legacyIds);
+  const legacy = items[LEGACY_JUMPMARKS_KEY];
+  if (isPlainObject(legacy)) {
+    for (const list of Object.values(legacy)) {
+      if (!Array.isArray(list)) continue;
+      for (const jumpmark of list) {
+        if (
+          isPlainObject(jumpmark) &&
+          typeof jumpmark.id === "string" &&
+          jumpmark.id !== ""
+        ) {
+          ids.add(jumpmark.id);
+        }
+      }
+    }
+  }
+  return [...ids].sort();
+}
+
 // 保存済みの Jumpmarks を読み込む。失敗はそのまま投げる（ログは呼び出し元の catch で出す）
 async function readJumpmarksStore() {
-  const result = await getJumpmarksStorageArea().get(["jumpmarks"]);
-  return result.jumpmarks || {};
-}
+  const items = await getJumpmarksStorageArea().get(null);
 
-// Jumpmarks を書き込む。失敗はそのまま投げる（ログは呼び出し元の catch で出す）
-async function writeJumpmarksStore(jumpmarks, { checkQuota = true } = {}) {
-  if (checkQuota) {
-    assertWithinStorageQuota(jumpmarks);
-  }
-  await getJumpmarksStorageArea().set({ jumpmarks });
-}
-
-// Jumpmarks の変更を監視する（MV3 Service Worker のため同期的に登録する）
-function onJumpmarksChanged(callback) {
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === JUMPMARKS_STORAGE_AREA_NAME && changes.jumpmarks) {
-      return callback();
+  const merged = {};
+  for (const { data } of collectBucketsFromItems(items).values()) {
+    for (const [url, list] of Object.entries(data)) {
+      if (!merged[url]) merged[url] = [];
+      merged[url].push(...list);
     }
+  }
+  mergeLegacyJumpmarks(merged, items);
+
+  const result = {};
+  for (const [url, list] of Object.entries(merged)) {
+    if (list.length > 0) result[url] = list;
+  }
+  return result;
+}
+
+// Jumpmarks を書き込む。失敗はそのまま投げる（ログは呼び出し元の catch で出す）。
+// 内容が変わったバケットだけを set 1 回で書き、要らなくなった項目は set の後に remove 1 回で消す。
+// 旧形式の "jumpmarks" 項目には触らない
+async function writeJumpmarksStore(jumpmarks, { checkQuota = true } = {}) {
+  const items = await getJumpmarksStorageArea().get(null);
+  const current = collectBucketsFromItems(items);
+  const next = groupJumpmarksByBucket(jumpmarks);
+
+  const toSet = {};
+  const toRemove = [];
+  const buckets = [...new Set([...current.keys(), ...next.keys()])].sort(
+    (a, b) => a - b,
+  );
+  for (const bucket of buckets) {
+    const existing = current.get(bucket);
+    const data = next.get(bucket) ?? {};
+    if (
+      canonicalizeBucketData(existing?.data ?? {}) ===
+      canonicalizeBucketData(data)
+    ) {
+      continue;
+    }
+
+    const newItems =
+      Object.keys(data).length > 0 ? buildBucketItems(bucket, data) : {};
+    Object.assign(toSet, newItems);
+    // 要らなくなった項目は、先に空の値にしてから消す（remove に失敗しても内容は食い違わない）
+    for (const key of existing?.keys ?? []) {
+      if (key in newItems) continue;
+      toRemove.push(key);
+      toSet[key] =
+        parseJumpmarksBucketKey(key).index === 0 ? { d: {} } : { r: "", d: {} };
+    }
+  }
+
+  const meta = { v: 2, legacyIds: computeLegacyIds(items) };
+  if (stableStringify(meta) !== stableStringify(items[JUMPMARKS_META_KEY])) {
+    toSet[JUMPMARKS_META_KEY] = meta;
+  }
+
+  if (checkQuota) {
+    assertWithinStorageQuota({ ...items, ...toSet }, Object.keys(toSet));
+  }
+  if (Object.keys(toSet).length === 0) return;
+
+  await getJumpmarksStorageArea().set(toSet);
+
+  if (toRemove.length > 0) {
+    try {
+      await getJumpmarksStorageArea().remove(toRemove);
+    } catch (error) {
+      console.warn("不要な保存項目の削除に失敗しました:", error);
+    }
+  }
+}
+
+// Jumpmarks の変更を監視する（MV3 Service Worker のため同期的に登録する）。
+// 1 回の保存で複数回・複数項目の変更通知が来ても、コールバックは 100 ミリ秒ごとに 1 回にまとめる
+function onJumpmarksChanged(callback) {
+  let scheduled = false;
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== JUMPMARKS_STORAGE_AREA_NAME || scheduled) return;
+    const relevant = Object.keys(changes).some(
+      (key) => key === LEGACY_JUMPMARKS_KEY || key.startsWith("jm:"),
+    );
+    if (!relevant) return;
+
+    scheduled = true;
+    setTimeout(() => {
+      scheduled = false;
+      try {
+        Promise.resolve(callback()).catch((error) => {
+          console.error("Jumpmarks変更通知のコールバックエラー:", error);
+        });
+      } catch (error) {
+        console.error("Jumpmarks変更通知のコールバックエラー:", error);
+      }
+    }, JUMPMARKS_CHANGE_NOTIFY_DELAY_MS);
   });
 }
 
@@ -592,21 +986,9 @@ function isJumpmarkNotFoundError(error) {
   );
 }
 
-// chrome.storage.sync の1項目あたりの上限（バイト）。全データを "jumpmarks" 1項目に保存している
-const SYNC_QUOTA_BYTES_PER_ITEM = 8192;
-
-// "jumpmarks" キーの UTF-8 バイト数 + JSON.stringify(値) の UTF-8 バイト数
-function calculateJumpmarksBytes(jumpmarks) {
-  const encoder = new TextEncoder();
-  return (
-    encoder.encode("jumpmarks").length +
-    encoder.encode(JSON.stringify(jumpmarks ?? {})).length
-  );
-}
-
-// 上限に対する使用率（%）。100 を超える場合は 100、丸めない
+// 上限（storage.sync 全体）に対する使用率（%）。100 を超える場合は 100、丸めない
 function calculateStorageUsagePercent(bytes) {
-  return Math.min((bytes / SYNC_QUOTA_BYTES_PER_ITEM) * 100, 100);
+  return Math.min((bytes / SYNC_QUOTA_BYTES) * 100, 100);
 }
 
 function getStorageUsageLevel(percent) {
@@ -619,8 +1001,15 @@ function formatStorageSize(bytes) {
   return (bytes / 1024).toFixed(1) + "KB";
 }
 
-function isStorageQuotaExceeded(jumpmarks) {
-  return calculateJumpmarksBytes(jumpmarks) > SYNC_QUOTA_BYTES_PER_ITEM;
+// 書き込み後の全項目 items が上限を超えるなら true。
+// 1 項目の上限は perItemKeys の項目（省略時は全項目）について見る
+function isStorageQuotaExceeded(items, perItemKeys = Object.keys(items)) {
+  if (Object.keys(items).length > SYNC_MAX_ITEMS) return true;
+  if (calculateStorageItemsBytes(items) > SYNC_QUOTA_BYTES) return true;
+  return perItemKeys.some(
+    (key) =>
+      calculateStorageItemBytes(key, items[key]) > SYNC_QUOTA_BYTES_PER_ITEM,
+  );
 }
 
 function createStorageQuotaError() {
@@ -629,20 +1018,28 @@ function createStorageQuotaError() {
   return error;
 }
 
-// 自前の容量不足エラー、または Chrome 側の QUOTA_BYTES エラーなら true
+// 自前の容量不足エラー、または Chrome 側の QUOTA_BYTES / MAX_ITEMS エラーなら true
 function isStorageQuotaError(error) {
   if (error === null || typeof error !== "object") return false;
   if (error.name === "StorageQuotaError") return true;
   return (
-    typeof error.message === "string" && error.message.includes("QUOTA_BYTES")
+    typeof error.message === "string" &&
+    (error.message.includes("QUOTA_BYTES") ||
+      error.message.includes("MAX_ITEMS"))
   );
 }
 
-// 書き込み前に呼ぶ。上限を超えるなら容量不足エラーを投げる
-function assertWithinStorageQuota(jumpmarks) {
-  if (isStorageQuotaExceeded(jumpmarks)) {
+// 書き込み前に呼ぶ。書き込み後の全項目が上限を超えるなら容量不足エラーを投げる
+function assertWithinStorageQuota(items, perItemKeys) {
+  if (isStorageQuotaExceeded(items, perItemKeys)) {
     throw createStorageQuotaError();
   }
+}
+
+// storage.sync にある全項目（旧形式・jm:meta を含む）の大きさの合計（バイト）
+async function readStorageUsageBytes() {
+  const items = await getJumpmarksStorageArea().get(null);
+  return calculateStorageItemsBytes(items);
 }
 
 // ストレージ統計を取得
@@ -670,8 +1067,8 @@ async function getStorageStats() {
       }
     });
 
-    // ストレージ使用量を計算（1項目の上限に対する UTF-8 バイト数）
-    const bytesUsed = calculateJumpmarksBytes(jumpmarks);
+    // ストレージ使用量を計算（storage.sync 全体の上限に対する UTF-8 バイト数）
+    const bytesUsed = await readStorageUsageBytes();
 
     return {
       totalJumpmarks,
@@ -679,7 +1076,7 @@ async function getStorageStats() {
       bidirectionalJumpmarks,
       urlCount,
       bytesUsed,
-      quotaBytes: SYNC_QUOTA_BYTES_PER_ITEM,
+      quotaBytes: SYNC_QUOTA_BYTES,
       usagePercent: calculateStorageUsagePercent(bytesUsed),
     };
   } catch (error) {
@@ -690,7 +1087,7 @@ async function getStorageStats() {
       bidirectionalJumpmarks: 0,
       urlCount: 0,
       bytesUsed: 0,
-      quotaBytes: SYNC_QUOTA_BYTES_PER_ITEM,
+      quotaBytes: SYNC_QUOTA_BYTES,
       usagePercent: 0,
     };
   }

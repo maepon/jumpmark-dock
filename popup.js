@@ -292,13 +292,11 @@ async function updateStorageWarning() {
   const requestId = ++storageWarningRequestId;
   hideStorageWarning();
   try {
-    const jumpmarks = await readJumpmarksStore();
+    const bytesUsed = await readStorageUsageBytes();
     // 新しい要求や編集フォームへの切り替えがあった場合は結果を捨てる
     if (requestId !== storageWarningRequestId || editingJumpmark) return;
 
-    const percent = calculateStorageUsagePercent(
-      calculateJumpmarksBytes(jumpmarks),
-    );
+    const percent = calculateStorageUsagePercent(bytesUsed);
     if (getStorageUsageLevel(percent) === "danger") {
       const warning = document.getElementById("storageWarning");
       warning.textContent = t("popupStorageAlmostFull", [

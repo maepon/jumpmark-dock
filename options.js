@@ -943,7 +943,7 @@ async function updateStorageStats() {
   try {
     const stats = await getStorageStats();
 
-    // 総Jumpmark数とストレージ使用量（1項目の上限 8KB に対する UTF-8 バイト数）
+    // 総Jumpmark数とストレージ使用量（storage.sync 全体の上限 100KB に対する UTF-8 バイト数）
     storageSummaryElement.textContent = t("storageSummary", [
       String(stats.totalJumpmarks),
       formatStorageSize(stats.bytesUsed),
