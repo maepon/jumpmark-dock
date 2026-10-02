@@ -382,6 +382,37 @@ test("AC-17: second write is a no-op", async () => {
   assert.deepStrictEqual(state.items, before);
 });
 
+test("stableStringify ignores object key order at every depth", () => {
+  const { sandbox } = load();
+  const a = { b: 1, a: { d: [{ y: 1, x: 2 }], c: 3 } };
+  const b = { a: { c: 3, d: [{ x: 2, y: 1 }] }, b: 1 };
+  assert.strictEqual(sandbox.stableStringify(a), sandbox.stableStringify(b));
+  // 配列の順は意味を持つので区別する
+  assert.notStrictEqual(
+    sandbox.stableStringify([1, 2]),
+    sandbox.stableStringify([2, 1]),
+  );
+  assert.strictEqual(sandbox.stableStringify(undefined), undefined);
+});
+
+// chrome.storage は読み返すときにキーを並べ替えるので、書いたときとキーの順が違っても
+// 内容が同じなら書き直さない（jm:meta もバケットも）
+test("same content with a different key order is not rewritten", async () => {
+  const { sandbox, state } = load();
+  await sandbox.writeJumpmarksStore({ "a.com": [J1] });
+  assert.strictEqual(state.setCalls.length, 1);
+
+  const reordered = {
+    sourceUrl: J1.sourceUrl,
+    url: J1.url,
+    title: J1.title,
+    id: J1.id,
+  };
+  await sandbox.writeJumpmarksStore({ "a.com": [reordered] });
+  assert.strictEqual(state.setCalls.length, 1);
+  assert.strictEqual(state.removeCalls.length, 0);
+});
+
 test("AC-18: deleted id is not revived by a legacy write-back", async () => {
   const { sandbox, state } = await migrated();
   await sandbox.deleteJumpmark("1");

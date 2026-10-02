@@ -609,15 +609,34 @@ function calculateStorageItemsBytes(items) {
   );
 }
 
-// 空の配列の作成元 URL を除き、キーの昇順に並べた JSON 文字列（バケットの内容の比較・rev 用）
+// オブジェクトのキーを深い階層まで昇順に並べ替えた複製（toJSON を持つ値はそのまま）
+function sortKeysDeep(value) {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (!isPlainObject(value) || typeof value.toJSON === "function") {
+    return value;
+  }
+  const sorted = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = sortKeysDeep(value[key]);
+  }
+  return sorted;
+}
+
+// キーの順に左右されない JSON 文字列。chrome.storage は読み返すときにオブジェクトのキーを
+// 昇順に並べ替えるため、保存済みの値との比較はこれで行う
+function stableStringify(value) {
+  return JSON.stringify(sortKeysDeep(value));
+}
+
+// 空の配列の作成元 URL を除き、キーを深い階層まで昇順に並べた JSON 文字列（バケットの内容の比較・rev 用）
 function canonicalizeBucketData(data) {
   const ordered = {};
-  for (const url of Object.keys(data).sort()) {
+  for (const url of Object.keys(data)) {
     if (Array.isArray(data[url]) && data[url].length > 0) {
       ordered[url] = data[url];
     }
   }
-  return JSON.stringify(ordered);
+  return stableStringify(ordered);
 }
 
 function getBucketHeadKey(bucket) {
@@ -908,7 +927,7 @@ async function writeJumpmarksStore(jumpmarks, { checkQuota = true } = {}) {
   }
 
   const meta = { v: 2, legacyIds: computeLegacyIds(items) };
-  if (JSON.stringify(meta) !== JSON.stringify(items[JUMPMARKS_META_KEY])) {
+  if (stableStringify(meta) !== stableStringify(items[JUMPMARKS_META_KEY])) {
     toSet[JUMPMARKS_META_KEY] = meta;
   }
 

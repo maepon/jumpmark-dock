@@ -10,11 +10,25 @@ const ROOT = path.join(__dirname, "..", "..");
 const plain = (value) =>
   value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 
+// chrome.storage は読み返すときにオブジェクトのキーを昇順に並べ替える（Chrome で確認済み）。
+// get はこれに合わせ、キーを深い階層まで並べ替えた複製を返す
+function sortKeysDeep(value) {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value === null || typeof value !== "object") return value;
+  const sorted = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = sortKeysDeep(value[key]);
+  }
+  return sorted;
+}
+
+const chromeStorageCopy = (value) => sortKeysDeep(plain(value));
+
 function readSource(relPath) {
   return fs.readFileSync(path.join(ROOT, relPath), "utf8");
 }
 
-// get(null) が全項目のコピーを返し、set / remove が集合を書き換えるスタブ。
+// get(null) が全項目のコピー（キーは昇順）を返し、set / remove が集合を書き換えるスタブ。
 // 旧形式の "jumpmarks" 項目は新バージョンが書いてはいけないので、set / remove で受けたら例外にする
 function createSyncStub(initialItems = {}) {
   const state = {
@@ -30,7 +44,7 @@ function createSyncStub(initialItems = {}) {
     get: async (keys) => {
       state.getCalls.push(keys);
       if (state.getError) throw state.getError;
-      return plain(state.items);
+      return chromeStorageCopy(state.items);
     },
     set: async (value) => {
       if ("jumpmarks" in value) {
