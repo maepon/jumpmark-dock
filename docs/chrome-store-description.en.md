@@ -8,6 +8,8 @@
 
 **Jumpmark Dock** is a Chrome extension focused on **creating bidirectional shortcuts between web pages**.
 
+A Jumpmark is a **scoped bookmark**. Regular bookmarks show the same list no matter which page you're on, but a Jumpmark appears only when you open the page it was created on (its scope).
+
 ### Single, clear purpose
 **Create bidirectional shortcut links between web pages so you can move quickly between related pages**
 
@@ -58,6 +60,7 @@
 | Access | From the bookmarks bar | **Directly from the current page** |
 | Sync | Chrome bookmark sync | **Chrome Storage Sync** |
 | Visibility | List view | **Badge + popup** |
+| Where it appears | The same list on every page | **Only on the page it was created on (its scope)** |
 
 ### 🛡️ Privacy and security
 - **Minimal permissions**: Only what is needed (storage, tab information)
@@ -70,7 +73,7 @@
 **Store URL**: https://chromewebstore.google.com/detail/jumpmark-dock/ldodfncboddjjbggcholbmkmjbfjmblh
 
 **Short description**
-An extension for creating bidirectional shortcuts between web pages
+Scoped bookmarks for Chrome: links tied to a page or URL pattern that show up only when you're there.
 
 **Detailed description**
 Jumpmark Dock is an extension focused on creating bidirectional shortcuts between web pages.

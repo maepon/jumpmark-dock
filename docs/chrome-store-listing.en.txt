@@ -1,8 +1,8 @@
-A Chrome extension for managing and opening a per-page collection of shortcuts.
+Scoped bookmarks for Chrome: links tied to a page or URL pattern that show up only when you're there.
 
 🧭 What is Jumpmark Dock?
 
-Jumpmark Dock is a Chrome extension that lets you manage a customizable set of links (shortcuts) tied to each page. It's perfect for situations where you want to attach specific links to a specific page — like a ChatGPT thread or a Notion page.
+Jumpmark Dock is a Chrome extension for managing "scoped bookmarks." Regular bookmarks show the same list no matter which page you're on, but a Jumpmark appears in the popup only when you open the page it was created on (its scope). It's perfect when the links you need depend on what you're working on — a ChatGPT thread, a Notion page, a GitHub issue, and so on.
 
 🔧 Key Features
 
@@ -10,8 +10,8 @@ Jumpmark Dock is a Chrome extension that lets you manage a customizable set of l
 ● Add, edit, and delete shortcuts directly from the popup
 ● Bidirectional links: when you add a link from page A to page B, a link back from B to A can be created at the same time
 ● Fill in the title and URL by picking one of your open tabs ("Choose from open tabs")
-● Wildcard registration supported by adding * to the end of the source URL
-● The extension icon shows how many shortcuts the current page has
+● Add * (a wildcard) to the end of the source URL to widen the scope to every page under it
+● The extension icon shows how many shortcuts are in the current page's scope
 ● Export your data as JSON, CSV, or HTML, and import it from JSON
 ● Available in English and Japanese, with dark mode support
 
