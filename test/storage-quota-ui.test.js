@@ -4,13 +4,14 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const {
+  readSource,
+  createSyncStub,
+  buildItems,
+} = require("./helpers/sync-stub");
 
-const ROOT = path.join(__dirname, "..");
+// 1 項目の上限（これ以上の title を 1 件入れると 1 項目に収まらない）
 const QUOTA = 8192;
-
-function readSource(relPath) {
-  return fs.readFileSync(path.join(ROOT, relPath), "utf8");
-}
 
 function createElementStub() {
   const classes = new Set();
@@ -44,7 +45,8 @@ function createElementStub() {
 // t() の結果が検証できるよう、chrome.i18n は「キー:引数」を返すスタブにする
 function loadSandbox(target, stored) {
   const elements = new Map();
-  const calls = { set: [], alert: [] };
+  const stub = createSyncStub(stored ? buildItems(stored) : {});
+  const calls = { set: stub.state.setCalls, alert: [] };
   const sandbox = {
     console: { ...console, error: () => {} },
     URL,
@@ -72,14 +74,7 @@ function loadSandbox(target, stored) {
         getMessage: (key, subs) =>
           subs === undefined ? key : `${key}:${[].concat(subs).join("|")}`,
       },
-      storage: {
-        sync: {
-          get: async () => ({ jumpmarks: JSON.parse(JSON.stringify(stored)) }),
-          set: async (value) => {
-            calls.set.push(value);
-          },
-        },
-      },
+      storage: { sync: stub.sync },
     },
   };
   vm.createContext(sandbox);
@@ -87,51 +82,54 @@ function loadSandbox(target, stored) {
     vm.runInContext(readSource(file), sandbox);
   }
   sandbox.generateUniqueId = () => "fixed-id";
-  return { sandbox, calls, el: sandbox.document.getElementById };
+  return {
+    sandbox,
+    calls,
+    state: stub.state,
+    el: sandbox.document.getElementById,
+  };
 }
 
-// "jumpmarks"(9) + {"a.com":[{"title":"..."}]}(24 + 文字数)
-const dataWithBytes = (bytes) => ({
-  "a.com": [{ title: "x".repeat(bytes - 33) }],
+// 全項目の合計がちょうど bytes になる storage.sync の項目群（"jm:7" の 4 + {"d":{"a.com":[{"title":"…"}]}} の 30 + 文字数）
+const itemsWithBytes = (bytes) => ({
+  "jm:7": { d: { "a.com": [{ title: "x".repeat(bytes - 34) }] } },
 });
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 // ---- options.js ----
 
-test("updateStorageStats shows bytes summary and bar", async () => {
+test("AC-45: updateStorageStats thresholds (summary, bar, warning)", async () => {
   const { sandbox, el } = loadSandbox("options.js", {});
   const statuses = [];
   sandbox.showStatusMessage = (...args) => statuses.push(args);
   const bar = el("storageProgress");
   const summary = el("storageSummary");
   const run = async (bytes) => {
-    sandbox.chrome.storage.sync.get = async () => ({
-      jumpmarks: dataWithBytes(bytes),
-    });
+    sandbox.chrome.storage.sync.get = async () => itemsWithBytes(bytes);
     await sandbox.updateStorageStats();
   };
 
-  await run(4096);
-  assert.strictEqual(summary.textContent, "storageSummary:1|4.0KB|8.0KB");
+  await run(51200);
+  assert.strictEqual(summary.textContent, "storageSummary:1|50.0KB|100.0KB");
   assert.strictEqual(bar.style.width, "50%");
   assert.strictEqual(bar.classList.contains("warning"), false);
   assert.strictEqual(bar.classList.contains("danger"), false);
 
-  await run(6144);
-  assert.strictEqual(bar.style.width, "75%");
+  await run(71680); // 70%
+  assert.strictEqual(bar.style.width, "70%");
   assert.strictEqual(bar.classList.contains("warning"), true);
   assert.strictEqual(bar.classList.contains("danger"), false);
 
-  await run(4096);
+  await run(51200);
   assert.strictEqual(bar.classList.contains("warning"), false);
 
-  await run(7537); // 約 92%
+  await run(92160); // 90%
   assert.strictEqual(bar.classList.contains("danger"), true);
   assert.strictEqual(bar.classList.contains("warning"), false);
   assert.strictEqual(statuses.length, 0);
 
-  await run(7800); // 約 95.2%
+  await run(97280); // 95%
   assert.strictEqual(bar.classList.contains("danger"), true);
   assert.deepStrictEqual(statuses, [["warnStorageAlmostFull", "error"]]);
 });
@@ -147,7 +145,7 @@ test("updateStorageStats falls back on getStorageStats failure", async () => {
   assert.strictEqual(el("storageProgress").style.width, "0%");
 });
 
-test("saveJumpmarksToStorage rejects over quota without calling set", async () => {
+test("AC-37: saveJumpmarksToStorage rejects over quota without calling set", async () => {
   const { sandbox, calls } = loadSandbox("options.js", {});
   const jumpmarks = [{ title: "x".repeat(QUOTA), sourceUrl: "a.com" }];
   await assert.rejects(sandbox.saveJumpmarksToStorage(jumpmarks), (error) =>
@@ -160,23 +158,52 @@ test("saveJumpmarksToStorage saves when small", async () => {
   const { sandbox, calls } = loadSandbox("options.js", {});
   await sandbox.saveJumpmarksToStorage([{ title: "t", sourceUrl: "a.com" }]);
   assert.strictEqual(calls.set.length, 1);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(calls.set[0])), {
-    jumpmarks: { "a.com": [{ title: "t", sourceUrl: "a.com" }] },
+  assert.deepStrictEqual(calls.set[0], {
+    "jm:7": { d: { "a.com": [{ title: "t", sourceUrl: "a.com" }] } },
+    "jm:meta": { v: 2, legacyIds: [] },
   });
 });
 
-test("saveJumpmarksToStorage saves when exactly 8192 bytes", async () => {
+test("saveJumpmarksToStorage saves when the bucket item is exactly 8192 bytes", async () => {
   const { sandbox, calls } = loadSandbox("options.js", {});
   const build = (padding) => [
     { title: "x".repeat(padding), sourceUrl: "a.com" },
   ];
-  const base = sandbox.calculateJumpmarksBytes({ "a.com": build(0) });
+  const base = sandbox.calculateStorageItemBytes("jm:7", {
+    d: { "a.com": build(0) },
+  });
   await sandbox.saveJumpmarksToStorage(build(QUOTA - base));
   assert.strictEqual(calls.set.length, 1);
   assert.strictEqual(
-    sandbox.calculateJumpmarksBytes(calls.set[0].jumpmarks),
+    sandbox.calculateStorageItemBytes("jm:7", calls.set[0]["jm:7"]),
     QUOTA,
   );
+});
+
+test("AC-36: saveJumpmarksToStorage across multiple buckets uses at most one set and one remove", async () => {
+  const item = (id, sourceUrl) => ({
+    id,
+    title: id,
+    url: "https://t.com",
+    sourceUrl,
+  });
+  // a.com(7) / b.com(2) は残して内容を変え、d.com のバケットは空にする
+  const { sandbox, calls, state } = loadSandbox("options.js", {
+    "a.com": [item("old-a", "a.com")],
+    "b.com": [item("old-b", "b.com")],
+    "d.com": [item("old-d", "d.com")],
+  });
+  const next = [item("new-a", "a.com"), item("new-b", "b.com")];
+  await sandbox.saveJumpmarksToStorage(next);
+  assert.ok(calls.set.length <= 1);
+  assert.ok(state.removeCalls.length <= 1);
+  assert.ok("jm:7" in calls.set[0] && "jm:2" in calls.set[0]);
+  assert.strictEqual(state.removeCalls.length, 1);
+  const stored = await sandbox.readJumpmarksStore();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(stored)), {
+    "a.com": [next[0]],
+    "b.com": [next[1]],
+  });
 });
 
 // 編集フォームを有効な値で埋め、既存 1 件（id: u1）が保存されている状態にする
@@ -343,7 +370,10 @@ test("popup deleteJumpmarkAndRefresh alerts on failure", async () => {
 test("popup deleteJumpmarkAndRefresh does not check quota", async () => {
   // 容量超過の保存済みデータでも、削除は set まで進み alert を出さない
   const stored = {
-    "b.com": [{ id: "big", title: "x".repeat(QUOTA) }],
+    "b.com": Array.from({ length: 14 }, (_, i) => ({
+      id: `big${i}`,
+      title: "x".repeat(8000),
+    })),
     "a.com": [{ id: "d1", title: "t" }],
   };
   const { sandbox, calls } = loadSandbox("popup.js", stored);
@@ -371,17 +401,17 @@ function setupPopupForm(percentOrError) {
     warning,
     pending,
     resolveWith: (index, bytes) =>
-      pending[index].resolve({ jumpmarks: dataWithBytes(bytes) }),
+      pending[index].resolve(itemsWithBytes(bytes)),
   };
 }
 
-test("showFormView shows warning at 90% or more", async () => {
+test("AC-46: showFormView shows warning at 90% or more", async () => {
   const { sandbox, warning, resolveWith } = setupPopupForm();
   sandbox.showFormView();
-  resolveWith(0, 7537); // 約 92.0%
+  resolveWith(0, 94000); // 約 91.8%
   await tick();
   assert.strictEqual(warning.classList.contains("hidden"), false);
-  const percent = (7537 / QUOTA) * 100;
+  const percent = (94000 / 102400) * 100;
   assert.strictEqual(
     warning.textContent,
     `popupStorageAlmostFull:${Math.floor(percent)}`,
@@ -391,7 +421,7 @@ test("showFormView shows warning at 90% or more", async () => {
 test("showFormView hides warning below 90%", async () => {
   const { sandbox, warning, resolveWith } = setupPopupForm();
   sandbox.showFormView();
-  resolveWith(0, 7300); // 約 89.1%
+  resolveWith(0, 91000); // 約 88.9%
   await tick();
   assert.strictEqual(warning.classList.contains("hidden"), true);
 });
@@ -416,7 +446,7 @@ test("stale warning result does not show on edit form", async () => {
   const { sandbox, warning, resolveWith } = setupPopupForm();
   sandbox.showFormView();
   await sandbox.editJumpmark({ id: "u1", title: "t", url: "https://t.com" });
-  resolveWith(0, 7800);
+  resolveWith(0, 97280);
   await tick();
   assert.strictEqual(warning.classList.contains("hidden"), true);
 });
@@ -425,9 +455,9 @@ test("stale warning result does not show after a newer request", async () => {
   const { sandbox, warning, resolveWith } = setupPopupForm();
   sandbox.showFormView();
   sandbox.showFormView();
-  resolveWith(1, 4000); // 新しい要求（90% 未満）が先に完了
+  resolveWith(1, 40000); // 新しい要求（90% 未満）が先に完了
   await tick();
-  resolveWith(0, 7800); // 古い要求（90% 以上）が後から完了
+  resolveWith(0, 97280); // 古い要求（90% 以上）が後から完了
   await tick();
   assert.strictEqual(warning.classList.contains("hidden"), true);
 });

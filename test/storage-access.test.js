@@ -5,42 +5,40 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const {
+  ROOT,
+  plain,
+  readSource,
+  createSyncStub,
+  createFakeTimers,
+  buildItems,
+} = require("./helpers/sync-stub");
 
-const ROOT = path.join(__dirname, "..");
-const QUOTA = 8192;
-
-function readSource(relPath) {
-  return fs.readFileSync(path.join(ROOT, relPath), "utf8");
-}
-
-// vm の別コンテキストで作られた値は prototype が違うので、JSON 経由で比べる
-const plain = (value) => JSON.parse(JSON.stringify(value));
-
-// calculateJumpmarksBytes がちょうど bytes になるデータ
-const dataWithBytes = (bytes) => ({
-  "a.com": [{ title: "x".repeat(bytes - 33) }],
-});
-
-// 容量超過の保存済みデータ（"d1" は小さな削除対象）
-const overQuotaStored = () => ({
-  "b.com": [{ id: "big", title: "x".repeat(QUOTA) }],
-  "a.com": [{ id: "d1", title: "t" }],
-});
+// 全体の上限（102,400 バイト）を超える保存済みの項目群（"d1" は小さな削除対象）
+const overQuotaItems = () =>
+  buildItems({
+    "b.com": Array.from({ length: 14 }, (_, i) => ({
+      id: `big${i}`,
+      title: "x".repeat(8000),
+    })),
+    "a.com": [{ id: "d1", title: "t" }],
+  });
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 // shared.js は 1 sandbox に 1 回だけ読む（const の再宣言を避ける）
+// options.items は storage.sync の項目群、options.stored は { 作成元URL: [Jumpmark] } を新しい形式にしたもの
 function createEnv(options = {}) {
-  const state = {
-    stored: options.stored ?? {},
-    getCalls: [],
-    setCalls: [],
+  const stub = createSyncStub(
+    options.items ?? (options.stored ? buildItems(options.stored) : {}),
+  );
+  const timers = createFakeTimers();
+  const state = Object.assign(stub.state, {
+    timers,
     listeners: [],
     log: { error: [], warn: [], log: [] },
     alerts: [],
-    getError: null,
-    setError: null,
-  };
+  });
   const sandbox = {
     console: {
       ...console,
@@ -50,7 +48,8 @@ function createEnv(options = {}) {
     },
     URL,
     TextEncoder,
-    setTimeout: () => 0,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
     alert: (message) => state.alerts.push(message),
     window: { matchMedia: () => ({ matches: false, addEventListener() {} }) },
     document: {
@@ -72,17 +71,7 @@ function createEnv(options = {}) {
         onChanged: {
           addListener: (listener) => state.listeners.push(listener),
         },
-        sync: {
-          get: async (keys) => {
-            state.getCalls.push(keys);
-            if (state.getError) throw state.getError;
-            return { jumpmarks: JSON.parse(JSON.stringify(state.stored)) };
-          },
-          set: async (value) => {
-            state.setCalls.push(value);
-            if (state.setError) throw state.setError;
-          },
-        },
+        sync: stub.sync,
       },
     },
   };
@@ -190,13 +179,13 @@ test("readJumpmarksStore returns stored value with one get call", async () => {
   const { sandbox, state } = loadShared({ stored });
   const result = await sandbox.readJumpmarksStore();
   assert.deepStrictEqual(plain(result), stored);
-  assert.deepStrictEqual(plain(state.getCalls), [["jumpmarks"]]);
+  assert.deepStrictEqual(plain(state.getCalls), [null]);
+  assert.strictEqual(state.setCalls.length, 0);
+  assert.strictEqual(state.removeCalls.length, 0);
 });
 
 test("readJumpmarksStore returns {} when empty", async () => {
-  const { sandbox, state } = loadShared();
-  state.stored = undefined;
-  sandbox.chrome.storage.sync.get = async () => ({});
+  const { sandbox } = loadShared();
   assert.deepStrictEqual(plain(await sandbox.readJumpmarksStore()), {});
 });
 
@@ -209,19 +198,21 @@ test("readJumpmarksStore rejects with same error and does not log", async () => 
 });
 
 test("writeJumpmarksStore calls set once", async () => {
-  for (const bytes of [100, QUOTA]) {
-    const { sandbox, state } = loadShared();
-    const data = dataWithBytes(bytes);
-    assert.strictEqual(sandbox.calculateJumpmarksBytes(data), bytes);
-    await sandbox.writeJumpmarksStore(data);
-    assert.deepStrictEqual(plain(state.setCalls), [{ jumpmarks: data }]);
-  }
+  const { sandbox, state } = loadShared();
+  const data = { "a.com": [{ id: "1", title: "t" }] };
+  await sandbox.writeJumpmarksStore(data);
+  assert.deepStrictEqual(plain(state.setCalls), [
+    {
+      "jm:7": { d: data },
+      "jm:meta": { v: 2, legacyIds: [] },
+    },
+  ]);
 });
 
 test("writeJumpmarksStore rejects over quota without set or log", async () => {
   const { sandbox, state } = loadShared();
   await assert.rejects(
-    sandbox.writeJumpmarksStore(dataWithBytes(QUOTA + 1)),
+    sandbox.writeJumpmarksStore({ "a.com": [{ title: "x".repeat(8192) }] }),
     (e) => sandbox.isStorageQuotaError(e) === true,
   );
   assert.strictEqual(state.setCalls.length, 0);
@@ -230,9 +221,10 @@ test("writeJumpmarksStore rejects over quota without set or log", async () => {
 
 test("writeJumpmarksStore with checkQuota false skips quota", async () => {
   const { sandbox, state } = loadShared();
-  await sandbox.writeJumpmarksStore(dataWithBytes(QUOTA + 1), {
-    checkQuota: false,
-  });
+  await sandbox.writeJumpmarksStore(
+    { "a.com": [{ title: "x".repeat(8192) }] },
+    { checkQuota: false },
+  );
   assert.strictEqual(state.setCalls.length, 1);
 });
 
@@ -241,9 +233,10 @@ test("writeJumpmarksStore rejects with same error when set fails", async () => {
   const err = new Error("set failed");
   state.setError = err;
   await assert.rejects(
-    sandbox.writeJumpmarksStore(dataWithBytes(100)),
+    sandbox.writeJumpmarksStore({ "a.com": [{ id: "1" }] }),
     (e) => e === err,
   );
+  assert.strictEqual(state.removeCalls.length, 0);
   noLogs(state);
 });
 
@@ -253,19 +246,21 @@ test("onJumpmarksChanged registers synchronously", () => {
   assert.strictEqual(state.listeners.length, 1);
 });
 
-test("onJumpmarksChanged listener filters area and key", () => {
+test("onJumpmarksChanged listener filters area and key, then notifies once after the delay", () => {
   const { sandbox, state } = loadShared();
   const calls = [];
   sandbox.onJumpmarksChanged((...args) => {
     calls.push(args);
-    return "result";
   });
   const [listener] = state.listeners;
-  const changed = { jumpmarks: { newValue: {} } };
-  assert.strictEqual(listener(changed, "local"), undefined);
-  assert.strictEqual(listener({ other: { newValue: 1 } }, "sync"), undefined);
+  const changed = { "jm:7": { newValue: {} } };
+  listener(changed, "local");
+  listener({ other: { newValue: 1 } }, "sync");
+  state.timers.advance(1000);
   assert.strictEqual(calls.length, 0);
-  assert.strictEqual(listener(changed, "sync"), "result");
+  listener(changed, "sync");
+  assert.strictEqual(calls.length, 0);
+  state.timers.advance(100);
   assert.deepStrictEqual(calls, [[]]);
 });
 
@@ -318,10 +313,10 @@ test("delete functions succeed when stored data is over quota", async () => {
     deleteJumpmarks: [["d1"]],
   };
   for (const [name, args] of Object.entries(calls)) {
-    const { sandbox, state } = loadShared({ stored: overQuotaStored() });
+    const { sandbox, state } = loadShared({ items: overQuotaItems() });
     await sandbox[name](...args);
     assert.strictEqual(state.setCalls.length, 1, name);
-    assert.ok(!("a.com" in state.setCalls[0].jumpmarks), name);
+    assert.ok(!JSON.stringify(state.items).includes('"d1"'), name);
   }
 });
 
@@ -379,15 +374,14 @@ test("background: rebuildWildcardCache and getJumpmarkCountForUrl read via readJ
   await tick();
   state.getCalls.length = 0;
   await sandbox.rebuildWildcardCache();
-  assert.deepStrictEqual(plain(state.getCalls), [["jumpmarks"]]);
+  assert.deepStrictEqual(plain(state.getCalls), [null]);
   state.getCalls.length = 0;
   assert.strictEqual(
     await sandbox.getJumpmarkCountForUrl("https://a.com/x"),
     1,
   );
   assert.ok(state.getCalls.length >= 1);
-  for (const keys of state.getCalls)
-    assert.deepStrictEqual(plain(keys), ["jumpmarks"]);
+  for (const keys of state.getCalls) assert.strictEqual(keys, null);
 });
 
 test("background: rebuildWildcardCache resets cache and rethrows on get failure", async () => {
@@ -410,8 +404,9 @@ test("background: storage change rebuilds wildcard cache then updates badges", a
   await tick();
   assert.strictEqual(state.listeners.length, 1);
 
-  state.stored = { "a.com*": [{ id: "1" }, { id: "2" }] };
-  await state.listeners[0]({ jumpmarks: { newValue: state.stored } }, "sync");
+  state.items = buildItems({ "a.com*": [{ id: "1" }, { id: "2" }] });
+  state.listeners[0]({ "jm:1": { newValue: {} } }, "sync");
+  state.timers.advance(100);
   await tick();
   assert.deepStrictEqual(plain(badges[badges.length - 1]), {
     tabId: 1,
@@ -419,9 +414,32 @@ test("background: storage change rebuilds wildcard cache then updates badges", a
   });
 });
 
+test("AC-42: background listener rebuilds once for a burst of changes", async () => {
+  const { sandbox, state } = loadBackground({});
+  await tick();
+  let queries = 0;
+  sandbox.chrome.tabs.query = async () => {
+    queries++;
+    return [];
+  };
+  let rebuilds = 0;
+  const rebuild = sandbox.rebuildWildcardCache;
+  sandbox.rebuildWildcardCache = (...args) => {
+    rebuilds++;
+    return rebuild(...args);
+  };
+  for (let i = 0; i < 3; i++) {
+    state.listeners[0]({ "jm:7": { newValue: {} } }, "sync");
+  }
+  state.timers.advance(100);
+  await tick();
+  assert.strictEqual(queries, 1);
+  assert.strictEqual(rebuilds, 1);
+});
+
 // ---- popup.js（AC-26〜AC-28） ----
 
-function loadPopup(stored) {
+function loadPopup(stored, items) {
   const deleteButton = { handlers: {} };
   deleteButton.addEventListener = (type, fn) => {
     deleteButton.handlers[type] = fn;
@@ -429,6 +447,7 @@ function loadPopup(stored) {
   const noop = { addEventListener() {} };
   const env = createEnv({
     stored,
+    items,
     createElement: () => ({
       innerHTML: "",
       addEventListener() {},
@@ -462,7 +481,9 @@ test("popup deleteJumpmarkAndRefresh: existing id", async () => {
   });
   await sandbox.deleteJumpmarkAndRefresh("d1");
   assert.strictEqual(state.setCalls.length, 1);
-  assert.deepStrictEqual(Object.keys(state.setCalls[0].jumpmarks), ["b.com"]);
+  assert.deepStrictEqual(plain(await sandbox.readJumpmarksStore()), {
+    "b.com": [{ id: "k1", title: "k" }],
+  });
   assert.strictEqual(displayCalls.length, 1);
   assert.deepStrictEqual(state.alerts, []);
 });
@@ -485,22 +506,22 @@ test("popup deleteJumpmarkAndRefresh: get rejects", async () => {
 });
 
 test("popup deleteJumpmarkAndRefresh: over-quota stored data", async () => {
-  const { sandbox, state } = loadPopup(overQuotaStored());
+  const { sandbox, state } = loadPopup(undefined, overQuotaItems());
   await sandbox.deleteJumpmarkAndRefresh("d1");
   assert.strictEqual(state.setCalls.length, 1);
   assert.deepStrictEqual(state.alerts, []);
 });
 
-test("updateStorageWarning reads via readJumpmarksStore", async () => {
-  const stored = { "a.com": [{ id: "1" }] };
-  const { sandbox } = loadPopup(stored);
+test("updateStorageWarning reads usage via readStorageUsageBytes", async () => {
+  const { sandbox, state } = loadPopup({ "a.com": [{ id: "1" }] });
   const seen = [];
-  sandbox.calculateJumpmarksBytes = (value) => {
-    seen.push(value);
+  sandbox.calculateStorageUsagePercent = (bytes) => {
+    seen.push(bytes);
     return 0;
   };
   await sandbox.updateStorageWarning();
-  assert.deepStrictEqual(seen, [stored]);
+  assert.deepStrictEqual(plain(state.getCalls), [null]);
+  assert.deepStrictEqual(seen, [await sandbox.readStorageUsageBytes()]);
 });
 
 // ---- ドキュメント・バージョン（AC-31, AC-32） ----

@@ -39,23 +39,23 @@ npm test
 
 **Storage Access**: All access to `chrome.storage` goes through the entry points in `shared.js` (`readJumpmarksStore` / `writeJumpmarksStore` / `onJumpmarksChanged`). Other files must not call `chrome.storage` directly.
 
-**Storage Schema**:
+**Storage Schema**: `readJumpmarksStore()` returns the following shape (and `writeJumpmarksStore()` accepts it):
 ```javascript
 {
-  "jumpmarks": {
-    "normalized-url": [
-      {
-        "id": "unique-id",
-        "title": "Display name",
-        "url": "target-url",
-        "icon": "emoji",
-        "sourceUrl": "normalized-source-url",
-        "created": "ISO-timestamp"
-      }
-    ]
-  }
+  "normalized-source-url": [
+    {
+      "id": "unique-id",
+      "title": "Display name",
+      "url": "target-url",
+      "icon": "emoji",
+      "sourceUrl": "normalized-source-url",
+      "created": "ISO-timestamp"
+    }
+  ]
 }
 ```
+
+In `chrome.storage.sync` this is split by FNV-1a hash of the source URL into 64 buckets (`jm:<0-63>` head item `{d: {...}}`, plus `jm:<bucket>:<i>` continuation items when a bucket exceeds 8,192 bytes; the head then carries `n` and `r`). `jm:meta` (`{v: 2, legacyIds: [...]}`) records ids already imported from the legacy v2.3.0 single `jumpmarks` item, which is kept (never written or deleted) for old-version compatibility. Only changed buckets are written (one `set`, then at most one `remove`).
 
 ### Background Script Responsibilities
 - Monitor tab changes (`chrome.tabs.onUpdated`, `chrome.tabs.onActivated`)
@@ -97,7 +97,7 @@ Current status: Phase 3 completed. Full-featured import/export system implemente
 - **Storage API**: Uses `chrome.storage.sync` for automatic synchronization
 - **Cross-device sync**: Jumpmarks automatically sync across devices when Chrome Sync is enabled
 - **Fallback behavior**: Functions as local storage when Chrome Sync is disabled
-- **Limitations**: `chrome.storage.sync` quotas are 102,400 bytes total, 8,192 bytes per item, 512 items max. All data is stored under the single `jumpmarks` key, so the effective limit is ~8KB total
+- **Limitations**: `chrome.storage.sync` quotas are 102,400 bytes total, 8,192 bytes per item, 512 items max. Data is split across up to 64 bucket items (plus continuation items), so ~100KB is usable in total (about 8KB per Jumpmark). The quota is checked before writing against the post-write state, including the legacy `jumpmarks` item and `jm:meta`
 
 ## AI-Assisted Development Flow (`ai-flow/`)
 
