@@ -265,6 +265,14 @@ function selectTabForForm(tab) {
   tabPickerAccordion.classList.remove("open");
 }
 
+// 戻りの Jumpmark のタイトルを作る。作成元が今のタブと一致しないときは null
+function buildReverseTitle(tab, sourcePattern) {
+  if (!tab) return null;
+  if (normalizeUrl(sourcePattern) !== normalizeUrl(tab.url)) return null;
+  const title = (tab.title ?? "").trim();
+  return `← ${title || normalizeUrl(sourcePattern)}`;
+}
+
 // shared.js の deleteJumpmark で削除し、成功したら一覧を再表示する
 async function deleteJumpmarkAndRefresh(jumpmarkId) {
   try {
@@ -481,6 +489,16 @@ function setupEventListeners() {
       createBidirectional: document.getElementById("bidirectional").checked,
       sourceUrl: sourcePattern,
     };
+
+    // 戻りの Jumpmark のタイトルは作成元ページ（今のタブ）のタイトルにする。
+    // 既存の戻りがある編集では、そのタイトルを保つため渡さない
+    if (
+      jumpmarkData.createBidirectional &&
+      (!editingJumpmark || !editingHasInitialPartner)
+    ) {
+      const reverseTitle = buildReverseTitle(currentTab, sourcePattern);
+      if (reverseTitle !== null) jumpmarkData.reverseTitle = reverseTitle;
+    }
 
     // 基本的なバリデーション
     if (!jumpmarkData.title || !jumpmarkData.url) {

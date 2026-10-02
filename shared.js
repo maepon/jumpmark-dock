@@ -403,6 +403,7 @@ async function updateJumpmark(jumpmarkId, updateData) {
     // 一時フラグを除去
     delete updatedJumpmark.createBidirectional;
     delete updatedJumpmark.createReverse;
+    delete updatedJumpmark.reverseTitle;
 
     if (isWildcard) {
       updatedJumpmark.isWildcard = true;
