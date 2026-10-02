@@ -19,6 +19,7 @@ A Jumpmark is a **scoped bookmark**. Regular bookmarks show the same list no mat
 - **Badge count**: When the current page has related shortcuts, the extension icon shows how many
 - **Simpler add flow (v2.1.0)**: No icon input needed when creating a shortcut; `🔖` is set automatically
 - **Fill in from open tabs (v2.3.0)**: In the add form, pick one of your open tabs to fill in its title and URL automatically
+- **More storage (v2.4.0)**: Usable storage grows from about 8KB to about 100KB. The return link of a bidirectional pair is now titled after the page it was created on
 
 ## Why install it
 

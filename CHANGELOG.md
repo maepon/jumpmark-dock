@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-10-03
+
 ### Added
 
 - ストア掲載用の説明文の英語版 `docs/chrome-store-description.en.md` を追加した（日本語版 `docs/chrome-store-description.md` と同じ内容・構成）
