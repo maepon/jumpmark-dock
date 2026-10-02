@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ストア掲載用の説明文の英語版 `docs/chrome-store-description.en.md` を追加した（日本語版 `docs/chrome-store-description.md` と同じ内容・構成）
 - ストアの説明文欄にそのまま貼るプレーンテキスト `docs/chrome-store-listing.ja.txt` / `docs/chrome-store-listing.en.txt` を追加した。掲載中の説明文の構成を土台に、「外部通信なし」「102KB・最大512個」など事実と異なる記述を除き、Chrome 同期で Google を経由すること、双方向リンク、開いているタブからの入力を書き加えた
 - popup の新規追加フォームを開いたとき、保存容量の使用率が 90% 以上なら警告を表示するようにした
+- ストア掲載文（`docs/chrome-store-listing.{ja,en}.txt`）と元の文章（`docs/chrome-store-description{,.en}.md`）に、「Scoped Bookmark」（作成元のページ（スコープ）を開いたときだけ出てくるブックマーク）という考え方を取り入れ、普通のブックマークとの違いを書いた。ワイルドカード登録とバッジの説明も、スコープの考え方で言い換えた
 
 ### Changed
 
+- 拡張機能の短い説明（`extDescription`。ストアの概要と `chrome://extensions` に出る）を、「Scoped Bookmark」を使った説明に変えた。ストア掲載文の冒頭の一文もこれにそろえ、`docs/chrome-store-description{,.en}.md` の古い「一行説明」も同じ文にした
 - `docs/chrome-store-description.md` の「チームでの情報共有」の見出しを、内容（同じ Google アカウントの複数デバイスで同期）に合わせて「自分のデバイス間で共有」に改めた
 - `README.md` / `CLAUDE.md` の `chrome.storage.sync` の上限の記述を、公式ドキュメントの値（1項目8,192バイト）と、全データを1項目に保存しているため実際の上限が約8KBであることに合わせて改めた
 - `docs/chrome-webstore-description-update.md` の冒頭に、事実と異なる記述を含む古い下書きである旨の注記を入れた

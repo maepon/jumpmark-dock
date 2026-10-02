@@ -1,6 +1,6 @@
 {
   "localeCode": { "message": "ja" },
-  "extDescription": { "message": "ページごとに個別のリンク集（ショートカット）を管理・呼び出せるChrome拡張です。" },
+  "extDescription": { "message": "Scoped Bookmark ― ページやURLパターンにひも付き、そのページを開いたときだけ出てくるブックマーク。" },
   "actionEdit": { "message": "編集" },
   "actionDelete": { "message": "削除" },
   "actionCancel": { "message": "キャンセル" },

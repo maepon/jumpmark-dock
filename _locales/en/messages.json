@@ -1,6 +1,6 @@
 {
   "localeCode": { "message": "en" },
-  "extDescription": { "message": "A Chrome extension for managing and opening a per-page collection of shortcuts." },
+  "extDescription": { "message": "Scoped bookmarks for Chrome: links tied to a page or URL pattern that show up only when you're there." },
   "actionEdit": { "message": "Edit" },
   "actionDelete": { "message": "Delete" },
   "actionCancel": { "message": "Cancel" },
