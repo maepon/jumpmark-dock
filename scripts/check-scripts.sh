@@ -54,6 +54,7 @@ for base in .claude/*-permissions.json; do
       || ng "${p}: ${rule} is missing from deny."
   done <<'EOF'
 Read(./.env)
+Read(//**/.env)
 Bash(git push)
 Bash(git push:*)
 Bash(gh pr:*)

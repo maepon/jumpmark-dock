@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-03
+
+### Security
+
+- **Every `.env` is now denied to the `Read` tool**, not only the flow's own: all profiles deny `Read(//**/.env)` in addition to `Read(./.env)`,
+  and `make check` requires it. A relative pattern only matches under the flow directory, so the project's root `.env` used to be readable
+  (verified: the root `.env` and a nested `.env` went from readable to denied, while `.env.example` stayed readable).
+  `.env.*` is not blocked, since `.env.example` would be blocked too. This stops the `Read` tool only; running tests can still read anything
+
+### Added
+
+- The template and `docs/setup.md` explain how to protect other secret files: add `Read(//**/<path>)` to `deny` in `.ai-flow/permissions.json`
+
 ## [0.4.0] - 2026-10-03
 
 ### Added
@@ -117,7 +130,8 @@ so its history is included; Issue / PR numbers in those commit messages refer to
 - The scripts' comments and terminal / Slack messages are in Japanese (fixed in 0.3.0)
 - A project without a formatter or a test command is not supported yet: prompts that use an empty `FORMAT_*` / `TEST_CMD` value stop at render time (formatter: fixed in 0.2.0; tests: fixed in 0.4.0)
 
-[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/maepon/issue-to-pr-flow/compare/v0.2.0...v0.2.1
