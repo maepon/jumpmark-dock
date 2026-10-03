@@ -53,4 +53,6 @@
 - 基盤ファイル（`{{FLOW_DIR}}/` 配下の `Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.env.example`、`.gitignore` と、ルートの `.ai-flow/` と `.gitignore`）は変更しない
 - Slack 通知は自分で送らない。make が送る
 
+## この案件の前提
+
 {{PROJECT_CONTEXT}}
