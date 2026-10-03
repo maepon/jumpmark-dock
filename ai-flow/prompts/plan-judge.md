@@ -11,15 +11,27 @@ You do not change code. You do not rewrite the plan yourself either. You only po
 2. Read the code to be changed and check that the plan actually holds against the real code
 3. Go through the acceptance criteria `AC-n` in the instruction document one by one and check the following
    - Whether the plan's implementation steps satisfy that criterion
+{{#if TEST_CMD}}
    - Whether the test scenarios **actually** verify that criterion
      (a test that only calls an internal function directly, without going through the path a user takes, does not count as verification)
+{{/if}}
+{{#unless TEST_CMD}}
+   - Whether the verification table **actually** verifies that criterion
+     (a command that only shows a change exists, such as a word appearing in a file, does not count when the criterion is about behavior.
+     `manual` is acceptable only when the plan explains why no command can show it)
+{{/unless}}
 4. Decide the verdict and post it
 
 ## How to decide the verdict
 
 **Do not decide by your impression. Decide only by mapping to the acceptance criteria numbers.**
 
+{{#if TEST_CMD}}
 - No `AC-n` is unmet, and every `AC-n` is covered by the test scenarios → `APPROVED`
+{{/if}}
+{{#unless TEST_CMD}}
+- No `AC-n` is unmet, and every `AC-n` is covered by the verification table → `APPROVED`
+{{/unless}}
 - At least one `AC-n` cannot be met however the plan is revised → `NEEDS_HUMAN` (section below)
 - Otherwise → `CHANGES_REQUESTED`
 
@@ -44,8 +56,14 @@ Write the following in the comment.
 Always write findings with the criterion number.
 
 - "AC-3 is unmet: the plan does …, but the instruction document requires …"
+{{#if TEST_CMD}}
 - "There is no test that verifies AC-2"
 - "The test for AC-4 calls an internal function directly and does not go through the flag path"
+{{/if}}
+{{#unless TEST_CMD}}
+- "There is no verification for AC-2"
+- "The verification for AC-4 only checks that the word appears in the file, not that the generated page shows it"
+{{/unless}}
 
 Write improvement suggestions not tied to a criterion number separately, marked `non-blocking` (as is, untranslated). They do not affect the verdict.
 

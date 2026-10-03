@@ -44,7 +44,13 @@ Read project files by their path relative to the root (`{{ROOT_REL}}`).
 {{#if FORMAT_CHECK_CMD}}
 - Check formatting with `{{FORMAT_CHECK_CMD}}`. Do not use a command that only looks below the directory it runs in to check the whole repository
 {{/if}}
+{{#if TEST_CMD}}
 - Run the tests with `{{TEST_CMD}}`. To try a behavior in isolation, write a throwaway test file under `tmp/` and run `{{SCRATCH_TEST_CMD}} <file>`
+{{/if}}
+{{#unless TEST_CMD}}
+- This project has no automated tests. Acceptance criteria are checked with the commands in the plan's verification table.
+  To try something in isolation, put throwaway input files under `tmp/` and run the project's commands on them
+{{/unless}}
 - Search for strings with `git grep -n "<pattern>" -- ':/'`. Without `':/'` it only searches below `{{FLOW_DIR}}/`.
   The output paths are relative to `{{FLOW_DIR}}/` (`{{ROOT_REL}}docs/...`)
 - `grep` / `cat` / `ls` / `find` and the like are not provided. If one is denied, use the means above or `Read` / `Glob` instead

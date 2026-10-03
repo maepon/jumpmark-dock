@@ -526,8 +526,9 @@ tmp/                                 Scratch files (not tracked by git; the flow
 | `{{PROJECT_CONTEXT}}` / `{{RISK_CATALOG}}` / `{{USER_FLOWS}}` | A line consisting only of one of these is replaced with the contents of `context.md` / `risk-catalog.md` / `user-flows.md` in `.ai-flow/` |
 
 A block from a line `{{#if NAME}}` to a line `{{/if}}` is conditional: if the value of `NAME` (one of the value placeholders) is empty,
-the whole block is removed; otherwise only the two marker lines are removed. The prompts use this to drop the formatting steps
-when the `FORMAT_*` values are empty. Blocks cannot be nested or span files.
+the whole block is removed; otherwise only the two marker lines are removed. `{{#unless NAME}}` … `{{/unless}}` is the opposite: kept only
+when the value is empty. The prompts use them to drop the formatting steps when the `FORMAT_*` values are empty, and to switch from
+test wording to verification-command wording when `TEST_CMD` is empty. Blocks cannot be nested or span files.
 
 `scripts/render-prompt.sh` does the filling. If a placeholder has an empty value or remains unfilled (outside a removed block),
 it stops before starting claude. `make check` also renders every prompt once to verify this.
@@ -543,7 +544,8 @@ If explanations or decoration get mixed in, `make` cannot proceed and stops wait
   `verified:inference`, `unchecked`, and `non-blocking`, and the prompts say to write them "as is, untranslated".
   If they were translated into the output language, the residual-risk summary in the PR body and the like could not pick them up. Things found by meaning, such as section headings, are translated
 - **Wrap anything that depends on an optional setting in a conditional block** (`{{#if FORMAT_CHECK_CMD}}` … `{{/if}}`), so projects
-  without it still render. Keep numbered steps outside the block so the numbering has no gaps when it is removed
+  without it still render, and give the alternative in `{{#unless …}}` when one is needed (as the test / verification wording does).
+  Keep numbered steps outside the block so the numbering has no gaps when it is removed
 - **`prompts/_rules.md` applies to every phase.** Anything added there is paid for on every step
 - **An agent can run only one command per call.** Compound commands (`cd X && cmd`, `cmd1; cmd2`,
   control structures, `VAR=value cmd` prefixes, command substitution, pipes, heredocs) are **denied even when the command is allowed.**
@@ -639,6 +641,10 @@ What to check and adapt for your repository.
 - [ ] **Commands run from the flow directory** — the agents use the flow directory (e.g. `ai-flow/`) as the current directory,
       so every command in `config.mk` must work from there. `npm test` / `npm run …` find the root `package.json` by themselves;
       for other tools, give paths relative to the flow directory (e.g. `python3 -m unittest discover -s ../tests`)
+- [ ] **No tests?** Leave `TEST_CMD` and `SCRATCH_TEST_CMD` both empty. The plan then maps each acceptance criterion to a verification
+      command (or a `manual` check with steps) instead of a test, implement runs those commands, and the judges re-run them.
+      The verdict design does not change: it is still decided only by acceptance criteria numbers.
+      **Allow the commands you expect to verify with** (your build, a script that renders the docs, ...) in `.ai-flow/permissions.json`
 - [ ] **`TEST_CMD`** — **if your test tool caches results, add the flag that disables it** (Go `-count=1`, Gradle `--rerun-tasks`,
       Turborepo `--force`, Nx `--skip-nx-cache`, Bazel `--nocache_test_results`).
       The judges re-run the tests to verify claims, so a replayed earlier success defeats them.

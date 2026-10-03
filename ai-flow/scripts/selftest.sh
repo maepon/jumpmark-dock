@@ -102,6 +102,7 @@ expect() {
 }
 
 # --- Throwaway repositories (run from the flow directory, as in real use) ---
+# Commits here pass -c commit.gpgsign=false: the user's signing setup (e.g. a 1Password SSH agent) must not decide whether the tests pass
 # To catch bugs that depend on the flow directory's name (such as a hard-coded TOOLING_PATHS), run twice with different names and depths.
 #   ai-flow        the common layout
 #   tools/ai.flow  depth 2, with a regex metacharacter (.) in the name. Forgetting to escape it would treat tools/aiXflow/ as tooling too
@@ -121,7 +122,7 @@ repo_suite() {
   echo 'const a = 1;' > "${REPO}/test/x.js"
   case "${F}" in *.*) decoy=$(printf '%s' "${F}" | tr '.' 'X'); mkdir -p "${REPO}/${decoy}/scripts"; echo 'x' > "${REPO}/${decoy}/scripts/a.sh" ;; esac
   git -C "${REPO}" add -A
-  git -C "${REPO}" -c user.name=t -c user.email=t@example.com commit -q -m init
+  git -C "${REPO}" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -q -m init
 
   # Change project files and tooling files together
   echo 'y' >> "${REPO}/docs/pp.md"
@@ -273,6 +274,28 @@ expect "render-prompt (stops on a name that is not a value placeholder)" 1 "is n
 printf '%s\n' 'x' '{{/if}}' > "${WORK}/c4.md"
 out=$(render "${RENDER}" c4.md); got=$?
 expect "render-prompt (stops on {{/if}} without a match)" 1 "{{/if}} without a matching {{#if ...}}" "${out}" "${got}"
+
+# {{#unless NAME}} ... {{/unless}}: kept only when the value is empty (the wording for projects without tests)
+printf '%s\n' 'A' '{{#if TEST_CMD}}' 'tests `{{TEST_CMD}}`' '{{/if}}' '{{#unless TEST_CMD}}' 'no tests' '{{/unless}}' 'Z' > "${WORK}/u.md"
+out=$(render env TEST_CMD= "${RENDER}" u.md); got=$?
+if [ "${got}" -ne 0 ] || [ "${out}" != "$(printf '%s\n' A 'no tests' Z)" ]; then
+  ng "render-prompt ({{#unless}} is kept when the value is empty): differs from what was expected (exit code ${got}).
+Actual:
+${out}"
+else
+  pass=$((pass + 1))
+fi
+out=$(render env TEST_CMD='t --all' "${RENDER}" u.md); got=$?
+if [ "${got}" -ne 0 ] || [ "${out}" != "$(printf '%s\n' A 'tests `t --all`' Z)" ]; then
+  ng "render-prompt ({{#unless}} is removed when the value is set): differs from what was expected (exit code ${got}).
+Actual:
+${out}"
+else
+  pass=$((pass + 1))
+fi
+printf '%s\n' '{{#unless TEST_CMD}}' 'x' '{{/if}}' > "${WORK}/u2.md"
+out=$(render "${RENDER}" u2.md); got=$?
+expect "render-prompt (stops when {{/if}} closes {{#unless}})" 1 "{{/if}} closes {{#unless TEST_CMD}}" "${out}" "${got}"
 
 # --- require_instruction ---
 out=$(GH_MODE=issue_tag run_case "${WORK}" 'require_instruction && echo PASSED'); got=$?
