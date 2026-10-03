@@ -36,4 +36,8 @@ cp -R "${SRC}/examples/project/.ai-flow" "${HOST}/.ai-flow"
 git -C "${HOST}" add -A
 git -C "${HOST}" -c user.name=ci -c user.email=ci@example.com commit -q -m "ci-check"
 
-make -C "${FLOW}" check
+make -C "${FLOW}" check || exit 1
+
+# フォーマッタが無い案件の形（FORMAT_* をすべて空）でも、プロンプトが生成できて make check が通るか
+echo "--- FORMAT_* を空にして再実行"
+make -C "${FLOW}" check FORMAT_CHECK_CMD= FORMAT_FILE_CMD= FORMAT_FIX_CMD= FORMAT_GLOBS=

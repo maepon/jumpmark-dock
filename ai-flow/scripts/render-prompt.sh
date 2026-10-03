@@ -11,7 +11,12 @@
 # （TEST_CMD に npm test && … と書いたとき）。区切り文字の | も同じ。bash の ${var//…} も
 # bash 5.2 からは & が特別な意味を持つ。awk の index / substr で文字列として置き換える。
 #
+# 条件付きの区間も扱う。行全体が {{#if 名前}} の行から {{/if}} の行までは、名前（VALUE_KEYS のどれか）の
+# 値が空なら区間ごと消し、空でなければ印の2行だけを消す。フォーマッタが無い案件（FORMAT_* が空）で、
+# 整形の手順をプロンプトから外すため。入れ子と、ファイルをまたぐ区間は扱わない（止める）。
+#
 # 値が空のプレースホルダと、埋めた後に残った {{…}} は、claude を起動する前（課金の前）に止める。
+# 消した区間の中のプレースホルダは埋めないので、値が空でも止めない。
 set -uo pipefail
 
 VALUE_KEYS="FLOW_DIR ROOT_REL ISSUE VERDICT_FILE COMMENT_FILE PR_TITLE_FILE PR_BODY_FILE BASE_BRANCH TEST_CMD SCRATCH_TEST_CMD FORMAT_CHECK_CMD FORMAT_FILE_CMD FORMAT_FIX_CMD FORMAT_GLOBS OUTPUT_LANG"
@@ -28,6 +33,9 @@ export PROJECT_DIR VALUE_KEYS INCLUDES
 out=$(LC_ALL=C awk '
   BEGIN {
     nkeys = split(ENVIRON["VALUE_KEYS"], keys, " ")
+    for (i = 1; i <= nkeys; i++) iskey[keys[i]] = 1
+    inblock = 0
+    skip = 0
     n = split(ENVIRON["INCLUDES"], inc, " ")
     for (i = 1; i <= n; i++) {
       eq = index(inc[i], "=")
@@ -54,7 +62,40 @@ out=$(LC_ALL=C awk '
     }
     return line
   }
-  FNR == 1 && NR != 1 { print "" }
+  FNR == 1 && NR != 1 {
+    if (inblock) {
+      printf "Error: render-prompt.sh: {{#if %s}} が閉じられていません（%s）。\n", blockkey, prevfile > "/dev/stderr"
+      err = 1
+      inblock = 0
+      skip = 0
+    }
+    print ""
+  }
+  { prevfile = FILENAME }
+  /^\{\{#if [A-Z_]+\}\}$/ {
+    name = substr($0, 7, length($0) - 8)
+    if (inblock) {
+      printf "Error: render-prompt.sh: 条件付きの区間は入れ子にできません（%s の {{#if %s}}）。\n", FILENAME, name > "/dev/stderr"
+      err = 1
+    } else if (!(name in iskey)) {
+      printf "Error: render-prompt.sh: {{#if %s}} の名前が値のプレースホルダの一覧にありません（%s）。\n", name, FILENAME > "/dev/stderr"
+      err = 1
+    }
+    inblock = 1
+    blockkey = name
+    skip = (ENVIRON[name] == "")
+    next
+  }
+  /^\{\{\/if\}\}$/ {
+    if (!inblock) {
+      printf "Error: render-prompt.sh: 対応する {{#if …}} の無い {{/if}} があります（%s）。\n", FILENAME > "/dev/stderr"
+      err = 1
+    }
+    inblock = 0
+    skip = 0
+    next
+  }
+  skip { next }
   $0 in incfile {
     f = incfile[$0]
     if ((getline l < f) <= 0) {
@@ -67,7 +108,13 @@ out=$(LC_ALL=C awk '
     next
   }
   { print fill($0) }
-  END { exit err }
+  END {
+    if (inblock) {
+      printf "Error: render-prompt.sh: {{#if %s}} が閉じられていません（%s）。\n", blockkey, prevfile > "/dev/stderr"
+      err = 1
+    }
+    exit err
+  }
 ' "$@") || exit 1
 
 left=$(printf '%s\n' "$out" | LC_ALL=C grep -oE '\{\{[A-Z_]+\}\}' | sort -u | tr '\n' ' ')
