@@ -18,17 +18,17 @@ Issue #{{ISSUE}} の**承認済みの実装をコミットし、PR の題材を�
 
 4. **この案件の変更だけ**をステージする
 
-   基盤ファイル（`ai-flow/` 配下の `Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.env.example` と、ルートの `.gitignore`）は
-   **絶対に含めない**。この案件の変更と基盤の変更は別コミットにする決まりで、基盤は人が {{BASE_BRANCH}} に
-   直接入れる。混ざっていたらステージせず、その旨を返答に書く
+   基盤ファイル（`ai-flow/` 配下の `Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.env.example` と、ルートの `.ai-flow/` と `.gitignore`）は
+   **絶対に含めない**。この案件の変更と基盤の変更は別コミットにする決まりで、基盤は人が別の PR で
+   入れる。混ざっていたらステージせず、その旨を返答に書く
    （make が同じ検査をするので、含めるとそこで止まります）
 
 5. コミットする
-   - メッセージは日本語
+   - メッセージは{{OUTPUT_LANG}}
    - 件名は変更の要約。本文は**なぜそうしたか**を書く。何をしたかは差分を見れば分かる
    - 末尾に `Refs #{{ISSUE}}` と `Co-Authored-By: Claude <noreply@anthropic.com>` を入れる
 6. PR のタイトルを Write ツールで `{{PR_TITLE_FILE}}` に書く
-   - **日本語の1行だけ。** 改行や引用符で飾らない
+   - **{{OUTPUT_LANG}}の1行だけ。** 改行や引用符で飾らない
 7. PR の本文を Write ツールで `{{PR_BODY_FILE}}` に書く
 
 ## PR 本文に含めるもの

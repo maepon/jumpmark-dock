@@ -74,7 +74,7 @@ fail "ブランチ名が feature/ で始まっていません（${branch}）" # 
 
 - リポジトリが GitHub にあり、`gh` が認証済みであること
 - **Issue を使う運用であること。** このフローは状態を Issue コメントに持ちます
-- 既定ブランチ（PR のベース）の名前を `Makefile` の `BASE_BRANCH`（このリポジトリでは `master`）と合わせておくこと
+- 既定ブランチ（PR のベース）の名前を `.ai-flow/config.mk` の `BASE_BRANCH`（このリポジトリでは `master`）と合わせておくこと
 
 ### Slack
 
@@ -141,12 +141,21 @@ tmp/
 cp .env.example .env
 # .env の SLACK_WEBHOOK_URL に Incoming Webhook の URL を書く（Makefile の構文。make が include する）
 
-./scripts/check-scripts.sh   # 静的検査と回帰テスト（selftest.sh）。課金なし
+make check                   # 案件設定の有無、静的検査と回帰テスト（selftest.sh）。課金なし
 make check-env               # 環境変数の検査。課金なし
 make help                    # フェーズの一覧
 ```
 
 `check: 基盤ファイルの静的検査は問題なしです。` が出れば土台は整っています。
+
+設定は2か所に分かれています。
+
+| 置き場所 | 中身 | コミット |
+|---|---|---|
+| `ai-flow/.env` | 各自の設定（Slack の Webhook URL、モデルID） | しない |
+| ルートの `.ai-flow/` | 案件ごとの設定。`config.mk`（ベースブランチ・テストと整形のコマンド・出力の言語）、`permissions.json`（権限の追加分）、プロンプトに埋める文章（`context.md` / `risk-catalog.md` / `user-flows.md`） | する |
+
+`ai-flow/` の中には、どの案件でも同じものだけを置きます。案件に合わせて変えるのは `.ai-flow/` だけです。
 
 ### 課金せずに確かめられること
 
@@ -179,7 +188,7 @@ make help                    # フェーズの一覧
 `origin/<BASE_BRANCH>` が見つからない等 `create_pr` 側の事情だけで `review` の最後が失敗して止まったときの
 入口です。`review-judge` からやり直すと Issue にレビューコメントが重複するので、そこはやり直しません。
 
-変数: `ISSUE`（対象Issue番号）、`MAX_ROUNDS`（判定の最大周回数、既定3）、`BASE_BRANCH`（PR のベースブランチ、このリポジトリでは既定 `master`）、
+変数: `ISSUE`（対象Issue番号）、`MAX_ROUNDS`（判定の最大周回数、既定3）、`BASE_BRANCH`（PR のベースブランチ。値は `.ai-flow/config.mk`、このリポジトリでは `master`）、
 `REVIEW_JUDGE_MODEL`（実装レビューの判定モデル。`strong` / `fast` か生のモデルIDを受ける。未設定なら強モデル）。
 
 実装レビューの判定だけ高速モデルで足りるかを試せます（`make impl ISSUE=n REVIEW_JUDGE_MODEL=fast`）。
@@ -258,7 +267,7 @@ make help                    # フェーズの一覧
 
 ### `RESIDUAL_RISK` の事故カタログ
 
-`prompts/review-judge.md` の後半に、巡回すべき事故パターンのリストがあります。
+`.ai-flow/risk-catalog.md` に、巡回すべき事故パターンのリストがあります（`prompts/review-judge.md` の `{{RISK_CATALOG}}` に埋め込まれます）。
 **このリストは実際に起きた事故から作るものです。** 汎用の項目だけにすると
 「特にありません」しか返らなくなるので、**自分のリポジトリで事故が起きたら追記してください。**
 
@@ -283,8 +292,15 @@ PR 作成後に走るので差分はコミット済みで、restore で失われ
 | ファイル | 使うフェーズ | 特徴 |
 |---|---|---|
 | `.claude/phase-permissions.json` | spec / impl / review | ベース。`gh issue comment` を渡す |
-| `.claude/commit-permissions.json` | PR 作成 | `git add` / `git commit` / `git switch` を足す。コミット前の確認用にテストと整形チェック（`npm test` / `npx prettier`）だけ残す |
+| `.claude/commit-permissions.json` | PR 作成 | `git add` / `git commit` / `git switch` を足す |
 | `.claude/pr-review-permissions.json` | code-review / pr-review | ベースとの違いは2つ。`git restore` を足し、`gh issue comment` を外す（投稿先は PR なので Issue に書かせない） |
+
+ここにあるのは、どの案件でも使うコマンドだけです。テスト・整形など案件に固有のコマンドは `.ai-flow/permissions.json` の
+`allow` に書きます。`claude-run.sh` が claude を起動するたびに、`scripts/merge-permissions.sh` で3つのプロファイルに同じものを
+足し込んで一時ファイルに書き出し、それを `--settings` に渡します（`Read(./.env)` のような `./` 付きのルールは、
+設定ファイルの場所ではなくカレントディレクトリからの相対で解決されるので、一時ファイルに置いても効きます）。
+マージした結果を `tmp/` などに残さないのは、エージェントがそれを書き換えると次のステップの権限が広がるためです。
+`check-scripts.sh` の権限の検査は、マージした後の3プロファイルに掛かります。
 
 ### 実測でわかっている落とし穴
 
@@ -361,7 +377,8 @@ Bash(git reset --hard:*)
 ### 基盤ファイルの保護
 
 `run-phase.sh` は各ステップの後に作業ツリーを見て、**基盤ファイル**（`ai-flow/` 配下の `Makefile` / `scripts/` /
-`prompts/` / `.claude/` / `docs/` / `.env.example` と、ルートの `.gitignore`）が書き換わっていたら中断します。
+`prompts/` / `.claude/` / `docs/` / `.env.example` と、ルートの `.ai-flow/` と `.gitignore`）が書き換わっていたら中断します。
+`.ai-flow/` は `.claude/` と違って Claude Code 自身が書き込みを塞がないので、この検査だけが担保です。
 git が出すパスは `ai-flow/` で実行してもリポジトリのルートからの相対なので、`TOOLING_PATHS` は `ai-flow/` を付けて書きます。
 `Write` / `Edit` にパスを付けられないので、これが唯一の担保です。
 
@@ -380,7 +397,7 @@ git が出すパスは `ai-flow/` で実行してもリポジトリのルート�
 
 ### コミットの分け方
 
-**基盤ファイル**（上の `TOOLING_PATHS` の対象）は**人が既定ブランチに直接**入れます。
+**基盤ファイル**（上の `TOOLING_PATHS` の対象）は**人が別の PR で**入れます（このフローには載せません）。
 **案件の変更**は `feature/` ブランチに載せて PR にします。**この2つを1つのコミットに混ぜません。**
 
 `run-phase.sh` が PR 作成の直前に検査し、混ざっていたら PR を作らずに中断します。
@@ -390,14 +407,16 @@ git が出すパスは `ai-flow/` で実行してもリポジトリのルート�
 ## 7. ファイル構成
 
 ```
-Makefile                             入口（make help）
+Makefile                             入口（make help）。ルートの .ai-flow/config.mk を include する
 .env.example                         各自の設定のひな形（→ .env にコピー）
 
 scripts/
   run-phase.sh                       フローの筋書き。フェーズの進行、検査、push、PR 作成、通知
   claude-run.sh                      Claude Code を1回ヘッドレス実行する。冒頭に権限の実測メモ
+  render-prompt.sh                   プロンプトのプレースホルダを埋める（claude-run.sh から呼ぶ）
+  merge-permissions.sh               権限プロファイルに案件の追加分を足し込む（claude-run.sh から呼ぶ）
   check-scripts.sh                   基盤ファイルの静的検査（各フェーズの前に走る）
-  selftest.sh                        run-phase.sh の関数の回帰テスト（check-scripts.sh から呼ぶ。gh / npx はスタブ）
+  selftest.sh                        run-phase.sh の関数と render-prompt.sh の回帰テスト（check-scripts.sh から呼ぶ。gh / npx はスタブ）
   notify-slack.sh                    Slack 通知
 
 prompts/
@@ -421,6 +440,13 @@ prompts/
 docs/
   ai-workflow-setup.md               このガイド
 
+../.ai-flow/                         案件ごとの設定（リポジトリのルート。ai-flow/ の外）
+  config.mk                          ベースブランチ・テストと整形のコマンド・出力の言語
+  permissions.json                   権限の追加分（3プロファイル共通）
+  context.md                         案件の前提（_rules.md の末尾に埋め込む）
+  risk-catalog.md                    事故カタログ（review-judge.md に埋め込む）
+  user-flows.md                      普段の使い方（pr-review.md の主張3に埋め込む）
+
 tmp/                                 作業ファイル（git 管理外。消しても Issue から再開できる）
   verdict-issue<N>.txt               判定の1語
   cost-issue<N>.txt                  この Issue にかかったコスト（追記）
@@ -439,7 +465,12 @@ tmp/                                 作業ファイル（git 管理外。消し
 | `{{VERDICT_FILE}}` | 判定の1語を書き込むファイル |
 | `{{COMMENT_FILE}}` | コメント本文を書き込むファイル（プロンプト名から自動で決まる） |
 | `{{PR_TITLE_FILE}}` / `{{PR_BODY_FILE}}` | PR のタイトルと本文 |
-| `{{BASE_BRANCH}}` | PR のベースブランチ（`Makefile` の `BASE_BRANCH`）。差分を読むときの `origin/{{BASE_BRANCH}}..HEAD` など |
+| `{{BASE_BRANCH}}` | PR のベースブランチ（`.ai-flow/config.mk` の `BASE_BRANCH`）。差分を読むときの `origin/{{BASE_BRANCH}}..HEAD` など |
+| `{{TEST_CMD}}` / `{{SCRATCH_TEST_CMD}}` / `{{FORMAT_CHECK_CMD}}` / `{{FORMAT_FILE_CMD}}` / `{{FORMAT_FIX_CMD}}` / `{{FORMAT_GLOBS}}` / `{{OUTPUT_LANG}}` | `.ai-flow/config.mk` の同名の値 |
+| `{{PROJECT_CONTEXT}}` / `{{RISK_CATALOG}}` / `{{USER_FLOWS}}` | 行全体がこれだけの行を、`.ai-flow/` の `context.md` / `risk-catalog.md` / `user-flows.md` の中身に置き換える |
+
+埋めるのは `scripts/render-prompt.sh` です。値が空のプレースホルダや埋まらずに残ったものがあれば、
+claude を起動する前に止まります。`make check` も全プロンプトを一度生成して確かめます。
 
 **判定を求められたフェーズは `{{VERDICT_FILE}}` に指定された1語だけを書きます。**
 説明文や飾りが混ざると、`make` が次に進めず人待ちで止まります。
@@ -483,7 +514,7 @@ tmp/                                 作業ファイル（git 管理外。消し
 | `… が整形チェックを通らないファイルを残しました` | フォーマッタを掛けてから `make review` で再開。整形済みなのに出るなら、フォーマッタが入っていないか構文エラー（チェック自体の失敗も止める側に倒してある） |
 | `ブランチ名が feature/ で始まっていません` | 規約。エージェントの実装は残っているのでブランチを切り直す |
 | `案件のコミットに基盤ファイルが混ざっています` | 別コミットに分ける。**案件ブランチの分岐元が古く、その後 `BASE_BRANCH` に基盤ファイルの更新が積まれただけ**でも起きる（`origin/<BASE_BRANCH>..<branch>` の差分に基盤側の変更が逆向きに出るため）。その場合は案件ブランチを `git rebase origin/<BASE_BRANCH>` してから `make create-pr` |
-| `origin/… が見つかりません` | `Makefile` の `BASE_BRANCH` が既定ブランチと合っていない。直したら、レビューをやり直さず `make create-pr` で再開（`review` から再開すると `review-judge` のコメントが重複する） |
+| `origin/… が見つかりません` | `.ai-flow/config.mk` の `BASE_BRANCH` が既定ブランチと合っていない。直したら、レビューをやり直さず `make create-pr` で再開（`review` から再開すると `review-judge` のコメントが重複する） |
 | `origin/… と差がありません` | エージェントがコミットしていない。`make review` で再開 |
 | `PR が見つかりません` | `code-review` / `pr-review` を単独で叩いたとき、現在のブランチに PR が無い |
 | `MAX_ROUNDS 周しても…承認されませんでした` | **受入基準が曖昧なときにこうなります。** 指示書を見直す |
@@ -534,34 +565,34 @@ Slack の通知に出る「累計コスト」はこのファイルの合計で�
 - [ ] **`.env`** を作って `SLACK_WEBHOOK_URL` を設定
 - [ ] **環境変数** 強モデルと高速モデルのID（既定の参照元は `CLAUDE_CODE_OPUS_MODEL` /
       `CLAUDE_CODE_SONNET_MODEL`。`.zshrc` ではなく `.zshenv` か `.env` に置く）
-- [ ] **`scripts/run-phase.sh` の整形チェック**（`format_target()` / `format_ok()` / `FORMAT_FIX` の3つだけ） —
-      対象拡張子と、フォーマッタのチェックコマンド。`format_ok()` は**整形済みなら真を返す**。
-      `gofmt -l` のように出力で答えるツールは出力が空かを見て、成功時も何か出すツールは出力を捨てて終了コードを使う。
-      **整形はしない**（チェックのみ）。**チェック自体が失敗したら偽を返す**
+- [ ] **`.ai-flow/config.mk`** — `BASE_BRANCH`、テスト（`TEST_CMD` / `SCRATCH_TEST_CMD`）、
+      整形（`FORMAT_CHECK_CMD` / `FORMAT_FILE_CMD` / `FORMAT_FIX_CMD` / `FORMAT_GLOBS`）、`OUTPUT_LANG`。
+      `FORMAT_FILE_CMD` は**整形済みなら終了コード 0 を返す**コマンドにする。`gofmt -l` のように出力で答えるツールは、
+      終了コードで返すラッパーを用意する。**整形はしない**（チェックのみ）。チェック自体が失敗したら止まる
 - [ ] **`scripts/run-phase.sh` の `TOOLING_PATHS`** と **`prompts/_rules.md` / `prompts/pr.md` の基盤ファイル一覧** —
       自分のリポジトリの基盤ファイル。CI 設定を含めるかを決める。3箇所をそろえる。
       **`docs/` を案件のドキュメントに使うなら3箇所すべてから外す**（このガイドの置き場所を別に決める）
-- [ ] **`Makefile` の `BASE_BRANCH`**（PR のベースブランチ）。スクリプトとプロンプトはこの値だけを使う。
+- [ ] **`BASE_BRANCH` の直書きをしない** — スクリプトとプロンプトは `.ai-flow/config.mk` の値だけを使う。
       直書きの `origin/<ブランチ名>` や `--base <ブランチ名>` を足すと `make check` が落ちる
 - [ ] **`scripts/run-phase.sh` のブランチ規約**（`create_pr` の `feature/*` の検査）
 - [ ] **`prompts/pr.md` のブランチ名** — 上と**必ずセットで**直す。片方だけだと
       エージェントがコミットまで終えた後に PR 作成で中断する
-- [ ] **`.claude/*-permissions.json` の allow** — ビルド・テスト・整形コマンド。
+- [ ] **`.ai-flow/permissions.json` の allow** — ビルド・テスト・整形コマンド。
       `which` で確認した**絶対パス形も入れる**（エージェントが絶対パスで呼ぶことがある）
-- [ ] **`prompts/implement.md` / `review-fix.md` / `review-judge.md` / `pr-review.md` のテストコマンド** —
+- [ ] **`TEST_CMD` の中身** —
       **テスト結果をキャッシュするツールなら、無効にする指定を付ける**（Go の `-count=1`、Gradle の `--rerun-tasks`、
       Turborepo の `--force`、Nx の `--skip-nx-cache`、Bazel の `--nocache_test_results`）。
       判定役は自分でテストを走らせて裏を取る建てなので、前回の成功が再生されると効かなくなる。
       pytest や Jest はもともと結果を再生しないので、何も足さなくてよい
 - [ ] **`prompts/code-review.md` / `review-judge.md` / `pr-review.md` の実行方法** —
       成果物を動かして確かめる経路。パス結合API名も言語に合わせる
-- [ ] **`prompts/_rules.md` の後半** — モノレポ構成の案内と、自分のリポジトリの規約。
-      複合コマンド不可と `cd` の持続の2点は**残す**
-- [ ] **`prompts/*.md` が参照するドキュメント名**（規約ファイル、README 等）
+- [ ] **`.ai-flow/context.md`** — 読むべきドキュメント（規約ファイル、README 等）、更新対象のドキュメント、
+      案件のコマンドに固有の落とし穴。全フェーズのプロンプト（`_rules.md` の末尾）に入る
+- [ ] **`.ai-flow/user-flows.md`** — `pr-review` の主張3で「前と違う結果になるもの」を探すときの普段の使い方
 
 ### 埋めていくもの
 
-- [ ] **`prompts/review-judge.md` の事故カタログ** — 汎用の項目だけだと
+- [ ] **`.ai-flow/risk-catalog.md`（事故カタログ）** — 汎用の項目だけだと
       `RESIDUAL_RISK` が「特にありません」しか返さない。自分のリポジトリで事故が起きたら追記する
 - [ ] **`prompts/spec.md` / `pr-review.md` の事故例** — 「受入基準に忠実であることは、事故を防ぐことと
       同じではない」を裏づける実例。**自分のリポジトリの Issue 番号が1件入ると目に見えて効くようになる**

@@ -39,18 +39,18 @@
 ## 作業ディレクトリとコマンド
 
 あなたは `ai-flow/` をカレントディレクトリとして動いている。ルートへの `cd` は拒否される。
-案件のファイルは `../popup.js` のようにルートからの相対で読む。
+案件のファイルはルートからの相対（`../`）で読む。
 
-- 整形の確認は `npm run format:check`（npm がルートで実行する）。
-  `npx prettier --check "**/*.js"` は `ai-flow/` 以下しか見ないので、リポジトリ全体の確認には使わない
-- テストは `npm test`。挙動を単体で試すときは、`tmp/` に使い捨てのテストファイルを書いて `node --test <ファイル>`
+- 整形の確認は `{{FORMAT_CHECK_CMD}}`。実行した場所以下しか見ないコマンドは、リポジトリ全体の確認には使わない
+- テストは `{{TEST_CMD}}`。挙動を単体で試すときは、`tmp/` に使い捨てのテストファイルを書いて `{{SCRATCH_TEST_CMD}} <ファイル>`
 - 文字列の検索は `git grep -n "<パターン>" -- ':/'`。`':/'` を付けないと `ai-flow/` 以下しか検索しない。
   出力のパスは `ai-flow/` からの相対（`../docs/...`）になる
 - `grep` / `cat` / `ls` / `find` などは渡していない。拒否されたら上の手段か `Read` / `Glob` で代える
 
 ## この案件の約束
 
-- ルートの `CLAUDE.md` / `README.md` に従う
-- 基盤ファイル（`ai-flow/` 配下の `Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.env.example` と、ルートの `.gitignore`）は変更しない
-  （案件の変更対象になるドキュメントは `README.md` / `CHANGELOG.md` / ルートの `docs/` など、この案件側のものだけ）
+- 人が読む出力（Issue へのコメント、コミットメッセージ、PR のタイトルと本文）は{{OUTPUT_LANG}}で書く
+- 基盤ファイル（`ai-flow/` 配下の `Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.env.example` と、ルートの `.ai-flow/` と `.gitignore`）は変更しない
 - Slack 通知は自分で送らない。make が送る
+
+{{PROJECT_CONTEXT}}

@@ -55,12 +55,14 @@ PR_REVIEW_FILE="./tmp/issue$ISSUE-pr-review.md"
 # create_pr が作った PR。code-review / pr-review を単独で叩いたときは現在のブランチから引く
 PR_URL=""
 
-# 基盤ファイル。案件のコミットに混ざってはいけない（基盤は人が BASE_BRANCH に直接入れる。一覧は prompts/pr.md と揃える）
+# 基盤ファイル。案件のコミットに混ざってはいけない（基盤は人が別の PR で入れる。一覧は prompts/pr.md と揃える）
 # git status --porcelain / git diff --name-only のパスは、ai-flow/ で実行してもリポジトリのルートからの相対になる。
 # そのため ai-flow/ を付けて書く。付けないと ai-flow/scripts/ などの改変が素通りし、逆にルートの docs/
 # （プライバシーポリシーなど案件のドキュメント）が基盤扱いされて止まる（#10 で発覚、実測）。
 # ai-flow/docs/ はフロー自体の移植手順と導入ガイドの置き場所。.gitignore はルートにあり ai-flow/ 用の規則を含む。
-TOOLING_PATHS='^(ai-flow/(Makefile|scripts/|prompts/|\.claude/|docs/|\.env\.example)|\.gitignore)'
+# ルートの .ai-flow/ は案件ごとの設定（コマンド・権限の追加分・プロンプトに埋める文章）。ai-flow/.claude/ と違って
+# Claude Code 自身は書き込みを塞がないので、ここで捕まえる。権限の追加分を書き換えられると次のステップの権限が広がる。
+TOOLING_PATHS='^(ai-flow/(Makefile|scripts/|prompts/|\.claude/|docs/|\.env\.example)|\.ai-flow/|\.gitignore)'
 
 mkdir -p tmp
 # コストは Issue 1件あたりで積む。起動ごとに切り詰めると、1周を make impl → make review と
@@ -118,17 +120,30 @@ tooling_state() {
 }
 TOOLING_BEFORE=$(tooling_state)
 
-# 整形チェックの言語依存部分。移植先で直すのはこの3つだけ。
-#   format_target : 整形チェックの対象なら真
-#   format_ok     : 整形済みなら真。判定は終了コードで返す。gofmt -l のように「出力が空なら
-#                   整形済み」のツールは出力を見て真偽に直すツールもあるが、prettier --check の
-#                   ように成功時も何か出すツールは出力を捨てて終了コードだけを使う。
+# 整形チェックの言語依存部分。コマンドと対象は案件設定（.ai-flow/config.mk）から受け取る。
+#   format_target : 整形チェックの対象なら真。FORMAT_GLOBS（空白区切りの case パターン）のどれかに当たるか
+#   format_ok     : 整形済みなら真。FORMAT_FILE_CMD の終了コードで判定する。gofmt -l のように「出力が空なら
+#                   整形済み」のツールは、終了コードで返すラッパーを案件側に用意して指定する。
 #                   チェック自体が失敗したら（未インストール・構文エラー）偽を返して止める。
 #                   真に倒すと、フォーマッタが無い環境で黙って全部通る
 #   FORMAT_FIX    : 中断メッセージで案内する、エージェントに掛けさせるコマンド
-format_target() { case "$1" in *.js|*.css|*.html) return 0 ;; esac; return 1; }
-format_ok() { npx prettier --check "$1" >/dev/null 2>&1; }
-FORMAT_FIX="npx prettier --write"
+# FORMAT_FILE_CMD が空の案件は整形チェックをしない（unformatted_files が何も返さない）。
+# 値はクォートせずに単語に分けて実行する。read -a はパス名展開をしないので、*.js がカレントのファイルに化けない。
+format_target() {
+  local g globs
+  [ -n "${FORMAT_GLOBS:-}" ] || return 1
+  read -r -a globs <<< "${FORMAT_GLOBS}"
+  for g in "${globs[@]}"; do
+    case "$1" in $g) return 0 ;; esac
+  done
+  return 1
+}
+format_ok() {
+  local cmd
+  read -r -a cmd <<< "${FORMAT_FILE_CMD}"
+  "${cmd[@]}" "$1" >/dev/null 2>&1
+}
+FORMAT_FIX="${FORMAT_FIX_CMD:-}"
 
 # 変更・追加されたファイルが整形済みかを見る。ここでは整形しない。
 # シェルが勝手に書き換えると、レビュアーが読んだ差分と実際の差分が食い違うため。
@@ -137,6 +152,7 @@ FORMAT_FIX="npx prettier --write"
 # 前置しないと ai-flow/ から見て存在しないことになり、案件のファイルが全部素通りしていた（実測）。
 unformatted_files() {
   local f root out=""
+  [ -n "${FORMAT_FILE_CMD:-}" ] || return 0
   root=$(git rev-parse --show-toplevel) || { printf '(git rev-parse --show-toplevel が失敗)\n'; return; }
   while IFS= read -r f; do
     [ -n "$f" ] || continue

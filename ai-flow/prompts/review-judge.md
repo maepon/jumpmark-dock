@@ -12,7 +12,7 @@ Issue #{{ISSUE}} の**実装が受入基準を満たしているか**を判定�
 2. 差分を確認する
    - `git status --short` と `git diff` の**両方**を見る
    - 未追跡の新規ファイルは `Read` で中身を読む（`git diff` には出ない）
-3. **テストを自分で走らせる。** `npm test`。報告を信用しない
+3. **テストを自分で走らせる。** `{{TEST_CMD}}`。報告を信用しない
 4. 受入基準 `AC-n` を1つずつ判定する
 5. `APPROVED` なら、残存リスクを別コメントで報告する（下の節）
 
@@ -65,8 +65,8 @@ Issue #{{ISSUE}} の**実装が受入基準を満たしているか**を判定�
 書き方: `- **AC-4（javascript: スキームは false）**: … → 達成（実行して確認）`
 
 **証拠として引用するコマンドは、自分が実際に実行したものだけを書く。**
-使えるのは `Read` / `Glob` / `Write` と、`npm test` / `npm run format:check` / `npx prettier --check` /
-`node --test` / `git grep` / `git diff` / `git status` / `gh issue view` / `date` / `mkdir` / `echo` / `cd`。
+使えるのは `Read` / `Glob` / `Write` と、`{{TEST_CMD}}` / `{{FORMAT_CHECK_CMD}}` / `{{FORMAT_FILE_CMD}}` /
+`{{SCRATCH_TEST_CMD}}` / `git grep` / `git diff` / `git status` / `gh issue view` / `date` / `mkdir` / `echo` / `cd`。
 `ls` / `find` / `grep` / `wc` と、`node <ファイル>` / `node -e` などは渡していないので拒否される。
 リポジトリ全体を検索するときは `git grep -n "<パターン>" -- ':/'`（`':/'` が無いと `ai-flow/` 以下しか見ない）。
 拒否されたら、代わりに使った手段か「確認できなかった」を書く。make が拒否の件数を表示するため、
@@ -102,20 +102,10 @@ Issue #{{ISSUE}} の**実装が受入基準を満たしているか**を判定�
 
 このリストはこのリポジトリで実際に起きた事故と、その近くにある危なさから作っている。
 
-- **インポートした JSON 由来の値**（`title` / `url` / `icon` / `sourceUrl`）が、エスケープされずに HTML・属性・エクスポートファイルに出る経路（#8、#13）
-- **URL のスキーム**: `javascript:` / `data:` などが `href` やナビゲーションに渡る経路。判定は `new URL()` で行われているか（#13）
-- **URL の正規化**: `www.` の有無・末尾スラッシュ・大文字小文字・ワイルドカード（`*`）で、同じページが別キーになる／違うページが同じキーになる
-- **双方向リンク**: 片側だけ作成・編集・削除されて、もう片側が残る／孤立する
-- **`chrome.storage.sync` の上限**: 1アイテム 8KB・全体 100KB 前後・アイテム数の上限を超えたときに、黙って保存に失敗する経路
-- **拡張機能が動かないページ**: `chrome://` / `chrome-extension://` / 新しいタブ / URL の取れないタブで、例外やバッジの取り残しが起きないか
-- **未翻訳の文言**: UI に日本語が直接入る、`_locales/` の en と ja でキーが食い違う（#6、#9）
-- **`await` の付け忘れ**: Promise をそのまま真偽値として使っていて、常に真になる経路
-- **0件・空の入力**: Jumpmark が0件、インポートファイルが空・壊れているときに、成功に見えて何も起きない経路
+{{RISK_CATALOG}}
 
 実際に走らせて確かめる場合は、`tmp/`（`ai-flow/tmp/`）の下に使い捨てのテストファイルを作り
-（`mkdir` は使える）、`node --test <ファイル>` で該当関数を呼ぶか `npm test` で利用者が通る経路を通す。
-拡張機能自体（`background.js` / `popup.js` / `options.js`）は Chrome 上でしか動かないので、
-ロジックを切り出した `shared.js` の関数を中心に確認する。
+（`mkdir` は使える）、`{{SCRATCH_TEST_CMD}} <ファイル>` で該当関数を呼ぶか `{{TEST_CMD}}` で利用者が通る経路を通す。
 `rm` は許可されていないので後片付けは不要（`tmp/` は git 管理外）。
 
 ### 投稿
