@@ -8,6 +8,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-03
+
+First public release.
+
+### Changed
+
+- **The scripts' comments and terminal / Slack messages are now in English** (they were in Japanese). Agent output is unaffected:
+  it is still written in `OUTPUT_LANG`. If you match on message text (e.g. in your own tooling), update the patterns;
+  `docs/setup.md` §8 lists the common messages
+- `make help` describes `REVIEW_JUDGE_MODEL` as it actually works (the fast model by default, used for judging both the plan and the implementation)
+
+### Added
+
+- `LICENSE` (MIT) and `CONTRIBUTING.md`
+
+### Removed
+
+- The known limitation "the scripts' comments and terminal / Slack messages are in Japanese"
+
 ## [0.2.1] - 2026-10-03
 
 Fixes found by running the flow on a Python project (flow at `tools/flow/`, no formatter, `OUTPUT_LANG = English`).
@@ -74,10 +93,11 @@ so its history is included; Issue / PR numbers in those commit messages refer to
 
 ### Known limitations
 
-- The scripts' comments and terminal / Slack messages are in Japanese
+- The scripts' comments and terminal / Slack messages are in Japanese (fixed in 0.3.0)
 - A project without a formatter or a test command is not supported yet: prompts that use an empty `FORMAT_*` / `TEST_CMD` value stop at render time (formatter: fixed in 0.2.0)
 
-[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/maepon/issue-to-pr-flow/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/maepon/issue-to-pr-flow/releases/tag/v0.1.0
