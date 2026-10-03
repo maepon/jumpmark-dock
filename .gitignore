@@ -4,7 +4,7 @@
 .DS_Store
 
 # Claude Code settings（ディレクトリ全体ではなく個人設定ファイルだけを無視する。
-# ai-flow/.claude/*-permissions.json はフロー本体の共有ファイルなのでコミット対象）
+# ai-flow/.claude/*-permissions.json はフロー本体の共有ファイルなのでコミット対象。戻す規則は ai-flow/.gitignore）
 .claude/settings.json
 .claude/settings.local.json
 
@@ -48,11 +48,7 @@ logs/
 # Environment variables
 .env
 
-# Temporary files on ai-flow
+# 作業ファイル（以前のフローがルートに書いたものが残っている）
 tmp/
-ai-flow/tmp/
 
-# グローバル gitignore の `.claude` ルールで無視されるため明示的に復活させる
-# （settings.json / settings.local.json のような個人設定ファイル名は対象に含めない）
-!ai-flow/.claude/
-!ai-flow/.claude/*-permissions.json
+# AI開発フロー（ai-flow/）の tmp/ と .env、権限ファイルを戻す規則は ai-flow/.gitignore にある
