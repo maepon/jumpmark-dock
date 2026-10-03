@@ -355,6 +355,7 @@ Each is one short run on the fast model, so the cost is small (they cannot be ch
 | A `deny` in `settings.json` **also binds the human's interactive sessions** (deny blocks without a prompt) | You could no longer commit / push yourself |
 | `Write` / `Edit` **rules with a path never match, in allow or deny** (`Write(./**)`, `Write(**)`, `Write(tmp/**)`, absolute forms were all denied) | Only bare `Write` / `Edit` can be granted. **Write ranges are restricted by the shell's working tree check instead** |
 | Paths work for `Read`. `deny Read(./.env)` beats a bare `allow Read` | `.env` can be blocked |
+| A relative pattern (`Read(./.env)`, `Read(.env)`) only matches at or under the current directory (the flow directory), not the project root above it. `Read(//**/.env)` matches a file named `.env` anywhere | Every profile denies both. The root `.env` went from readable to denied, and `.env.example` stayed readable. Protect other secret files with `Read(//**/<path>)` in `.ai-flow/permissions.json` |
 | A deny in the colon form is a **prefix match** and beats an allow of the base command too | A `Bash(gh pr:*)` deny blocks both `gh pr comment` and `gh pr create` |
 | Claude Code itself blocks writes under `.claude/` | Agents cannot widen their own permissions. `prompts/` and `scripts/` are not covered, though |
 | Blocks by deny do **not** appear in `permission_denials`; they come back as tool errors | Some denials do not show up in the list |
@@ -383,6 +384,7 @@ If even one is missing, `make check` fails and no phase starts.
 
 ```
 Read(./.env)
+Read(//**/.env)
 Bash(git push)
 Bash(git push:*)
 Bash(gh pr:*)
@@ -394,6 +396,7 @@ Bash(git reset --hard:*)
 ### Deny is not isolation
 
 **As long as running the tests is allowed, the agents can execute arbitrary code.**
+For example, the `.env` denies stop the `Read` tool, but a test or script the agent writes could still read those files.
 If they wanted to, they could reach denied operations. The permission lists prevent accidents; they are not a sandbox.
 
 The effective safeguards are these three. **Do not remove any of them.**
@@ -649,6 +652,8 @@ What to check and adapt for your repository.
       Turborepo `--force`, Nx `--skip-nx-cache`, Bazel `--nocache_test_results`).
       The judges re-run the tests to verify claims, so a replayed earlier success defeats them.
       pytest and Jest do not replay results, so nothing is needed for them
+- [ ] **Secret files other than `.env`** — every `.env` is already denied. If your project keeps secrets in other files, add them to `deny`
+      in `.ai-flow/permissions.json` as `Read(//**/<path>)` (e.g. `Read(//**/config/secrets.yml)`); a relative path would only match under the flow directory
 - [ ] **`.ai-flow/permissions.json`** — allows for build, test, and format commands.
       **Also add the absolute-path forms** found with `which` (agents sometimes call commands by absolute path)
 - [ ] **`.ai-flow/context.md`** — documents to read (conventions, README, …), documents to update,
