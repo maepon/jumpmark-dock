@@ -1,11 +1,11 @@
 {
-  "//": "PR作成フェーズ専用。エージェントはブランチを切ってコミットするところまで。",
-  "//push": "push と gh pr create はエージェントに渡さず、run-phase.sh が実行する。外向きの操作の直前に、ブランチ名とコミット対象を機械的に検査したいため。",
-  "//deny": "ユーザーレベル設定に Bash(git push *) があると全形の push が通ってしまうので、ここで塞ぐ。コロン形の deny は前置一致で allow に勝つ（実測）。",
-  "//write": "Write / Edit のパス指定ルールは効かない（実測。詳細は .claude/phase-permissions.json）。裸で渡し、基盤ファイルの保護は run-phase.sh 側で行う。",
-  "//not-allowed": "grep / cat / sed 等の汎用の読み取りコマンドと git -C <path> ... は allow しない。理由は .claude/phase-permissions.json に書いてある（Read の deny と git push の deny をそれぞれすり抜けるため）。",
-  "//git-grep": "git grep:* は通す。git 管理下のファイルだけを検索するので .env（gitignore 対象）は既定では対象外。--no-index を付ければ読めるが、テストの実行（.ai-flow/permissions.json で足す TEST_CMD など）ですでに任意の読み込みができるので実行面は広がらない。grep を禁じたままだと、文言の削除などを機械的に確かめられず確認が推論止まりになっていた（#10）。既定では現在のディレクトリ（フローのディレクトリ）以下しか検索しないので、全体は -- ':/' を付けさせる（_rules.md）。",
-  "//date": "date は通す。読み書きをしない。最終更新日のような「実装した日」を AC にしたとき、推論でなく実行して確かめるため（#19 の AC-14）。",
+  "//": "For the PR creation phase only. The agent goes as far as creating the branch and committing.",
+  "//push": "push and gh pr create are not given to the agent; run-phase.sh runs them, so the branch name and what is committed can be checked mechanically right before the outward-facing operation.",
+  "//deny": "If user-level settings contain Bash(git push *), every form of push would get through, so it is blocked here. A deny in the colon form is a prefix match and beats an allow (measured).",
+  "//write": "Write / Edit rules with a path do not work (measured; details in .claude/phase-permissions.json). They are granted bare, and run-phase.sh protects the tooling files.",
+  "//not-allowed": "General-purpose read commands such as grep / cat / sed, and git -C <path> ..., are not allowed. The reasons are in .claude/phase-permissions.json (they would slip past the Read deny and the git push deny respectively).",
+  "//git-grep": "git grep:* is allowed. It only searches files tracked by git, so .env (gitignored) is excluded by default. --no-index would let it read .env, but running the tests (TEST_CMD and the like, added via .ai-flow/permissions.json) already allows arbitrary reads, so the attack surface does not grow. With grep forbidden entirely, things like the removal of a wording could not be checked mechanically, and verification stopped at inference. By default it only searches below the current directory (the flow directory), so the agent is told to add -- ':/' for the whole repository (_rules.md).",
+  "//date": "date is allowed. It neither reads nor writes. It lets the agent verify by running rather than by inference when an AC is about the implementation date, such as a last-updated date.",
   "permissions": {
     "allow": [
       "Bash(gh issue view:*)",
@@ -36,5 +36,5 @@
       "Bash(git rebase:*)"
     ]
   },
-  "//project": "テスト・整形など案件に固有のコマンドの allow は .ai-flow/permissions.json にある。claude-run.sh が起動のたびにこのファイルへ足し込む（scripts/merge-permissions.sh）。"
+  "//project": "Allows for project-specific commands such as tests and formatting live in .ai-flow/permissions.json. claude-run.sh merges them into this file on every launch (scripts/merge-permissions.sh)."
 }

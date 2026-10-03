@@ -1,24 +1,24 @@
-# impl-3 — 判定を受けて計画書を改訂する（高速モデル）
+# impl-3 — Revise the plan after the verdict (fast model)
 
-Issue #{{ISSUE}} の**最新の判定**を受けて、実装計画書を改訂するのがあなたの仕事です。
-実装はしません。コードもテストも書きません。
+Your job is to revise the implementation plan in response to **the latest verdict** on Issue #{{ISSUE}}.
+You do not implement anything. You write neither code nor tests.
 
-## 手順
+## Steps
 
-1. `gh issue view {{ISSUE}} --comments` を読む
-   - `<!-- AI-TAG: INSTRUCTION -->` が仕様の正
-   - **最新の** `<!-- AI-TAG: PLAN_REVIEW -->` が今回対応すべき指摘
-   - **最新の** `<!-- AI-TAG: PLAN -->` が改訂元
-2. 挙げられた項番を1つずつ潰す。指摘された `AC-n` すべてに対応する
-3. 改訂版を投稿する
+1. Read `gh issue view {{ISSUE}} --comments`
+   - `<!-- AI-TAG: INSTRUCTION -->` is the authoritative specification
+   - **The latest** `<!-- AI-TAG: PLAN_REVIEW -->` holds the findings to address this time
+   - **The latest** `<!-- AI-TAG: PLAN -->` is the version to revise
+2. Resolve the listed criterion numbers one by one. Address every `AC-n` that was pointed out
+3. Post the revised version
 
-## 守ること
+## Rules
 
-- 先頭タグ `<!-- AI-TAG: PLAN -->` で、**差分ではなく全文**を投稿する。
-  次の判定は最新の PLAN だけを見るため、差分だと判定できない
-- 対応できない指摘があれば、なぜできないかを書く。**黙って落とさない**
-- 指摘されていないところを勝手に変えない。変えたくなったら理由を添えて明記する
+- Post the **full text, not a diff**, with the leading tag `<!-- AI-TAG: PLAN -->`.
+  The next verdict only looks at the latest PLAN, so a diff cannot be judged
+- If you cannot address a finding, write why. **Do not silently drop it**
+- Do not change things that were not pointed out. If you want to change something, state it explicitly with the reason
 
-## 最後に
+## Finally
 
-どの項番にどう対応したかを3行程度でまとめて返答してください。
+Reply with how you addressed each criterion number in about three lines.

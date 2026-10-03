@@ -1,11 +1,11 @@
 {
-  "//": "spec / impl / review の各フェーズ共通の権限。ファイル名を settings.json にしない理由は scripts/claude-run.sh の冒頭に書いてある。",
-  "//deny": "コロン形の deny は前置一致で、ベースコマンドの allow にも勝つ（実測）。git push は全形が塞がる。",
-  "//write": "Write / Edit にパスを付けたルールは allow も deny も一切マッチしない（実測）。裸で渡すしかないので、基盤ファイルの保護は run-phase.sh の作業ツリー検査で行う（gitignore 対象のファイルは検査に出ないので、守るならプロンプトで禁じるしかない。このリポジトリには該当するものが無い）。Read のパス指定は効くので .env は deny できる。",
-  "//grep": "grep / cat / sed / awk / head は allow しない。ファイルを読める汎用コマンドを1つ通すと Read(./.env) の deny を素通りできるため。エージェントが grep へのパイプを拒否されるのは想定どおりで、Read で代替させる。例外は git grep（//git-grep を参照）。",
-  "//git-c": "git -C <path> ... も allow しない。Bash のマッチは前置文字列なので、git -C . push が git push の deny をすり抜けるため。エージェントが繰り返し試すが、通してはいけない。",
-  "//git-grep": "git grep:* は通す。git 管理下のファイルだけを検索するので .env（gitignore 対象）は既定では対象外。--no-index を付ければ読めるが、テストの実行（.ai-flow/permissions.json で足す TEST_CMD など）ですでに任意の読み込みができるので実行面は広がらない。grep を禁じたままだと、文言の削除などを機械的に確かめられず確認が推論止まりになっていた（#10）。既定では現在のディレクトリ（フローのディレクトリ）以下しか検索しないので、全体は -- ':/' を付けさせる（_rules.md）。",
-  "//date": "date は通す。読み書きをしない。最終更新日のような「実装した日」を AC にしたとき、推論でなく実行して確かめるため（#19 の AC-14）。",
+  "//": "Permissions shared by the spec / impl / review phases. Why the file is not named settings.json is explained at the top of scripts/claude-run.sh.",
+  "//deny": "A deny in the colon form is a prefix match and beats an allow of the base command too (measured). Every form of git push is blocked.",
+  "//write": "Write / Edit rules with a path never match, neither in allow nor in deny (measured). They can only be granted bare, so the tooling files are protected by run-phase.sh's working tree check instead (gitignored files do not show up in that check, so the only way to protect them is to forbid it in the prompts; there are none that need it). Paths do work for Read, so .env can be denied.",
+  "//grep": "grep / cat / sed / awk / head are not allowed. Allowing even one general-purpose command that can read files lets the agent get around the Read(./.env) deny. The agent being denied when piping into grep is expected; it uses Read instead. The exception is git grep (see //git-grep).",
+  "//git-c": "git -C <path> ... is not allowed either. Bash rules match by prefix, so git -C . push would slip past the git push deny. The agent tries it repeatedly, but it must not be allowed.",
+  "//git-grep": "git grep:* is allowed. It only searches files tracked by git, so .env (gitignored) is excluded by default. --no-index would let it read .env, but running the tests (TEST_CMD and the like, added via .ai-flow/permissions.json) already allows arbitrary reads, so the attack surface does not grow. With grep forbidden entirely, things like the removal of a wording could not be checked mechanically, and verification stopped at inference. By default it only searches below the current directory (the flow directory), so the agent is told to add -- ':/' for the whole repository (_rules.md).",
+  "//date": "date is allowed. It neither reads nor writes. It lets the agent verify by running rather than by inference when an AC is about the implementation date, such as a last-updated date.",
   "permissions": {
     "allow": [
       "Bash(gh issue view:*)",
@@ -35,5 +35,5 @@
       "Bash(git reset --hard:*)"
     ]
   },
-  "//project": "テスト・整形など案件に固有のコマンドの allow は .ai-flow/permissions.json にある。claude-run.sh が起動のたびにこのファイルへ足し込む（scripts/merge-permissions.sh）。"
+  "//project": "Allows for project-specific commands such as tests and formatting live in .ai-flow/permissions.json. claude-run.sh merges them into this file on every launch (scripts/merge-permissions.sh)."
 }

@@ -1,41 +1,41 @@
-# impl-4 — 承認済みの計画どおりに実装する（高速モデル）
+# impl-4 — Implement exactly as the approved plan says (fast model)
 
-Issue #{{ISSUE}} の**承認済みの実装計画書どおりに実装**するのがあなたの仕事です。
+Your job is to **implement exactly as the approved implementation plan** for Issue #{{ISSUE}} says.
 
-## 手順
+## Steps
 
-1. `gh issue view {{ISSUE}} --comments` を読む
-   - `<!-- AI-TAG: INSTRUCTION -->` が仕様の正
-   - **最新の** `<!-- AI-TAG: PLAN -->`（`verdict=APPROVED` を得たもの）が実装の手順書
-2. テストシナリオのテストを先に書き、**落ちることを確認**してから実装する
-   - すでに満たされている受入基準（テストが無いだけの箇所）については、落ちるテストを
-     作る必要はない。**落とすために実装を壊したまま進めないこと。** 代わりに、そのテストが
-     本当にその挙動を検証しているかを確かめる。試しに期待値を変えると落ちるか、で確認できる
-   - 受入基準が「実装を一時的に改変してテストが赤になることを確認する」ことを明示的に
-     求めている場合はそれに従う。ただし**確認したら必ず元に戻し**、戻したことを
-     `git diff` で確かめてから報告する
-3. `{{TEST_CMD}}` が全て通ることを確認する。落ちたまま報告しない
-4. 触った `{{FORMAT_GLOBS}}` のファイルに `{{FORMAT_FIX_CMD}}` を掛け、`{{FORMAT_FILE_CMD}}` が
-   何も指摘しない状態にする（未整形が残っていると make が中断します。整形の対象は自分が触ったファイルだけ）
-5. 該当する案件のドキュメント（下の「この案件の前提」を参照）を更新する
-6. **コミットしない。** 変更は作業ツリーに残す。次のフェーズが差分を読む
-7. 完了報告を投稿する
+1. Read `gh issue view {{ISSUE}} --comments`
+   - `<!-- AI-TAG: INSTRUCTION -->` is the authoritative specification
+   - **The latest** `<!-- AI-TAG: PLAN -->` (the one that got `verdict=APPROVED`) is the implementation procedure
+2. Write the tests from the test scenarios first, **confirm that they fail**, then implement
+   - For acceptance criteria that are already met (places that simply lack a test), you do not need to
+     produce a failing test. **Do not leave the implementation broken just to make a test fail.** Instead, check that
+     the test really verifies that behavior. You can confirm this by changing the expected value and seeing it fail
+   - If an acceptance criterion explicitly requires "temporarily modify the implementation and confirm the test goes red",
+     follow it. But **always restore it after checking**, and confirm the restore with
+     `git diff` before reporting
+3. Confirm that `{{TEST_CMD}}` passes completely. Do not report with failures remaining
+4. Apply `{{FORMAT_FIX_CMD}}` to the `{{FORMAT_GLOBS}}` files you touched, until `{{FORMAT_FILE_CMD}}`
+   reports nothing (make stops if unformatted files remain. Only format the files you touched yourself)
+5. Update the relevant project documents (see the "Project context" section below)
+6. **Do not commit.** Leave the changes in the working tree. The next phase reads the diff
+7. Post the completion report
 
-## 計画から外れたくなったら
+## If you want to deviate from the plan
 
-実装中に計画の不備に気づくことはあります。そのときは**勝手に直さず**、
-計画どおりに実装できる範囲まで進めて、外れた点と理由を報告に書いてください。
-次のレビューフェーズがそれを見て判断します。
+You may notice a flaw in the plan while implementing. In that case **do not fix it on your own**;
+implement as far as the plan allows, and write the points where you deviated and why in the report.
+The next review phase looks at it and decides.
 
-## 完了報告に含めるもの
+## What the completion report contains
 
-先頭タグ: `<!-- AI-TAG: IMPLEMENTATION_DONE -->`
+Leading tag: `<!-- AI-TAG: IMPLEMENTATION_DONE -->`
 
-- **変更したファイル**と、それぞれ何をなぜ変えたか
-- **受入基準ごとの対応表** — `AC-n` / 対応したコード / 検証したテスト関数名 / 結果
-- `{{TEST_CMD}}` の実行結果
-- **計画から外れた点**（あれば）と理由。無ければ「なし」と書く
+- **Files changed**, and what you changed in each and why
+- **A table per acceptance criterion** — `AC-n` / the code that addresses it / the test function that verifies it / the result
+- The result of running `{{TEST_CMD}}`
+- **Points where you deviated from the plan** (if any) and the reasons. If none, write "none"
 
-## 最後に
+## Finally
 
-実装内容の要点を3行程度でまとめて返答してください。
+Reply with the gist of the implementation in about three lines.

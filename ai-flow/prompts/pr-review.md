@@ -1,106 +1,106 @@
-# pr-review — 通った実装に反論する（強モデル・Devil's Advocate）
+# pr-review — Argue against an implementation that passed (strong model, Devil's Advocate)
 
-Issue #{{ISSUE}} の PR は**もう作られています**。あなたの仕事は、その PR に対して
-**「この変更は間違っている」と主張する側に立つ**ことです。
+The PR for Issue #{{ISSUE}} **has already been created**. Your job is to take, against that PR,
+**the side that argues "this change is wrong"**.
 
-**ここに何を書いても PR は閉じません。マージするかどうかは人が決めます。だから遠慮なく書く。**
-逆に、無理に難点をひねり出す必要もありません。**成り立たなかった主張は「成り立たなかった」と
-書くのが、このフェーズの正しい出力です。** 全部に難があると書いてくるレビューは、
-全部を承認するレビューと同じだけ役に立ちません。
+**Nothing you write here closes the PR. A human decides whether to merge. So write freely.**
+On the other hand, there is no need to force out objections. **Writing "did not hold" for a claim that did not hold
+is the correct output of this phase.** A review that finds fault with everything is
+exactly as useless as a review that approves everything.
 
-## あなたの持ち場（前のフェーズとの違い）
+## Your role (how you differ from the previous phases)
 
-- レビュー（`CRITIC_REVIEW`）は「**受入基準を満たしているか**」を見ました
-- 残存リスク（`RESIDUAL_RISK`）は「**受入基準の外に残った危なさ**」を挙げました
-- あなたが見るのは「**受入基準そのものが間違っていなかったか**」です
+- The review (`CRITIC_REVIEW`) looked at "**whether the acceptance criteria are met**"
+- The residual risks (`RESIDUAL_RISK`) listed "**the dangers left outside the acceptance criteria**"
+- What you look at is "**whether the acceptance criteria themselves were wrong**"
 
-この種の事故は、受入基準の書き方自体が誤っている場合に起きます。例えば「既存のオプション画面と同等のガードを持つ」という AC は、
-**そのとおりに実装されてしまっても、参照先自体が誤っているなら事故になります**。受入基準に忠実であることを
-誰も疑わないのが原因で、判定を受入基準に縛る作りでは構造的に拾えません。そこがあなたの持ち場です。
+This kind of incident happens when the way the acceptance criteria were written is itself wrong. For example, an AC saying "has the same guard as the existing settings screen"
+**becomes an incident if the reference itself is wrong, even when it is implemented exactly as written**. The cause is that nobody
+questions fidelity to the acceptance criteria, and a design that ties the verdict to the acceptance criteria structurally cannot catch it. That is your role.
 
-## 手順
+## Steps
 
-1. `gh issue view {{ISSUE}} --comments` を読む
-   - 最新の `<!-- AI-TAG: INSTRUCTION -->` が仕様
-   - `<!-- AI-TAG: CRITIC_REVIEW -->` と `<!-- AI-TAG: RESIDUAL_RISK -->` が前のフェーズの言い分。
-     **同じことを繰り返さない。** 既に挙がっている点は、それを踏み台にして先を書く
-2. `git log origin/{{BASE_BRANCH}}..HEAD` と `git diff origin/{{BASE_BRANCH}}...HEAD` で PR の差分**全体**を読む。
-   `git status --short` も見る（コミット済みなので空のはず。空でなければそれ自体を指摘する）
-3. `{{PR_BODY_FILE}}` を Read で読む
-4. 下の**5つの主張**を1件ずつ検討する。**順番に全部やる。飛ばさない**
-5. `{{COMMENT_FILE}}` に本文を Write する。**投稿はしない**
+1. Read `gh issue view {{ISSUE}} --comments`
+   - The latest `<!-- AI-TAG: INSTRUCTION -->` is the specification
+   - `<!-- AI-TAG: CRITIC_REVIEW -->` and `<!-- AI-TAG: RESIDUAL_RISK -->` are what the previous phases said.
+     **Do not repeat the same things.** Use points already raised as a stepping stone and go further
+2. Read the **whole** diff of the PR with `git log origin/{{BASE_BRANCH}}..HEAD` and `git diff origin/{{BASE_BRANCH}}...HEAD`.
+   Also look at `git status --short` (it should be empty since everything is committed. If it is not, point that out in itself)
+3. Read `{{PR_BODY_FILE}}` with Read
+4. Examine the **five claims** below one at a time. **Do all of them in order. Do not skip any**
+5. Write the body to `{{COMMENT_FILE}}`. **Do not post it**
 
-## 検討する5つの主張
+## The five claims to examine
 
-各主張の冒頭に「**成り立つ** / **一部成り立つ** / **成り立たなかった**」を書き、根拠を続ける。
-根拠には何で確かめたかを添える（`実行して確認` / `テストを読んだ` / `コードを読んで推論のみ`）。
+Start each claim with "**Holds**", "**Partly holds**", or "**Did not hold**" (written in {{OUTPUT_LANG}}), followed by the evidence.
+Attach to the evidence how you verified it (`verified:run` / `verified:tests` / `verified:inference`; write these as they are, untranslated).
 
-### 主張1: 受入基準を全部満たしても、目的が達成されていない
+### Claim 1: Even with all acceptance criteria met, the purpose is not achieved
 
-指示書の「背景と目的」に書かれた困りごとと、`AC-1`〜`AC-n` を突き合わせる。
-**全部の AC を満たしても、その困りごとが残っている**箇所を探す。
-「AC は満たしたが Why を満たしていない」が1つでもあれば、それを最優先で書く。
+Compare the problem described in the instruction document's "Background and purpose" with `AC-1`–`AC-n`.
+Look for places where **the problem remains even though all ACs are met**.
+If there is even one case of "the ACs are met but the Why is not", write it first.
 
-受入基準が他の成果物を参照して書かれている箇所（「◯◯と同等」「既存と同じ」）があれば、
-**参照先そのものが正しいか**を確かめる。参照先が誤っていれば、それを引き継いだ実装も同じ誤りを持つ。
+Where an acceptance criterion is written by referring to another artifact ("equivalent to X", "same as the existing one"),
+check **whether the reference itself is correct**. If the reference is wrong, the implementation that inherited it has the same flaw.
 
-### 主張2: テストは仕様ではなく実装を追認しているだけ
+### Claim 2: The tests only rubber-stamp the implementation rather than the specification
 
-**実際に実装を壊して確かめる。** 読んだ感想では書かない。
+**Actually break the implementation to check.** Do not write impressions from reading.
 
-1. 今回追加された振る舞いの中心にある実装の1行を `Edit` で意図的に壊す
-   （条件を反転する、比較を `==` から `!=` にする、`return` を早める、定数を変える）
-2. `{{TEST_CMD}}` を走らせる
-3. **落ちるべきテストが落ちたか**を見る。落ちなければ、そのテストはその振る舞いを
-   検証していない。どのテストが落ちるべきだったかを書く
-4. `git restore <file>` で元に戻し、`git status --short` が空になったことを確認する
+1. Deliberately break one line of the implementation at the core of the newly added behavior with `Edit`
+   (invert a condition, change a comparison from `==` to `!=`, `return` early, change a constant)
+2. Run `{{TEST_CMD}}`
+3. Check **whether the tests that should fail did fail**. If they did not, those tests do not verify that
+   behavior. Write which test should have failed
+4. Restore it with `git restore <file>` and confirm that `git status --short` is empty
 
-**最低2箇所**で試す。壊した場所・実行したコマンド・落ちたテスト名（または落ちなかったこと）を書く。
+Try it in **at least two places**. Write where you broke it, the command you ran, and the names of the tests that failed (or that none failed).
 
-`git restore` はこのフェーズにだけ許可されています。差分はコミット済みなので戻せます。
-**戻し忘れると make が中断します**（作業ツリーが変わったまま終われない）。
+`git restore` is allowed only in this phase. The diff is committed, so it can be restored.
+**If you forget to restore, make stops** (it cannot finish with the working tree changed).
 
-### 主張3: この変更で、今まで通っていた操作が通らなくなる
+### Claim 3: This change makes operations that used to work stop working
 
 {{USER_FLOWS}}
-ガードを足した変更では「**正常な使い方が新しいガードに引っかかる**」を疑う。
+In a change that adds a guard, suspect "**normal usage gets caught by the new guard**".
 
-疑わしいものは実際に走らせる。`tmp/`（`{{FLOW_DIR}}/tmp/`）の下に `mkdir` で作業ディレクトリを作って使い捨てのテストファイルを書き、
-`{{SCRATCH_TEST_CMD}} <ファイル>` で該当関数を呼ぶか、`{{TEST_CMD}}` で利用者が通る経路を通す（インタプリタを直接起動する形は拒否される）。
-`rm` は許可されていないので後片付けは不要（`tmp/` は git 管理外）。
+Actually run anything suspicious. Create a working directory with `mkdir` under `tmp/` (`{{FLOW_DIR}}/tmp/`) and write a throwaway test file there,
+then call the function with `{{SCRATCH_TEST_CMD}} <file>`, or go through the path a user takes with `{{TEST_CMD}}` (direct interpreter invocations are denied).
+`rm` is not allowed, so no cleanup is needed (`tmp/` is not tracked by git).
 
-### 主張4: この変更は入れないほうがよかった
+### Claim 4: This change would have been better left out
 
-増えたコード・分岐・ガードのコストと、防いだ事故が現実に起きる確率を比べる。
-「起きない事故のために複雑さを増やした」と言えるなら言う。
-言えないなら「成り立たなかった」と書く。**ここで無理をしない。**
+Compare the cost of the added code, branches, and guards with the probability that the incident it prevents actually happens.
+If you can say "it added complexity for an incident that will not happen", say so.
+If you cannot, write "did not hold". **Do not force it here.**
 
-### 主張5: PR 本文が差分を正しく説明していない
+### Claim 5: The PR body does not describe the diff correctly
 
-`{{PR_BODY_FILE}}` の記述と差分の食い違い、本文に書かれていない変更を挙げる。
+List discrepancies between what `{{PR_BODY_FILE}}` says and the diff, and changes not mentioned in the body.
 
-## 本文の形
+## Shape of the body
 
-先頭行はこれ。
+The first line is this.
 
 ```
 <!-- AI-TAG: DEVILS_ADVOCATE -->
 ```
 
-続けて。
+Then:
 
-- **結論** — 成り立った主張の番号と、マージ前に人が見るべき点を3行以内で。
-  何も成り立たなかったならそう書く
-- 主張1〜5をこの順で1節ずつ。**成り立たなかったものも省略しない**
-- **反論できなかった点** — 疑ったが差分が正しかったところを1行ずつ。
-  ここが空だと「読んでいない」と区別できないので、必ず書く
+- **Conclusion** — the numbers of the claims that held, and what a human should look at before merging, in three lines or fewer.
+  If nothing held, say so
+- Claims 1–5, one section each, in this order. **Do not omit the ones that did not hold**
+- **Points you could not argue against** — one line each for places you suspected but where the diff was correct.
+  If this is empty it cannot be told apart from "did not read", so always write it
 
-## このフェーズでしないこと
+## What this phase does not do
 
-- **Issue にコメントしない。** 投稿先は PR で、投稿は make が行う（`gh pr` は渡していません）
-- **判定ファイルは書かない。** このフェーズに判定はありません
-- **コードを直さない。** 主張2で壊した箇所は必ず `git restore` で戻す
+- **Do not comment on the Issue.** The destination is the PR, and make posts it (`gh pr` is not provided to you)
+- **Do not write the verdict file.** This phase has no verdict
+- **Do not fix code.** Always restore what you broke in Claim 2 with `git restore`
 
-## 最後に
+## Finally
 
-成り立った主張の番号と、マージ前に人が見るべき点を3行程度で返答してください。
+Reply with the numbers of the claims that held and what a human should look at before merging, in about three lines.

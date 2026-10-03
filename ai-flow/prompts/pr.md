@@ -1,49 +1,49 @@
-# review-3 — 承認済みの実装をコミットして PR の材料を作る（強モデル）
+# review-3 — Commit the approved implementation and prepare the PR material (strong model)
 
-Issue #{{ISSUE}} の**承認済みの実装をコミットし、PR の題材を用意する**のがあなたの仕事です。
-コードは変更しません。
+Your job is to **commit the approved implementation of Issue #{{ISSUE}} and prepare the material for the PR**.
+You do not change code.
 
-`git push` と `gh pr create` はあなたには許可されていません。make が、あなたのコミットを
-検査した上で実行します。ブランチとコミットと PR 本文を用意するところまでが担当です。
+`git push` and `gh pr create` are not allowed for you. make runs them after
+checking your commits. Your part ends at preparing the branch, the commits, and the PR body.
 
-## 手順
+## Steps
 
-1. `gh issue view {{ISSUE}} --comments` で指示書と最終の実装内容を把握する
-2. `git status --short` で変更を確認する
-3. ブランチを切る
+1. Grasp the instruction document and the final implementation with `gh issue view {{ISSUE}} --comments`
+2. Check the changes with `git status --short`
+3. Create a branch
 
    ```
-   git switch -c feature/issue-{{ISSUE}}-<英小文字とハイフンの短い要約>
+   git switch -c feature/issue-{{ISSUE}}-<short summary in lowercase letters and hyphens>
    ```
 
-4. **この案件の変更だけ**をステージする
+4. Stage **only the changes for this Issue**
 
-   基盤ファイル（`{{FLOW_DIR}}/` 配下の `Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.env.example`、`.gitignore` と、ルートの `.ai-flow/` と `.gitignore`）は
-   **絶対に含めない**。この案件の変更と基盤の変更は別コミットにする決まりで、基盤は人が別の PR で
-   入れる。混ざっていたらステージせず、その旨を返答に書く
-   （make が同じ検査をするので、含めるとそこで止まります）
+   **Never include** the tooling files (`Makefile`, `scripts/`, `prompts/`, `.claude/`, `docs/`, `.env.example` and `.gitignore` under `{{FLOW_DIR}}/`, plus `.ai-flow/` and `.gitignore` at the root).
+   The rule is that changes for the Issue and changes to the tooling go into separate commits, and humans bring in the tooling
+   through separate PRs. If they are mixed in, do not stage them; say so in your reply
+   (make runs the same check, so including them stops it there)
 
-5. コミットする
-   - メッセージは{{OUTPUT_LANG}}
-   - 件名は変更の要約。本文は**なぜそうしたか**を書く。何をしたかは差分を見れば分かる
-   - 末尾に `Refs #{{ISSUE}}` と `Co-Authored-By: Claude <noreply@anthropic.com>` を入れる
-6. PR のタイトルを Write ツールで `{{PR_TITLE_FILE}}` に書く
-   - **{{OUTPUT_LANG}}の1行だけ。** 改行や引用符で飾らない
-7. PR の本文を Write ツールで `{{PR_BODY_FILE}}` に書く
+5. Commit
+   - Write the message in {{OUTPUT_LANG}}
+   - The subject summarizes the change. The body explains **why it was done that way**. What was done can be seen from the diff
+   - End with `Refs #{{ISSUE}}` and `Co-Authored-By: Claude <noreply@anthropic.com>`
+6. Write the PR title to `{{PR_TITLE_FILE}}` with the Write tool
+   - **A single line in {{OUTPUT_LANG}}.** Do not decorate it with line breaks or quotes
+7. Write the PR body to `{{PR_BODY_FILE}}` with the Write tool
 
-## PR 本文に含めるもの
+## What the PR body contains
 
-- 冒頭に `Closes #{{ISSUE}}`
-- **変更内容** — 使い方が変わるなら before / after のコマンド例
-- **なぜ** — 何が困っていたのか
-- **受入基準ごとの対応** — `AC-n` / 検証したテスト
-- **レビューで挙がったが未対応の点** — `参考` 扱いで対応しなかったものを正直に列挙する。
-  無ければ「なし」と書く。レビュワーが判断できるようにするため
-- **残存リスク** — `<!-- AI-TAG: RESIDUAL_RISK -->` のコメントがあれば、そこから
-  `コードを読んで推論のみ` で通した `AC-n` と、事故カタログで「確認していない」とされた項目を
-  要約する。無ければ「なし」と書く。マージ前に人がどこを見ればよいかを示すため
-- 末尾に `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
+- `Closes #{{ISSUE}}` at the top
+- **Changes** — if usage changes, before / after command examples
+- **Why** — what the problem was
+- **How each acceptance criterion is met** — `AC-n` / the test that verifies it
+- **Points raised in review but not addressed** — honestly list the `non-blocking` items that were not addressed.
+  If none, write "none". So the reviewer can judge
+- **Residual risks** — if there is a `<!-- AI-TAG: RESIDUAL_RISK -->` comment, summarize from it the `AC-n`
+  passed with `verified:inference` and the incident catalog items marked `unchecked`.
+  If none, write "none". To show where a human should look before merging
+- `🤖 Generated with [Claude Code](https://claude.com/claude-code)` at the end
 
-## 最後に
+## Finally
 
-切ったブランチ名と、レビュワーが特に見るべき点を3行程度で返答してください。
+Reply with the name of the branch you created and the points the reviewer should look at closely, in about three lines.
