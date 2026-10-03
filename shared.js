@@ -1214,21 +1214,63 @@ async function findBidirectionalPartner(targetJumpmark) {
   }
 }
 
-// URLに移動（同一URLのタブがあればフォーカス、なければ新タブ作成）
+// タブ照合用の URL を解釈する（http(s) 以外・解釈できないものは null）
+function parseTabMatchUrl(urlString) {
+  if (typeof urlString !== "string") return null;
+  try {
+    const parsed = new URL(urlString);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+// タブ照合用の比較キーを作る（作れなければ null）
+// origin + 末尾の / を除いた pathname + search。includeHash のときだけ hash も含める
+function buildTabMatchKey(urlString, includeHash = false) {
+  const parsed = parseTabMatchUrl(urlString);
+  if (!parsed) return null;
+  const key =
+    parsed.origin + parsed.pathname.replace(/\/+$/, "") + parsed.search;
+  return includeHash ? key + parsed.hash : key;
+}
+
+// tabs の中で url と同じページの最初のタブを返す（なければ null。例外は投げない）
+// url に # 以降があるときは # 以降まで比べる。# で画面を切り替えるページ（Gmail の
+// #inbox / #label/... など）で、別の画面を指す Jumpmark が既存タブへの切り替えだけで
+// 終わらないようにするため。url に # 以降が無いときは、タブの # 以降の違いを無視する
+function findSameUrlTab(tabs, url) {
+  try {
+    if (!Array.isArray(tabs)) return null;
+    const parsed = parseTabMatchUrl(url);
+    if (!parsed) return null;
+    const includeHash = parsed.hash !== "";
+    const key = buildTabMatchKey(url, includeHash);
+    const found = tabs.find(
+      (tab) => tab && buildTabMatchKey(tab.url, includeHash) === key,
+    );
+    return found || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+// URLに移動（同じページのタブがあればフォーカス、なければ新タブ作成）
 async function navigateToUrl(url) {
   try {
-    // 全てのタブを取得
+    // 全てのタブから同じページのタブを探す
     const tabs = await chrome.tabs.query({});
+    const sameTab = findSameUrlTab(tabs, url);
 
-    // 完全に同じURLのタブを探す
-    const exactTab = tabs.find((tab) => tab.url === url);
-
-    if (exactTab) {
-      // 同じURLのタブがある場合：フォーカスのみ（リロードしない）
-      await chrome.tabs.update(exactTab.id, { active: true });
-      await chrome.windows.update(exactTab.windowId, { focused: true });
+    if (sameTab) {
+      // 同じページのタブがある場合：フォーカスのみ（リロードしない）
+      await chrome.tabs.update(sameTab.id, { active: true });
+      await chrome.windows.update(sameTab.windowId, { focused: true });
     } else {
-      // 同じURLのタブがない場合：新しいタブを作成
+      // 同じページのタブがない場合：新しいタブを作成
       await chrome.tabs.create({ url: url });
     }
 
@@ -1238,5 +1280,14 @@ async function navigateToUrl(url) {
     }
   } catch (error) {
     console.error("URL移動エラー:", error);
+    // エラーが発生した場合は新しいタブで開く
+    try {
+      await chrome.tabs.create({ url: url });
+      if (window.close) {
+        window.close();
+      }
+    } catch (fallbackError) {
+      console.error("フォールバックナビゲーションエラー:", fallbackError);
+    }
   }
 }

@@ -167,42 +167,6 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// URLに移動（同一URLのタブがあればフォーカス、なければ新タブ作成）
-async function navigateToUrl(url) {
-  try {
-    // 全てのタブを取得
-    const tabs = await chrome.tabs.query({});
-
-    // 完全に同じURLのタブを探す
-    const exactTab = tabs.find((tab) => {
-      return tab.url === url;
-    });
-
-    if (exactTab) {
-      // 同じURLのタブがある場合：フォーカスのみ（リロードしない）
-      await chrome.tabs.update(exactTab.id, { active: true });
-      await chrome.windows.update(exactTab.windowId, { focused: true });
-    } else {
-      // 同じURLのタブがない場合：新しいタブを作成
-      await chrome.tabs.create({
-        url: url,
-        active: true,
-      });
-    }
-
-    window.close();
-  } catch (error) {
-    console.error("ナビゲーションエラー:", error);
-    // エラーが発生した場合は従来通り新しいタブで開く
-    try {
-      await chrome.tabs.create({ url: url });
-      window.close();
-    } catch (fallbackError) {
-      console.error("フォールバックナビゲーションエラー:", fallbackError);
-    }
-  }
-}
-
 // 開いているタブの一覧を取得して表示（一覧を開いたときだけ呼ばれる）
 async function loadTabPickerList() {
   try {
