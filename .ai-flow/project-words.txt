@@ -1,0 +1,15 @@
+# ai-flow の共通部分（プロンプトと権限プロファイル）に入ってはいけない、この案件の言葉。1行1語。
+# make check（check-scripts.sh の7番）が単語単位・大文字小文字を区別せずに探し、見つけたら落とす。
+# 案件の言葉は .ai-flow/ の config.mk・context.md・risk-catalog.md・user-flows.md・permissions.json に書く。
+npm
+npx
+node
+prettier
+chrome
+popup
+shared.js
+background.js
+options.js
+Jumpmark
+_locales
+master

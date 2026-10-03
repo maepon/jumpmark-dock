@@ -120,6 +120,26 @@ for prompt in prompts/*.md; do
 ${err}"
 done
 
+# 7. 共通部分に案件の言葉が入っていないか。共通部分は別リポジトリから subtree で取り込む前提なので、
+#    ある案件の事情を書くと、ほかの案件ではエージェントに誤った指示を出すことになる。
+#    単語は案件側が .ai-flow/project-words.txt に持つ（どの案件に取り込んでも、その案件の言葉で検査が働く）。
+#    見るのはエージェントに渡るもの（プロンプトと権限プロファイル。コメントのキーも含む）だけ。
+#    scripts/ はコメントに経緯の説明があり、selftest がスタブを使うので見ない。scripts/ がディレクトリ名や
+#    案件に依存していないことは、selftest.sh で別の名前のディレクトリに置いて動かして確かめている。
+#    フローのディレクトリ名そのものも、プロンプトに直書きされていたら落とす（{{FLOW_DIR}} を使う）。
+WORDS="${AI_FLOW_PROJECT_DIR:-$(git rev-parse --show-toplevel)/.ai-flow}/project-words.txt"
+if [ -f "${WORDS}" ]; then
+  while IFS= read -r word; do
+    case "${word}" in ""|"#"*) continue ;; esac
+    offenders=$(LC_ALL=C grep -nwiF -e "${word}" prompts/*.md .claude/*-permissions.json || true)
+    [ -z "${offenders}" ] || ng "共通部分に案件の言葉「${word}」があります（${WORDS}）。案件の言葉は .ai-flow/ に書いてください:
+${offenders}"
+  done < "${WORDS}"
+fi
+offenders=$(LC_ALL=C grep -nE "(^|[^.A-Za-z0-9_-])${FLOW_PREFIX_RE}" prompts/*.md || true)
+[ -z "${offenders}" ] || ng "プロンプトにフローのディレクトリ名（${FLOW_PREFIX}）が直書きされています。{{FLOW_DIR}} を使ってください:
+${offenders}"
+
 # 6. run-phase.sh の関数の回帰テスト（静的検査では見えない、動かして初めて分かるバグ）。
 #    gh / npx はスタブに差し替えるので課金もネットワークも無い。数秒で終わる
 ./scripts/selftest.sh || ng "scripts/selftest.sh の回帰テストが失敗しました（上の NG を参照）。"
