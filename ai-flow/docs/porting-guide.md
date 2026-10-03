@@ -7,6 +7,12 @@
 あちらは単体で完結しているので、ファイル一式と一緒に移植先へ置いてください。
 こちらの手順書は移植元に残す作業メモです。
 
+> **案件ごとの設定はルートの `.ai-flow/` に分けてあります**（#38 の Step 1）。テスト・整形のコマンド、ベースブランチ、
+> 権限の追加分、事故カタログ、案件の前提はそちらに移したので、§3（A. 言語とツール）と §4（B. パスとドメインの言葉）で
+> 「`prompts/` や `.claude/` を書き換える」としている箇所の多くは、**`.ai-flow/` のファイルを書く**ことに置き換わっています。
+> 対応は [ai-workflow-setup.md](ai-workflow-setup.md) の「9. 導入時チェックリスト」が最新です。
+> この手順書は、別リポジトリへの切り出し（#38 の Step 4）のときに導入ガイドとして書き直します。
+
 ## この手順書の前提
 
 - **移植元の構成**: フロー一式を `ai-flow/` にまとめて置き、`ai-flow/` をカレントディレクトリにして `make` を叩く。
@@ -23,13 +29,15 @@
 ## 1. 持っていくファイル
 
 `ai-flow/` を丸ごと持っていきます（`ai-flow/tmp/` と `ai-flow/.env` は除く）。
+案件ごとの設定はルートの `.ai-flow/` に置きます。このリポジトリのものをひな形としてコピーし、中身を書き換えてください。
 
 | ファイル | 移植時の扱い |
 |---|---|
-| `Makefile` | **ほぼそのまま**（`BASE_BRANCH` と help の文面を確認） |
+| `Makefile` | **そのまま**（`BASE_BRANCH` などは `.ai-flow/config.mk` に書く） |
 | `.env.example` | そのまま（モデルIDを .env に書く例つき） |
-| `scripts/run-phase.sh` | **整形チェックの3つだけ書き換え**（§3 A-1）＋ コメントの事情説明 |
+| `scripts/run-phase.sh` | **そのまま**（整形チェックは `.ai-flow/config.mk` の `FORMAT_FILE_CMD` / `FORMAT_GLOBS` / `FORMAT_FIX_CMD`）＋ コメントの事情説明 |
 | `scripts/claude-run.sh` | **そのまま**（言語非依存。冒頭の実測メモも一緒に運ぶ） |
+| `scripts/render-prompt.sh` / `scripts/merge-permissions.sh` | **そのまま** |
 | `scripts/check-scripts.sh` | **そのまま** |
 | `scripts/selftest.sh` | **期待値を合わせる**（`TOOLING_PATHS` や整形の対象拡張子を変えたら、`tooling_state` / `unformatted_files` の節の期待値も直す） |
 | `scripts/notify-slack.sh` | **そのまま** |
@@ -44,9 +52,8 @@
 | `prompts/pr.md` | ブランチ規約と基盤ファイルの一覧を差し替え |
 | `prompts/code-review.md` | 言語のパスAPI・実行方法を差し替え |
 | `prompts/pr-review.md` | テストコマンド・通常の使い方を差し替え（使わないなら持っていかなくてよい） |
-| `.claude/phase-permissions.json` | **言語のコマンドの allow を差し替え** |
-| `.claude/commit-permissions.json` | 同上 |
-| `.claude/pr-review-permissions.json` | 同上 |
+| `.claude/*-permissions.json` | **そのまま**（言語のコマンドの allow は `.ai-flow/permissions.json` に書く） |
+| ルートの `.ai-flow/` | **ひな形としてコピーして書き換える**（`config.mk` / `permissions.json` / `context.md` / `risk-catalog.md` / `user-flows.md`） |
 | `docs/ai-workflow-setup.md` | 導入・運用ガイド。移植先でセットアップする人と運用する人が読む |
 
 ### 持っていかないファイル

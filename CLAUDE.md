@@ -103,7 +103,9 @@ Current status: Phase 3 completed. Full-featured import/export system implemente
 
 `ai-flow/` holds a separate, Claude-Code-headless automation pipeline (spec → plan → implement → review → PR) driven by GitHub Issues (`make spec ISSUE=n`, `make impl ISSUE=n` from inside `ai-flow/`). It is tooling for *this repo's own development process*, not part of the extension. See `ai-flow/docs/ai-workflow-setup.md` for setup and day-to-day operation, and `ai-flow/docs/porting-guide.md` if adapting this flow for another repo.
 
-Files under `ai-flow/Makefile`, `ai-flow/scripts/`, `ai-flow/prompts/`, `ai-flow/.claude/`, `ai-flow/docs/` are "tooling" files maintained by humans directly on the default branch — the automated flow refuses to let agent-driven issue work modify them.
+Project-specific settings for the flow (base branch, test/format commands, output language, extra permissions, and project text embedded into prompts such as the risk catalog) live in the root `.ai-flow/` directory; `ai-flow/` itself holds only the project-independent parts.
+
+Files under `ai-flow/Makefile`, `ai-flow/scripts/`, `ai-flow/prompts/`, `ai-flow/.claude/`, `ai-flow/docs/`, and the root `.ai-flow/` are "tooling" files maintained by humans through their own PRs (never mixed into issue work) — the automated flow refuses to let agent-driven issue work modify them.
 
 ## Work Session Continuity
 
