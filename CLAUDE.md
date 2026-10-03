@@ -101,11 +101,13 @@ Current status: Phase 3 completed. Full-featured import/export system implemente
 
 ## AI-Assisted Development Flow (`ai-flow/`)
 
-`ai-flow/` holds a separate, Claude-Code-headless automation pipeline (spec → plan → implement → review → PR) driven by GitHub Issues (`make spec ISSUE=n`, `make impl ISSUE=n` from inside `ai-flow/`). It is tooling for *this repo's own development process*, not part of the extension. See `ai-flow/docs/ai-workflow-setup.md` for setup and day-to-day operation, and `ai-flow/docs/porting-guide.md` if adapting this flow for another repo.
+`ai-flow/` holds a separate, Claude-Code-headless automation pipeline (spec → plan → implement → review → PR) driven by GitHub Issues (`make spec ISSUE=n`, `make impl ISSUE=n` from inside `ai-flow/`). It is tooling for *this repo's own development process*, not part of the extension.
 
-Project-specific settings for the flow (base branch, test/format commands, output language, extra permissions, and project text embedded into prompts such as the risk catalog) live in the root `.ai-flow/` directory; `ai-flow/` itself holds only the project-independent parts.
-
-Files under `ai-flow/Makefile`, `ai-flow/scripts/`, `ai-flow/prompts/`, `ai-flow/.claude/`, `ai-flow/docs/`, and the root `.ai-flow/` are "tooling" files maintained by humans through their own PRs (never mixed into issue work) — the automated flow refuses to let agent-driven issue work modify them.
+- **Source**: `ai-flow/` is [maepon/issue-to-pr-flow](https://github.com/maepon/issue-to-pr-flow) brought in with `git subtree` (squashed). **Do not edit files under `ai-flow/` in this repository** — not even for urgent fixes. Make changes in issue-to-pr-flow through a PR, tag a release there, then pull the tag here.
+- **Updating**: `git subtree pull --prefix=ai-flow https://github.com/maepon/issue-to-pr-flow.git <tag> --squash` on a branch, then open a PR and merge it with **"Create a merge commit"** (not squash), so the subtree metadata (`git-subtree-dir` / `git-subtree-split`) stays findable for the next pull. Read `ai-flow/CHANGELOG.md` before pulling. `ai-flow/tmp/` and `ai-flow/.env` are ignored and survive a pull.
+- **Docs**: `ai-flow/docs/setup.md` for setup and day-to-day operation; `ai-flow/README.md` for an overview.
+- **Project settings**: base branch, test/format commands, output language, extra permissions, and project text embedded into prompts (such as the risk catalog) live in the root `.ai-flow/` directory. This is the only part adapted to this project.
+- **Tooling files**: everything under `ai-flow/`, plus the root `.ai-flow/` and `.gitignore`. They are maintained by humans through their own PRs (never mixed into issue work); the automated flow refuses to let agent-driven issue work modify them.
 
 ## Work Session Continuity
 
