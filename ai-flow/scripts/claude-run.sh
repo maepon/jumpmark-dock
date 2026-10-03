@@ -56,6 +56,10 @@ done
 
 mkdir -p tmp
 
+# フローのディレクトリの場所。プロンプトの {{FLOW_DIR}} / {{ROOT_REL}} に埋める
+. ./scripts/flow-paths.sh
+[ -z "${flow_paths_error}" ] || { echo "Error: ${flow_paths_error}" >&2; exit 1; }
+
 # 各プロンプトに共通ルールを連結し、プレースホルダを埋める（値と案件設定のファイル。詳細は render-prompt.sh）。
 # 埋まらないものがあれば、claude を起動する前に止まる
 PROMPT=$(ISSUE="$ISSUE" VERDICT_FILE="$VERDICT_FILE" COMMENT_FILE="$COMMENT_FILE" \

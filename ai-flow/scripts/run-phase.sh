@@ -55,14 +55,19 @@ PR_REVIEW_FILE="./tmp/issue$ISSUE-pr-review.md"
 # create_pr が作った PR。code-review / pr-review を単独で叩いたときは現在のブランチから引く
 PR_URL=""
 
+# フローのディレクトリの場所（FLOW_PREFIX など）。名前と深さは自由なので、直書きせずに実行時に求める
+. ./scripts/flow-paths.sh
+
 # 基盤ファイル。案件のコミットに混ざってはいけない（基盤は人が別の PR で入れる。一覧は prompts/pr.md と揃える）
-# git status --porcelain / git diff --name-only のパスは、ai-flow/ で実行してもリポジトリのルートからの相対になる。
-# そのため ai-flow/ を付けて書く。付けないと ai-flow/scripts/ などの改変が素通りし、逆にルートの docs/
+# git status --porcelain / git diff --name-only のパスは、フローのディレクトリで実行してもリポジトリのルートからの相対になる。
+# そのため FLOW_PREFIX を付けて書く。付けないとフローの scripts/ などの改変が素通りし、逆にルートの docs/
 # （プライバシーポリシーなど案件のドキュメント）が基盤扱いされて止まる（#10 で発覚、実測）。
-# ai-flow/docs/ はフロー自体の移植手順と導入ガイドの置き場所。.gitignore はルートにあり ai-flow/ 用の規則を含む。
-# ルートの .ai-flow/ は案件ごとの設定（コマンド・権限の追加分・プロンプトに埋める文章）。ai-flow/.claude/ と違って
+# フローの docs/ は導入ガイドの置き場所。フローの .gitignore は tmp/ と .env を無視し、権限ファイルを戻す規則を持つ。
+# ルートの .gitignore はフローの規則を持たないが、保護は続ける。フローのディレクトリを無視する規則を書き足されると、
+# そこに置かれた新しいファイルがこの検査から見えなくなるため。
+# ルートの .ai-flow/ は案件ごとの設定（コマンド・権限の追加分・プロンプトに埋める文章）。フローの .claude/ と違って
 # Claude Code 自身は書き込みを塞がないので、ここで捕まえる。権限の追加分を書き換えられると次のステップの権限が広がる。
-TOOLING_PATHS='^(ai-flow/(Makefile|scripts/|prompts/|\.claude/|docs/|\.env\.example)|\.ai-flow/|\.gitignore)'
+TOOLING_PATHS="^(${FLOW_PREFIX_RE}(Makefile|scripts/|prompts/|\\.claude/|docs/|\\.env\\.example|\\.gitignore)|\\.ai-flow/|\\.gitignore)"
 
 mkdir -p tmp
 # コストは Issue 1件あたりで積む。起動ごとに切り詰めると、1周を make impl → make review と
@@ -118,6 +123,7 @@ worktree_paths() {
 tooling_state() {
   worktree_paths | grep -E "$TOOLING_PATHS" | sort || true
 }
+[ -z "${flow_paths_error}" ] || fail "${flow_paths_error}"
 TOOLING_BEFORE=$(tooling_state)
 
 # 整形チェックの言語依存部分。コマンドと対象は案件設定（.ai-flow/config.mk）から受け取る。
@@ -149,7 +155,7 @@ FORMAT_FIX="${FORMAT_FIX_CMD:-}"
 # シェルが勝手に書き換えると、レビュアーが読んだ差分と実際の差分が食い違うため。
 # 対象は作業ツリーに出ているファイルだけなので、コミット済みのファイルは巻き込まない。
 # worktree_paths のパスはリポジトリのルートからの相対なので、ルートを前置してから見る。
-# 前置しないと ai-flow/ から見て存在しないことになり、案件のファイルが全部素通りしていた（実測）。
+# 前置しないとフローのディレクトリから見て存在しないことになり、案件のファイルが全部素通りしていた（実測）。
 unformatted_files() {
   local f root out=""
   [ -n "${FORMAT_FILE_CMD:-}" ] || return 0

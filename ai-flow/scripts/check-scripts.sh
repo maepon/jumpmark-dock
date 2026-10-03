@@ -13,6 +13,10 @@ set -uo pipefail
 status=0
 ng() { echo "NG: $1" >&2; status=1; }
 
+# フローのディレクトリの場所。ルートに置かれていたら、以降の検査は意味を持たないのでここで止める
+. ./scripts/flow-paths.sh
+[ -z "${flow_paths_error}" ] || { echo "NG: ${flow_paths_error}" >&2; exit 1; }
+
 # 1. シェルの文法。実行しないと分からない範囲は見られないが、タイプミスはここで落ちる
 for f in scripts/*.sh; do
   bash -n "${f}" 2>/dev/null || ng "${f}: bash -n が通りません。"

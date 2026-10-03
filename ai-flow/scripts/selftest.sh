@@ -1,9 +1,10 @@
 #!/bin/bash
 # run-phase.sh の関数の回帰テスト。check-scripts.sh の最後から呼ぶ（make check で毎回走る）。
-# 使い方: ./scripts/selftest.sh（ai-flow/ で実行）
+# 使い方: ./scripts/selftest.sh（フローのディレクトリで実行）
 #
 # ここで見るのは「動かして初めて分かる」種類の基盤のバグ。実際に踏んだものを1件ずつ固定している。
-#   - TOOLING_PATHS / unformatted_files がルート相対のパスを ai-flow/ から見て取り違える（#10 で発覚）
+#   - TOOLING_PATHS / unformatted_files がルート相対のパスをフローのディレクトリから見て取り違える（#10 で発覚）
+#   - フローのディレクトリ名・深さに依存する（名前を変えると基盤ファイルの改変が素通りする）
 #   - require_instruction / ensure_pr_url が gh の失敗を別の意味のエラーに化けさせる（#9、#10）
 #   - 判定役の NEEDS_HUMAN が周回を待たずに止まる
 #   - 案件設定（.ai-flow/config.mk）の整形コマンド・対象パターンの扱い、render-prompt.sh のプレースホルダの埋め方
@@ -18,7 +19,8 @@ export FORMAT_FILE_CMD="npx prettier --check"
 export FORMAT_GLOBS="*.js *.css *.html"
 
 SRC="$(pwd)/scripts/run-phase.sh"
-[ -f "${SRC}" ] || { echo "NG: ${SRC} がありません。ai-flow/ で実行してください。" >&2; exit 1; }
+FLOW_PATHS="$(pwd)/scripts/flow-paths.sh"
+[ -f "${SRC}" ] || { echo "NG: ${SRC} がありません。フローのディレクトリで実行してください。" >&2; exit 1; }
 
 status=0
 pass=0
@@ -79,6 +81,7 @@ run_case() {
       PHASE=selftest; ISSUE=9; RESULT=''; PR_URL=\"\${PR_URL:-}\"
       fail() { echo \"FAIL:\$1\"; exit 1; }
       halt() { echo \"HALT:\$1\"; exit 0; }
+      . '${FLOW_PATHS}'
       source '${LIB}'
       ${body}
     " 2>&1 )
@@ -96,77 +99,100 @@ expect() {
   fi
 }
 
-# --- 使い捨てリポジトリ（ai-flow/ サブディレクトリあり。本番と同じく ai-flow/ から実行する） ---
-REPO="${WORK}/repo"
-mkdir -p "${REPO}/ai-flow/scripts" "${REPO}/ai-flow/docs" "${REPO}/docs" "${REPO}/test" "${REPO}/web"
-git -C "${REPO}" init -q
-echo 'x' > "${REPO}/ai-flow/scripts/a.sh"
-echo 'x' > "${REPO}/ai-flow/docs/g.md"
-echo 'x' > "${REPO}/docs/pp.md"
-echo 'x' > "${REPO}/docs/日本語 ファイル.md"
-echo 'x' > "${REPO}/README.md"
-echo 'x' > "${REPO}/.gitignore"
-mkdir -p "${REPO}/.ai-flow"
-echo 'x' > "${REPO}/.ai-flow/permissions.json"
-echo 'const a = 1;' > "${REPO}/test/x.js"
-git -C "${REPO}" add -A
-git -C "${REPO}" -c user.name=t -c user.email=t@example.com commit -q -m init
+# --- 使い捨てリポジトリ（本番と同じくフローのディレクトリから実行する） ---
+# フローのディレクトリ名に依存したバグ（TOOLING_PATHS の直書きなど）を見逃さないように、名前と深さを変えて2回回す。
+#   ai-flow        このリポジトリと同じ
+#   tools/ai.flow  深さ2で、名前に正規表現の特殊文字（.）を含む。エスケープし忘れると tools/aiXflow/ も基盤扱いになる
+repo_suite() {
+  local F="$1" REPO="${WORK}/repo-$2" decoy=""
+  mkdir -p "${REPO}/${F}/scripts" "${REPO}/${F}/docs" "${REPO}/docs" "${REPO}/test" "${REPO}/web" "${REPO}/.ai-flow"
+  git -C "${REPO}" init -q
+  echo 'x' > "${REPO}/${F}/scripts/a.sh"
+  echo 'x' > "${REPO}/${F}/docs/g.md"
+  echo 'x' > "${REPO}/${F}/.gitignore"
+  echo 'x' > "${REPO}/docs/pp.md"
+  echo 'x' > "${REPO}/docs/日本語 ファイル.md"
+  echo 'x' > "${REPO}/README.md"
+  echo 'x' > "${REPO}/.gitignore"
+  echo 'x' > "${REPO}/.ai-flow/permissions.json"
+  echo 'const a = 1;' > "${REPO}/test/x.js"
+  case "${F}" in *.*) decoy=$(printf '%s' "${F}" | tr '.' 'X'); mkdir -p "${REPO}/${decoy}/scripts"; echo 'x' > "${REPO}/${decoy}/scripts/a.sh" ;; esac
+  git -C "${REPO}" add -A
+  git -C "${REPO}" -c user.name=t -c user.email=t@example.com commit -q -m init
 
-# 案件のファイルと基盤ファイルを混ぜて変更する
-echo 'y' >> "${REPO}/docs/pp.md"
-echo 'y' >> "${REPO}/docs/日本語 ファイル.md"
-echo 'y' >> "${REPO}/README.md"
-echo 'y' >> "${REPO}/ai-flow/scripts/a.sh"
-echo 'y' >> "${REPO}/.gitignore"
-echo 'y' >> "${REPO}/.ai-flow/permissions.json"           # 案件設定（権限の追加分）も基盤
-echo 'new' > "${REPO}/ai-flow/docs/new.md"
-git -C "${REPO}" mv ai-flow/docs/g.md docs/g.md          # 基盤から出す移動も基盤の改変
-echo 'UNFORMATTED' >> "${REPO}/test/x.js"                # 既存ファイルを未整形に
-echo 'UNFORMATTED' > "${REPO}/web/a b.js"                # スペースを含む新規の未整形ファイル
-echo 'const ok = 1;' > "${REPO}/web/ok.js"               # 整形済みの新規ファイル
-echo 'UNFORMATTED' > "${REPO}/ai-flow/docs/note.md"      # 整形対象外の拡張子
+  # 案件のファイルと基盤ファイルを混ぜて変更する
+  echo 'y' >> "${REPO}/docs/pp.md"
+  echo 'y' >> "${REPO}/docs/日本語 ファイル.md"
+  echo 'y' >> "${REPO}/README.md"
+  echo 'y' >> "${REPO}/${F}/scripts/a.sh"
+  echo 'y' >> "${REPO}/${F}/.gitignore"                     # フローの .gitignore も基盤
+  echo 'y' >> "${REPO}/.gitignore"                          # ルートの .gitignore も保護を続ける
+  echo 'y' >> "${REPO}/.ai-flow/permissions.json"           # 案件設定（権限の追加分）も基盤
+  echo 'new' > "${REPO}/${F}/docs/new.md"
+  git -C "${REPO}" mv "${F}/docs/g.md" docs/g.md            # 基盤から出す移動も基盤の改変
+  echo 'UNFORMATTED' >> "${REPO}/test/x.js"                # 既存ファイルを未整形に
+  echo 'UNFORMATTED' > "${REPO}/web/a b.js"                # スペースを含む新規の未整形ファイル
+  echo 'const ok = 1;' > "${REPO}/web/ok.js"               # 整形済みの新規ファイル
+  echo 'UNFORMATTED' > "${REPO}/${F}/docs/note.md"         # 整形対象外の拡張子
+  [ -z "${decoy}" ] || echo 'y' >> "${REPO}/${decoy}/scripts/a.sh"   # 名前が似ているだけの案件のファイル
 
-# --- tooling_state ---
-out=$(run_case "${REPO}/ai-flow" 'tooling_state'); got=$?
-expected=$(printf '%s\n' .ai-flow/permissions.json .gitignore ai-flow/docs/g.md ai-flow/docs/new.md ai-flow/docs/note.md ai-flow/scripts/a.sh)
-if [ "${got}" -ne 0 ] || [ "${out}" != "${expected}" ]; then
-  ng "tooling_state: 基盤ファイルの判定が期待と違います（ai-flow/ から実行）。
+  # --- flow-paths.sh ---
+  local depth_rel
+  depth_rel=$(printf '%s/' "${F}" | sed -e 's,[^/][^/]*/,../,g')
+  out=$(run_case "${REPO}/${F}" 'printf "%s|%s|%s|%s" "${FLOW_PREFIX}" "${FLOW_DIR}" "${ROOT_REL}" "${flow_paths_error}"'); got=$?
+  expect "flow-paths（${F}）" 0 "${F}/|${F}|${depth_rel}|" "${out}" "${got}"
+
+  # --- tooling_state ---
+  out=$(run_case "${REPO}/${F}" 'tooling_state'); got=$?
+  expected=$(printf '%s\n' .ai-flow/permissions.json .gitignore "${F}/.gitignore" "${F}/docs/g.md" "${F}/docs/new.md" "${F}/docs/note.md" "${F}/scripts/a.sh" | LC_ALL=C sort)
+  if [ "${got}" -ne 0 ] || [ "$(printf '%s\n' "${out}" | LC_ALL=C sort)" != "${expected}" ]; then
+    ng "tooling_state: 基盤ファイルの判定が期待と違います（${F}/ から実行）。
 期待:
 ${expected}
 実際:
 ${out}"
-else
-  pass=$((pass + 1))
-fi
+  else
+    pass=$((pass + 1))
+  fi
 
-# --- unformatted_files ---
-out=$(run_case "${REPO}/ai-flow" 'unformatted_files'); got=$?
-expected=$(printf '%s\n' test/x.js 'web/a b.js')
-if [ "${got}" -ne 0 ] || [ "$(printf '%s' "${out}" | sort)" != "${expected}" ]; then
-  ng "unformatted_files: 未整形の検出が期待と違います（ai-flow/ から実行。ルート相対のパスを見られているか）。
+  # --- unformatted_files ---
+  out=$(run_case "${REPO}/${F}" 'unformatted_files'); got=$?
+  expected=$(printf '%s\n' test/x.js 'web/a b.js')
+  if [ "${got}" -ne 0 ] || [ "$(printf '%s' "${out}" | sort)" != "${expected}" ]; then
+    ng "unformatted_files: 未整形の検出が期待と違います（${F}/ から実行。ルート相対のパスを見られているか）。
 期待:
 ${expected}
 実際:
 ${out}"
-else
-  pass=$((pass + 1))
-fi
+  else
+    pass=$((pass + 1))
+  fi
 
-# --- 整形チェックの設定 ---
-out=$(FORMAT_FILE_CMD='' run_case "${REPO}/ai-flow" 'unformatted_files; echo END'); got=$?
-expect "unformatted_files（FORMAT_FILE_CMD が空なら整形チェックをしない）" 0 "END" "${out}" "${got}"
-[ "${out}" = "END" ] || ng "unformatted_files（FORMAT_FILE_CMD が空）: 何も出ないはずが「${out}」が出ました。"
-out=$(FORMAT_FILE_CMD='false' run_case "${REPO}/ai-flow" 'unformatted_files'); got=$?
-expected=$(printf '%s\n' test/x.js 'web/a b.js' web/ok.js)
-if [ "${got}" -ne 0 ] || [ "$(printf '%s' "${out}" | sort)" != "${expected}" ]; then
-  ng "unformatted_files（チェック自体が失敗するなら未整形扱いで止める）: 期待と違います。
+  # --- 整形チェックの設定 ---
+  out=$(FORMAT_FILE_CMD='' run_case "${REPO}/${F}" 'unformatted_files; echo END'); got=$?
+  expect "unformatted_files（FORMAT_FILE_CMD が空なら整形チェックをしない）" 0 "END" "${out}" "${got}"
+  [ "${out}" = "END" ] || ng "unformatted_files（FORMAT_FILE_CMD が空）: 何も出ないはずが「${out}」が出ました。"
+  out=$(FORMAT_FILE_CMD='false' run_case "${REPO}/${F}" 'unformatted_files'); got=$?
+  expected=$(printf '%s\n' test/x.js 'web/a b.js' web/ok.js)
+  if [ "${got}" -ne 0 ] || [ "$(printf '%s' "${out}" | sort)" != "${expected}" ]; then
+    ng "unformatted_files（チェック自体が失敗するなら未整形扱いで止める）: 期待と違います。
 期待:
 ${expected}
 実際:
 ${out}"
-else
-  pass=$((pass + 1))
-fi
+  else
+    pass=$((pass + 1))
+  fi
+}
+repo_suite ai-flow 1
+repo_suite tools/ai.flow 2
+REPO="${WORK}/repo-1"   # 以降の ensure_pr_url は git リポジトリの中で走らせる
+
+# --- flow-paths.sh（ルートに置かれたら止める） ---
+mkdir -p "${WORK}/rootflow"
+git -C "${WORK}/rootflow" init -q
+out=$(run_case "${WORK}/rootflow" 'echo "ERR=${flow_paths_error}"'); got=$?
+expect "flow-paths（ルートに置かれたら理由を返す）" 0 "ERR=フローがリポジトリのルートに置かれています" "${out}" "${got}"
 # カレントに *.js に当たるファイルがあっても、パターンがそのファイル名に化けない
 echo 'x' > "${WORK}/here.js"
 out=$(run_case "${WORK}" 'format_target web/y.js && echo TARGET'); got=$?
