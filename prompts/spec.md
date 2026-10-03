@@ -54,7 +54,9 @@ Include the following.
     is itself wrong, that flaw is carried over and still judged "consistent")
   - **Write ACs judged by a command so that they give the same result from any directory.**
     Later phases run with `{{FLOW_DIR}}/` as the current directory, and `cd` to the root is denied
+{{#if FORMAT_CHECK_CMD}}
     - Formatting: `{{FORMAT_CHECK_CMD}}` exits with code 0. Do not use a command that only looks below the directory it runs in
+{{/if}}
     - Tests: `{{TEST_CMD}}`
     - Presence of a string: `git grep -n "<pattern>" -- ':/'` (`':/'` makes it search the whole repository)
   - **Before writing the instruction document, check that the criteria can be met given the existing repository.** For formatting

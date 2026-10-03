@@ -15,11 +15,13 @@ Your job is to **implement exactly as the approved implementation plan** for Iss
      follow it. But **always restore it after checking**, and confirm the restore with
      `git diff` before reporting
 3. Confirm that `{{TEST_CMD}}` passes completely. Do not report with failures remaining
-4. Apply `{{FORMAT_FIX_CMD}}` to the `{{FORMAT_GLOBS}}` files you touched, until `{{FORMAT_FILE_CMD}}`
-   reports nothing (make stops if unformatted files remain. Only format the files you touched yourself)
-5. Update the relevant project documents (see the "Project context" section below)
-6. **Do not commit.** Leave the changes in the working tree. The next phase reads the diff
-7. Post the completion report
+{{#if FORMAT_FILE_CMD}}
+   - Then apply `{{FORMAT_FIX_CMD}}` to the `{{FORMAT_GLOBS}}` files you touched, until `{{FORMAT_FILE_CMD}}`
+     reports nothing (make stops if unformatted files remain. Only format the files you touched yourself)
+{{/if}}
+4. Update the relevant project documents (see the "Project context" section below)
+5. **Do not commit.** Leave the changes in the working tree. The next phase reads the diff
+6. Post the completion report
 
 ## If you want to deviate from the plan
 

@@ -66,8 +66,11 @@ A later phase (writing the PR body) searches for these tokens literally, so **wr
 Format: `- **AC-4 (empty input is rejected)**: … → met (verified:run)`
 
 **Only cite as evidence commands you actually ran yourself.**
-Available to you: `Read` / `Glob` / `Write`, and `{{TEST_CMD}}` / `{{FORMAT_CHECK_CMD}}` / `{{FORMAT_FILE_CMD}}` /
-`{{SCRATCH_TEST_CMD}}` / `git grep` / `git diff` / `git status` / `gh issue view` / `date` / `mkdir` / `echo` / `cd`.
+Available to you: `Read` / `Glob` / `Write`, and `{{TEST_CMD}}` / `{{SCRATCH_TEST_CMD}}` /
+{{#if FORMAT_CHECK_CMD}}
+`{{FORMAT_CHECK_CMD}}` / `{{FORMAT_FILE_CMD}}` /
+{{/if}}
+`git grep` / `git diff` / `git status` / `gh issue view` / `date` / `mkdir` / `echo` / `cd`.
 `ls` / `find` / `grep` / `wc` and direct interpreter invocations are not provided and will be denied.
 To search the whole repository, use `git grep -n "<pattern>" -- ':/'` (without `':/'` it only looks below `{{FLOW_DIR}}/`).
 If something is denied, write what you used instead, or "could not verify". make displays the number of denials,
