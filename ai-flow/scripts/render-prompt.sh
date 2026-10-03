@@ -1,30 +1,30 @@
 #!/bin/bash
-# プロンプトのプレースホルダを埋めて標準出力に出す。claude-run.sh から呼ぶ。
-# 使い方: ./scripts/render-prompt.sh <ファイル>...（複数なら空行を1行挟んで連結する）
+# Fills the placeholders in prompts and prints the result. Called by claude-run.sh.
+# Usage: ./scripts/render-prompt.sh <file>... (several files are joined with one blank line between them)
 #
-# 埋めるものは2種類。
-#   - 値      {{ISSUE}} など。同名の環境変数の値に置き換える。一覧は下の VALUE_KEYS
-#   - ファイル 行全体が {{PROJECT_CONTEXT}} などの行を、案件設定（.ai-flow/）のファイルの中身に置き換える。
-#             一覧は下の INCLUDES。中身の値のプレースホルダも埋める（ファイルの入れ子はしない）
+# Two kinds of things are filled in.
+#   - Values  {{ISSUE}} and the like, replaced with the environment variable of the same name. The list is VALUE_KEYS below
+#   - Files   a line consisting only of {{PROJECT_CONTEXT}} or the like is replaced with the contents of a project settings
+#             file (.ai-flow/). The list is INCLUDES below. Value placeholders inside the contents are filled too (no nesting of files)
 #
-# sed の置換では埋めない。置換文字列の & はマッチ全体を表すので、値に & が入ると壊れる
-# （TEST_CMD に npm test && … と書いたとき）。区切り文字の | も同じ。bash の ${var//…} も
-# bash 5.2 からは & が特別な意味を持つ。awk の index / substr で文字列として置き換える。
+# sed substitution is not used: & in the replacement means the whole match, so a value containing & would break it
+# (e.g. TEST_CMD = npm test && ...). The | delimiter has the same problem. bash's ${var//...} gives & a special meaning
+# from bash 5.2 on too. awk's index / substr replace the text literally.
 #
-# 条件付きの区間も扱う。行全体が {{#if 名前}} の行から {{/if}} の行までは、名前（VALUE_KEYS のどれか）の
-# 値が空なら区間ごと消し、空でなければ印の2行だけを消す。フォーマッタが無い案件（FORMAT_* が空）で、
-# 整形の手順をプロンプトから外すため。入れ子と、ファイルをまたぐ区間は扱わない（止める）。
+# Conditional blocks are handled as well. From a line consisting only of {{#if NAME}} to a line {{/if}}: if the value of NAME
+# (one of VALUE_KEYS) is empty, the whole block is removed; otherwise only the two marker lines are removed. This drops the
+# formatting steps from the prompts in projects without a formatter (empty FORMAT_*). Nesting and blocks spanning files are rejected.
 #
-# 値が空のプレースホルダと、埋めた後に残った {{…}} は、claude を起動する前（課金の前）に止める。
-# 消した区間の中のプレースホルダは埋めないので、値が空でも止めない。
+# A placeholder with an empty value, or a {{...}} left over after filling, stops before claude starts (before any cost).
+# Placeholders inside a removed block are not filled, so an empty value there does not stop it.
 set -uo pipefail
 
 VALUE_KEYS="FLOW_DIR ROOT_REL ISSUE VERDICT_FILE COMMENT_FILE PR_TITLE_FILE PR_BODY_FILE BASE_BRANCH TEST_CMD SCRATCH_TEST_CMD FORMAT_CHECK_CMD FORMAT_FILE_CMD FORMAT_FIX_CMD FORMAT_GLOBS OUTPUT_LANG"
 INCLUDES="PROJECT_CONTEXT=context.md RISK_CATALOG=risk-catalog.md USER_FLOWS=user-flows.md"
 
-[ $# -gt 0 ] || { echo "Error: render-prompt.sh: ファイルが必要です。" >&2; exit 1; }
+[ $# -gt 0 ] || { echo "Error: render-prompt.sh: a file is required." >&2; exit 1; }
 for f in "$@"; do
-  [ -f "$f" ] || { echo "Error: render-prompt.sh: $f が見つかりません。" >&2; exit 1; }
+  [ -f "$f" ] || { echo "Error: render-prompt.sh: $f not found." >&2; exit 1; }
 done
 
 PROJECT_DIR="${AI_FLOW_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)/.ai-flow}"
@@ -43,14 +43,14 @@ out=$(LC_ALL=C awk '
     }
     err = 0
   }
-  # 前から順に置き換えて、置き換えた値はもう一度見ない（値に {{…}} が入っていても展開しない）
+  # Replace from left to right and never look at a replaced value again (a {{...}} inside a value is not expanded)
   function fill(line,    i, ph, val, p, done) {
     for (i = 1; i <= nkeys; i++) {
       ph = "{{" keys[i] "}}"
       if (index(line, ph) == 0) continue
       val = ENVIRON[keys[i]]
       if (val == "") {
-        printf "Error: render-prompt.sh: %s が空です（%s で使われています）。\n", keys[i], FILENAME > "/dev/stderr"
+        printf "Error: render-prompt.sh: %s is empty (used in %s).\n", keys[i], FILENAME > "/dev/stderr"
         err = 1
       }
       done = ""
@@ -64,7 +64,7 @@ out=$(LC_ALL=C awk '
   }
   FNR == 1 && NR != 1 {
     if (inblock) {
-      printf "Error: render-prompt.sh: {{#if %s}} が閉じられていません（%s）。\n", blockkey, prevfile > "/dev/stderr"
+      printf "Error: render-prompt.sh: {{#if %s}} is not closed (%s).\n", blockkey, prevfile > "/dev/stderr"
       err = 1
       inblock = 0
       skip = 0
@@ -75,10 +75,10 @@ out=$(LC_ALL=C awk '
   /^\{\{#if [A-Z_]+\}\}$/ {
     name = substr($0, 7, length($0) - 8)
     if (inblock) {
-      printf "Error: render-prompt.sh: 条件付きの区間は入れ子にできません（%s の {{#if %s}}）。\n", FILENAME, name > "/dev/stderr"
+      printf "Error: render-prompt.sh: conditional blocks cannot be nested ({{#if %s}} in %s).\n", name, FILENAME > "/dev/stderr"
       err = 1
     } else if (!(name in iskey)) {
-      printf "Error: render-prompt.sh: {{#if %s}} の名前が値のプレースホルダの一覧にありません（%s）。\n", name, FILENAME > "/dev/stderr"
+      printf "Error: render-prompt.sh: the name in {{#if %s}} is not a value placeholder (%s).\n", name, FILENAME > "/dev/stderr"
       err = 1
     }
     inblock = 1
@@ -88,7 +88,7 @@ out=$(LC_ALL=C awk '
   }
   /^\{\{\/if\}\}$/ {
     if (!inblock) {
-      printf "Error: render-prompt.sh: 対応する {{#if …}} の無い {{/if}} があります（%s）。\n", FILENAME > "/dev/stderr"
+      printf "Error: render-prompt.sh: {{/if}} without a matching {{#if ...}} (%s).\n", FILENAME > "/dev/stderr"
       err = 1
     }
     inblock = 0
@@ -99,7 +99,7 @@ out=$(LC_ALL=C awk '
   $0 in incfile {
     f = incfile[$0]
     if ((getline l < f) <= 0) {
-      printf "Error: render-prompt.sh: %s が読めないか空です（%s で使われています）。\n", f, FILENAME > "/dev/stderr"
+      printf "Error: render-prompt.sh: %s is unreadable or empty (used in %s).\n", f, FILENAME > "/dev/stderr"
       err = 1
       next
     }
@@ -110,7 +110,7 @@ out=$(LC_ALL=C awk '
   { print fill($0) }
   END {
     if (inblock) {
-      printf "Error: render-prompt.sh: {{#if %s}} が閉じられていません（%s）。\n", blockkey, prevfile > "/dev/stderr"
+      printf "Error: render-prompt.sh: {{#if %s}} is not closed (%s).\n", blockkey, prevfile > "/dev/stderr"
       err = 1
     }
     exit err
@@ -119,7 +119,7 @@ out=$(LC_ALL=C awk '
 
 left=$(printf '%s\n' "$out" | LC_ALL=C grep -oE '\{\{[A-Z_]+\}\}' | sort -u | tr '\n' ' ')
 if [ -n "$left" ]; then
-  echo "Error: render-prompt.sh: 埋まらなかったプレースホルダがあります: ${left}" >&2
+  echo "Error: render-prompt.sh: unfilled placeholders: ${left}" >&2
   exit 1
 fi
 

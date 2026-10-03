@@ -1,25 +1,26 @@
 #!/bin/bash
-# フローのディレクトリの場所を求める。run-phase.sh / claude-run.sh / check-scripts.sh / selftest.sh が source する。
-# フローのディレクトリ（Makefile のある場所）をカレントにして読み込むこと。
+# Finds where the flow directory is. Sourced by run-phase.sh / claude-run.sh / check-scripts.sh / selftest.sh.
+# Source it with the flow directory (where the Makefile is) as the current directory.
 #
-# フローは任意の名前・深さのサブディレクトリに置ける（ai-flow/、tools/flow/ など）。名前を直書きすると、
-# 変えたときに TOOLING_PATHS が基盤ファイルの改変を素通りさせる（静かに壊れる）ので、ここで求めた値だけを使う。
+# The flow can live in a subdirectory of any name and depth (ai-flow/, tools/flow/, ...). Hard-coding the name
+# would make TOOLING_PATHS let modifications to tooling files through once the name changes (a silent failure),
+# so only the values found here are used.
 #
-#   FLOW_PREFIX     リポジトリのルートからフローのディレクトリまで。末尾に / が付く   例: ai-flow/  tools/flow/
-#   FLOW_DIR        FLOW_PREFIX の末尾の / を除いたもの                                例: ai-flow   tools/flow
-#   ROOT_REL        フローのディレクトリからルートへの相対パス。末尾に / が付く       例: ../       ../../
-#   FLOW_PREFIX_RE  FLOW_PREFIX を grep -E で文字どおりに当てるためにエスケープしたもの
-#                   （しないと tools/ai.flow/ の . がどの文字にも当たる）
+#   FLOW_PREFIX     Path from the repository root to the flow directory, with a trailing /   e.g. ai-flow/  tools/flow/
+#   FLOW_DIR        FLOW_PREFIX without the trailing /                                     e.g. ai-flow   tools/flow
+#   ROOT_REL        Relative path from the flow directory to the root, with a trailing /   e.g. ../       ../../
+#   FLOW_PREFIX_RE  FLOW_PREFIX escaped so that grep -E matches it literally
+#                   (otherwise the . in tools/ai.flow/ matches any character)
 #
-# ルートに置くこと（FLOW_PREFIX が空）はサポートしない。フローの Makefile / scripts/ / docs/ が
-# 案件の同名のファイルと区別できなくなり、TOOLING_PATHS が案件のファイルを基盤扱いするため。
-# 読み込み側が判断できるように、ここでは止めずに flow_paths_error に理由を入れて返す。
+# Placing the flow at the root (empty FLOW_PREFIX) is not supported: the flow's Makefile / scripts/ / docs/ could not be
+# told apart from the project's files of the same name, and TOOLING_PATHS would treat project files as tooling.
+# This file does not stop; it puts the reason in flow_paths_error so the caller can decide.
 
 flow_paths_error=""
 FLOW_PREFIX=$(git rev-parse --show-prefix 2>/dev/null) \
-  || flow_paths_error="git リポジトリの中で実行してください。"
+  || flow_paths_error="Run inside a git repository."
 if [ -z "${flow_paths_error}" ] && [ -z "${FLOW_PREFIX}" ]; then
-  flow_paths_error="フローがリポジトリのルートに置かれています。サブディレクトリ（ai-flow/ など）に置いてください。"
+  flow_paths_error="The flow is at the repository root. Put it in a subdirectory (such as ai-flow/)."
 fi
 FLOW_DIR="${FLOW_PREFIX%/}"
 ROOT_REL=$(printf '%s' "${FLOW_PREFIX}" | sed -e 's,[^/][^/]*/,../,g')

@@ -1,13 +1,13 @@
-# AI開発フローのディレクトリ用。中身はディレクトリ名に依存しないので、フローと一緒にどこへでも運べる
+# Ignore rules for the flow directory. They do not depend on the directory name, so they travel with the flow.
 
-# 各自の設定（Slack の Webhook URL・モデルID）。.env.example をコピーして作る
+# Personal settings (Slack webhook URL, model IDs). Created by copying .env.example
 .env
 
-# エージェントの作業ファイル。消しても Issue から再開できる
+# The agents' scratch files. The flow can resume from the Issue if they are lost
 tmp/
 
-# グローバル gitignore の `.claude` ルールで無視される環境向けに、フローの権限ファイルを戻す
-# （settings.json / settings.local.json のような個人設定ファイル名は戻さない）
+# Bring the flow's permission files back in environments whose global gitignore ignores `.claude`
+# (personal settings file names such as settings.json / settings.local.json stay ignored)
 !.claude/
 !.claude/*-permissions.json
 .claude/settings.json

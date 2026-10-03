@@ -1,46 +1,46 @@
 #!/bin/bash
-# Claude Code をヘッドレスで1回だけ実行する。フェーズの筋書きは run-phase.sh 側。
+# Runs Claude Code headlessly, once. The flow's script lives in run-phase.sh.
 #
-# 使い方: ./scripts/claude-run.sh <プロンプトファイル> <モデルID> <Issue番号> <権限プロファイル>
+# Usage: ./scripts/claude-run.sh <prompt file> <model ID> <Issue number> <permission profile>
 #
-# 標準出力にはエージェントの返答だけを出す（呼び出し側が変数に取れるように）。
-# 進捗・コスト・拒否の警告は標準エラーへ。
+# Only the agent's reply goes to standard output (so the caller can capture it in a variable).
+# Progress, cost, and denial warnings go to standard error.
 #
-# 権限ファイルの名前が settings.json でないのには理由がある（実測）。
-#   - .claude/settings.json は workspace が trust されていないと、--settings で
-#     明示的に渡しても permissions.allow が丸ごと無視される
-#     （警告は stderr に出るだけで終了コードは 0 のまま＝黙って無権限になる）
-#   - 既定パス以外のファイル名を --settings に渡した場合は allow も deny も効く
-#   - deny を settings.json に置くと人間の対話セッションまで縛られ、
-#     自分で commit / push できなくなる（deny は承認プロンプトを出さずにブロックする）
+# There is a reason the permission files are not named settings.json (measured).
+#   - For .claude/settings.json, permissions.allow is ignored entirely when the workspace is not trusted,
+#     even when passed explicitly with --settings
+#     (only a warning on stderr, and the exit code stays 0 = silently running with no permissions)
+#   - With any other file name passed to --settings, both allow and deny work
+#   - A deny placed in settings.json also binds the human's interactive sessions,
+#     so you could no longer commit / push yourself (deny blocks without asking)
 #
-# ファイル系ツールの権限も素直ではない（実測）。
-#   - Write / Edit にパスを付けたルールは allow も deny も一切マッチしない。
-#     Write(./**) Write(**) Write(tmp/**) 絶対パス形（Write(//Users/...)）
-#     すべて拒否された。裸の Write / Edit だけが効く
-#   - Read はパス指定が効く。deny Read(./.env) は裸の allow Read にも勝つ（実測）
-#   - Claude Code 自身が .claude/ 配下への書き込みを塞ぐので、エージェントが
-#     自分の権限プロファイルを書き換えることはできない。
-#     ただし prompts/ や scripts/ は素通りするため、run-phase.sh が作業ツリーで検査する
-#   - deny によるブロックは permission_denials に出ず、ツールのエラーとして返る
+# Permissions for the file tools are not straightforward either (measured).
+#   - Write / Edit rules with a path never match, in allow or deny.
+#     Write(./**) Write(**) Write(tmp/**) and the absolute form (Write(//Users/...))
+#     were all denied. Only bare Write / Edit work
+#   - Paths work for Read. deny Read(./.env) beats a bare allow Read too (measured)
+#   - Claude Code itself blocks writes under .claude/, so an agent cannot
+#     rewrite its own permission profile.
+#     prompts/ and scripts/ are not covered, though, so run-phase.sh checks the working tree
+#   - Blocks by deny do not appear in permission_denials; they come back as tool errors
 #
-# 権限の deny は「事故の防止」であって「隔離」ではない。テストの実行（TEST_CMD）を許可している以上、
-# エージェントは任意のコードを実行できるので、その気になれば deny した操作にも到達する。
-# 実効的な防波堤は次の3つで、権限リストはその外側の注意書きに近い。
-#   1. .claude/ への書き込みは Claude Code 自身が塞ぐ（自分の権限を広げられない）
-#   2. run-phase.sh が各ステップ後に作業ツリーを見て、基盤ファイルの改変で中断する
-#   3. push と gh pr create はそもそも渡さず、run-phase.sh が検査してから実行する
-# したがって、渡す環境変数にシークレットを残さないこと（下の env -u を参照）。
+# A deny is "accident prevention", not "isolation". As long as running the tests (TEST_CMD) is allowed,
+# the agent can execute arbitrary code, and could reach denied operations if it wanted to.
+# The effective safeguards are these three; the permission lists are closer to a notice on the outside.
+#   1. Claude Code itself blocks writes to .claude/ (an agent cannot widen its own permissions)
+#   2. run-phase.sh checks the working tree after each step and aborts if tooling files were modified
+#   3. push and gh pr create are never given; run-phase.sh runs them after checking
+# Therefore, do not leave secrets in the environment variables passed along (see env -u below).
 #
-# ツール呼び出しが拒否されても claude の終了コードは 0 になるため、
-# JSON出力の permission_denials を見て標準エラーに出す。
+# Even when a tool call is denied, claude exits with 0,
+# so permission_denials in the JSON output is read and printed to standard error.
 
 set -uo pipefail
 
-PROMPT_FILE="${1:?プロンプトファイルが必要です}"
-MODEL="${2:?モデルIDが必要です}"
-ISSUE="${3:?Issue番号が必要です}"
-SETTINGS="${4:?権限プロファイルが必要です}"
+PROMPT_FILE="${1:?a prompt file is required}"
+MODEL="${2:?a model ID is required}"
+ISSUE="${3:?an Issue number is required}"
+SETTINGS="${4:?a permission profile is required}"
 
 RULES="prompts/_rules.md"
 VERDICT_FILE="${VERDICT_FILE:-./tmp/verdict-issue$ISSUE.txt}"
@@ -51,40 +51,41 @@ PR_BODY_FILE="${PR_BODY_FILE:-./tmp/pr-body-issue$ISSUE.md}"
 BASE_BRANCH="${BASE_BRANCH:-main}"
 
 for f in "$PROMPT_FILE" "$RULES" "$SETTINGS"; do
-  [ -f "$f" ] || { echo "Error: $f が見つかりません。" >&2; exit 1; }
+  [ -f "$f" ] || { echo "Error: $f not found." >&2; exit 1; }
 done
 
 mkdir -p tmp
 
-# フローのディレクトリの場所。プロンプトの {{FLOW_DIR}} / {{ROOT_REL}} に埋める
+# Where the flow directory is. Filled into {{FLOW_DIR}} / {{ROOT_REL}} in the prompts
 . ./scripts/flow-paths.sh
 [ -z "${flow_paths_error}" ] || { echo "Error: ${flow_paths_error}" >&2; exit 1; }
 
-# 各プロンプトに共通ルールを連結し、プレースホルダを埋める（値と案件設定のファイル。詳細は render-prompt.sh）。
-# 埋まらないものがあれば、claude を起動する前に止まる
+# Append the common rules to each prompt and fill the placeholders (values and project settings files; see render-prompt.sh).
+# If anything cannot be filled, it stops before claude starts
 PROMPT=$(ISSUE="$ISSUE" VERDICT_FILE="$VERDICT_FILE" COMMENT_FILE="$COMMENT_FILE" \
   PR_TITLE_FILE="$PR_TITLE_FILE" PR_BODY_FILE="$PR_BODY_FILE" BASE_BRANCH="$BASE_BRANCH" \
   ./scripts/render-prompt.sh "$PROMPT_FILE" "$RULES") || exit 1
 
-# 権限は base のプロファイルに案件ごとの追加分（.ai-flow/permissions.json）を足したものを、
-# 起動のたびに一時ファイルへ書き出して渡す。残さない理由は merge-permissions.sh の冒頭
-MERGED_SETTINGS=$(mktemp) || { echo "Error: 一時ファイルを作れませんでした。" >&2; exit 1; }
+# The permissions passed are the base profile plus the project's additions (.ai-flow/permissions.json),
+# written to a temporary file on every start. Why it is not kept: see the top of merge-permissions.sh
+MERGED_SETTINGS=$(mktemp) || { echo "Error: could not create a temporary file." >&2; exit 1; }
 trap 'rm -f "$MERGED_SETTINGS"' EXIT
 ./scripts/merge-permissions.sh "$SETTINGS" > "$MERGED_SETTINGS" || exit 1
 
-# SLACK_WEBHOOK_URL はエージェントの環境から外す。Makefile が export しているので
-# 何もしないと継承され、echo $SLACK_WEBHOOK_URL で読めてしまう（Read(./.env) の deny が無意味になる）。
-# Slack通知は親（run-phase.sh）が送るので、エージェント側には要らない。
-# 起動のオプション（いずれも試し先のリポジトリで実際に踏んだもの）
-#   --add-dir=<ルート>   エージェントはフローのディレクトリをカレントにして動くので、何もしないと Claude Code は
-#                        そこを作業ディレクトリとみなし、外を指すパスを引数に取る Bash（git diff -- ../../README.md、
-#                        git grep -- ../x.html など）を拒否する。リポジトリのルートを作業ディレクトリに足して通す。
-#                        Read / Write / Edit はもともと外のファイルにも届いていたので、実行できる範囲は広がらない。
-#                        「=」で渡すこと。--add-dir は値を複数取るので、空白で区切ると後ろのプロンプトまで飲み込む
-#   --strict-mcp-config  利用者の claude.ai に連携したコネクタ（MCP）を読み込まない。フローは使わないうえ、
-#                        ツールの説明が毎ステップのプロンプトに乗り、返答に認証を促す一文が混ざっていた
-#   < /dev/null          標準入力を待たない（渡さないと「no stdin data received in 3s」の警告が出て3秒待つ）
-REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "Error: リポジトリのルートが分かりません。" >&2; exit 1; }
+# SLACK_WEBHOOK_URL is removed from the agent's environment. The Makefile exports it, so otherwise
+# it would be inherited and readable with echo $SLACK_WEBHOOK_URL (making the Read(./.env) deny pointless).
+# The parent (run-phase.sh) sends the Slack notifications, so the agent does not need it.
+# Launch options (each one was actually hit in a trial repository)
+#   --add-dir=<root>     The agent runs with the flow directory as the current directory, so by default Claude Code
+#                        treats that as the working directory and denies Bash commands whose arguments point outside it
+#                        (git diff -- ../../README.md, git grep -- ../x.html, ...). Adding the repository root as a working
+#                        directory lets them through. Read / Write / Edit already reached files outside, so this does not
+#                        widen what the agent can do. Pass it with "=": --add-dir takes several values and, separated by a
+#                        space, would swallow the prompt that follows
+#   --strict-mcp-config  Do not load the MCP connectors linked to the user's claude.ai account. The flow does not use them,
+#                        their tool descriptions were added to every step's prompt, and replies mentioned authorizing them
+#   < /dev/null          Do not wait for standard input (otherwise "no stdin data received in 3s" is printed after a 3 s wait)
+REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "Error: cannot find the repository root." >&2; exit 1; }
 OUT=$(env -u SLACK_WEBHOOK_URL ANTHROPIC_MODEL="$MODEL" claude -p \
   --settings "$MERGED_SETTINGS" \
   --add-dir="$REPO_ROOT" \
@@ -95,33 +96,33 @@ STATUS=$?
 
 if [ $STATUS -ne 0 ]; then
   printf '%s\n' "$OUT" >&2
-  echo "Error: claude が終了コード $STATUS で終了しました。" >&2
+  echo "Error: claude exited with code $STATUS." >&2
   exit 1
 fi
 
 if ! printf '%s' "$OUT" | jq -e . >/dev/null 2>&1; then
   printf '%s\n' "$OUT" >&2
-  echo "Error: claude の出力をJSONとして解釈できませんでした。" >&2
+  echo "Error: could not parse claude's output as JSON." >&2
   exit 1
 fi
 
 COST=$(printf '%s' "$OUT" | jq -r '.total_cost_usd')
 TURNS=$(printf '%s' "$OUT" | jq -r '.num_turns')
 [ -n "$COST_LOG" ] && printf '%s\n' "$COST" >> "$COST_LOG"
-printf -- '    （%s / コスト: $%.2f / ターン数: %s）\n' "$MODEL" "$COST" "$TURNS" >&2
+printf -- '    (%s / cost: $%.2f / turns: %s)\n' "$MODEL" "$COST" "$TURNS" >&2
 
-# 拒否は失敗とは限らない。エージェントが別手段で回避して完遂する場合があるため
-# 停止させず、人間が気付けるように出しておく
+# A denial is not necessarily a failure: the agent may work around it and finish.
+# So do not stop; print it so a human notices
 DENIALS=$(printf '%s' "$OUT" | jq -r '.permission_denials | length')
 if [ "$DENIALS" != "0" ]; then
-  echo "警告: 許可されていないツール呼び出しが ${DENIALS} 件拒否されました。" >&2
+  echo "Warning: ${DENIALS} disallowed tool call(s) were denied." >&2
   printf '%s' "$OUT" \
-    | jq -r '.permission_denials[] | "  拒否: \(.tool_name) — \(.tool_input.command // .tool_input.file_path // "")"' >&2
-  echo "  繰り返し出るなら $SETTINGS の permissions.allow（案件に固有のコマンドなら .ai-flow/permissions.json の allow）に追加してください。" >&2
+    | jq -r '.permission_denials[] | "  denied: \(.tool_name) - \(.tool_input.command // .tool_input.file_path // "")"' >&2
+  echo "  If they recur, add them to permissions.allow in $SETTINGS (for project-specific commands, to allow in .ai-flow/permissions.json)." >&2
 fi
 
 if [ "$(printf '%s' "$OUT" | jq -r '.is_error')" != "false" ]; then
-  echo "Error: claude がエラーを報告しました。" >&2
+  echo "Error: claude reported an error." >&2
   exit 1
 fi
 

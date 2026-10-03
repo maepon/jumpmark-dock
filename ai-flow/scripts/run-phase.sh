@@ -1,37 +1,36 @@
 #!/bin/bash
-# フェーズを1つ回す。使い方: ./scripts/run-phase.sh <spec|impl|review|code-review|pr-review|create-pr> <Issue番号> <IssueURL>
+# Runs one phase. Usage: ./scripts/run-phase.sh <spec|impl|review|code-review|pr-review|create-pr> <Issue number> <Issue URL>
 #
-# 人間ゲートは spec の後の1箇所だけ。
-#   spec        : 質問状 または 指示書 を投稿して止まる（人が指示書を確認する）
-#   impl        : 計画書 → 判定 → 改訂 を APPROVED まで（最大 MAX_ROUNDS 周）→ 実装
-#                 → レビュー → 修正 を APPROVED まで → コミットして PR 作成 → コードレビュー
-#   review      : impl の後半（レビュー以降）だけを回す。halt したあと人が直して再開する入口
-#   code-review : PR への純粋なコードレビュー。impl / review の最後に自動で走る。
-#                 単独で叩くのは、PRはできたのに投稿だけ失敗したときの再実行用
-#   pr-review   : PR への反論（Devil's Advocate）。コストを見て現在メインフローから外してある。
-#                 受入基準そのものを疑わせたいときに人が単独で叩く
-#   create-pr   : push と PR 作成（create_pr）だけを再試行する。レビュー承認・コミット・
-#                 PR タイトル/本文の生成（pr.md）まで済んでいるのに、BASE_BRANCH の設定違いなど
-#                 create_pr 側の事情だけで review の最後が失敗して止まったときに使う。
-#                 review をやり直さない＝レビューコメントやコミットを重複させない
+# The only human gate is after spec.
+#   spec        : posts questions OR an instruction document and stops (a human checks the instruction document)
+#   impl        : plan -> judge -> revise until APPROVED (at most MAX_ROUNDS rounds) -> implement
+#                 -> review -> fix until APPROVED -> commit and create the PR -> code review
+#   review      : runs only the second half of impl (review onwards). The entry point after a halt and a human fix
+#   code-review : a plain code review of the PR. Runs automatically at the end of impl / review.
+#                 Run it on its own to retry when the PR exists but posting failed
+#   pr-review   : arguments against the PR (Devil's Advocate). Currently outside the main flow because of its cost.
+#                 A human runs it on their own when they want the acceptance criteria themselves questioned
+#   create-pr   : retries only the push and PR creation (create_pr). Use it when review is approved and the commit and
+#                 PR title/body (pr.md) are done, but the end of review failed only because of create_pr itself
+#                 (e.g. a wrong BASE_BRANCH). Review is not redone = no duplicated review comments or commits
 #
-# 状態は GitHub Issue のコメントに持つ（AI-TAG で種別を識別）。人が同じ場所で経緯を読めるようにするため。
-# ローカルの tmp/ は作業用で、消えても Issue から再開できる。
+# State lives in GitHub Issue comments (the AI-TAG identifies the type), so humans read the history in one place.
+# The local tmp/ is scratch space; if it is lost, the flow resumes from the Issue.
 #
-# 収束しなかったら止めて人に投げる。自動で先に進めるとレビューが形式だけになるため。
+# If it does not converge, stop and hand over to a human. Carrying on automatically turns review into a formality.
 
-# メッセージ中で変数を展開するときは ${x} と書く。全角文字（）や。）が変数名の直後に来る形で
-# $x と書くと、macOS 同梱の bash 3.2 は変数名のパースがマルチバイト非対応なため
-# 全角文字の先頭バイトを変数名に取り込み、set -u で unbound variable になる。
-# エラー文の中で起きるので、普段は動いていて失敗したときだけ落ちる。
+# When expanding a variable inside a message, write ${x}. If a non-ASCII character directly follows $x,
+# the bash 3.2 that ships with macOS (not multibyte-aware when parsing variable names) takes the first byte of that
+# character into the name, and set -u fails with unbound variable.
+# It happens inside error messages, so things work normally and only break when something fails.
 set -uo pipefail
 
-PHASE="${1:?フェーズ名が必要です}"
-ISSUE="${2:?Issue番号が必要です}"
-ISSUE_URL="${3:?IssueURL が必要です}"
+PHASE="${1:?a phase name is required}"
+ISSUE="${2:?an Issue number is required}"
+ISSUE_URL="${3:?an Issue URL is required}"
 
 MAX_ROUNDS="${MAX_ROUNDS:-3}"
-# 既定値は Makefile にある。直接叩いたとき用のフォールバック
+# The default is in the Makefile. This is the fallback for running the script directly
 BASE_BRANCH="${BASE_BRANCH:-main}"
 export BASE_BRANCH
 STRONG="${STRONG_MODEL:-}"
@@ -47,66 +46,66 @@ PR_TITLE_FILE="./tmp/pr-title-issue$ISSUE.txt"
 PR_BODY_FILE="./tmp/pr-body-issue$ISSUE.md"
 export VERDICT_FILE COST_LOG PR_TITLE_FILE PR_BODY_FILE
 
-# コメントファイルは claude-run.sh がプロンプト名から組み立てる {{COMMENT_FILE}} と
-# 同じパスでなければならない（./tmp/issue<N>-<プロンプト名>.md）。投稿はこちらで行う。
+# The comment files must be the same paths as the {{COMMENT_FILE}} that claude-run.sh builds from the prompt name
+# (./tmp/issue<N>-<prompt name>.md). Posting is done here.
 CODE_REVIEW_FILE="./tmp/issue$ISSUE-code-review.md"
 PR_REVIEW_FILE="./tmp/issue$ISSUE-pr-review.md"
 
-# create_pr が作った PR。code-review / pr-review を単独で叩いたときは現在のブランチから引く
+# The PR create_pr made. When code-review / pr-review run on their own, it is looked up from the current branch
 PR_URL=""
 
-# フローのディレクトリの場所（FLOW_PREFIX など）。名前と深さは自由なので、直書きせずに実行時に求める
+# Where the flow directory is (FLOW_PREFIX and friends). Name and depth are free, so it is found at run time, never hard-coded
 . ./scripts/flow-paths.sh
 
-# 基盤ファイル。案件のコミットに混ざってはいけない（基盤は人が別の PR で入れる。一覧は prompts/pr.md と揃える）
-# git status --porcelain / git diff --name-only のパスは、フローのディレクトリで実行してもリポジトリのルートからの相対になる。
-# そのため FLOW_PREFIX を付けて書く。付けないとフローの scripts/ などの改変が素通りし、逆にルートの docs/
-# （プライバシーポリシーなど案件のドキュメント）が基盤扱いされて止まる（#10 で発覚、実測）。
-# フローのディレクトリは丸ごと基盤として扱う（subtree で取り込んだ別リポジトリの中身なので、README.md・examples/ なども
-# 案件の変更で書き換えてはいけない）。作業ファイルの tmp/ と各自の .env は、フローの .gitignore が無視するのでここに出ない。
-# ルートの .gitignore はフローの規則を持たないが、保護は続ける。フローのディレクトリを無視する規則を書き足されると、
-# そこに置かれた新しいファイルがこの検査から見えなくなるため。
-# ルートの .ai-flow/ は案件ごとの設定（コマンド・権限の追加分・プロンプトに埋める文章）。フローの .claude/ と違って
-# Claude Code 自身は書き込みを塞がないので、ここで捕まえる。権限の追加分を書き換えられると次のステップの権限が広がる。
+# Tooling files. They must not be mixed into the project's commits (humans bring tooling in through their own PRs; keep the list in sync with prompts/pr.md)
+# Paths from git status --porcelain / git diff --name-only are relative to the repository root even when run from the flow directory.
+# So they are written with FLOW_PREFIX. Without it, modifications to the flow's scripts/ and so on would pass, and conversely the
+# root docs/ (project documents such as a privacy policy) would be treated as tooling and stop the flow (found by measurement).
+# The whole flow directory counts as tooling (it is the content of another repository brought in with subtree, so README.md,
+# examples/ and the rest must not be modified by project changes either). The scratch tmp/ and each person's .env are ignored by the
+# flow's .gitignore, so they never show up here.
+# The root .gitignore has no flow rules, but stays protected: a rule ignoring the flow directory would hide new files placed there from this check.
+# The root .ai-flow/ holds the project settings (commands, extra permissions, text embedded in prompts). Unlike the flow's .claude/,
+# Claude Code itself does not block writes there, so it is caught here. Rewriting the extra permissions would widen the next step's permissions.
 TOOLING_PATHS="^(${FLOW_PREFIX_RE}|\\.ai-flow/|\\.gitignore)"
 
 mkdir -p tmp
-# コストは Issue 1件あたりで積む。起動ごとに切り詰めると、1周を make impl → make review と
-# 分けて回したときに前半の記録が消え、通知の累計が実際より小さく出る（移植元の Go のリポジトリで起きた）。
-# 追記にして、どこで実行が切り替わったかが読めるように見出し行を1行入れる。
+# Costs are accumulated per Issue. Truncating on each start would erase the first half when one cycle is split into
+# make impl -> make review, and the notified total would be lower than reality (this happened in the Go repository the flow was first written for).
+# Append instead, with one header line so you can read where runs switched.
 printf '# %s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$PHASE" >> "$COST_LOG"
 
 notify() {
   ./scripts/notify-slack.sh "$ISSUE_URL" "$1" \
-    || echo "警告: [$PHASE] Slack通知の送信に失敗しました。" >&2
+    || echo "Warning: [$PHASE] sending the Slack notification failed." >&2
 }
 
-# 見出し行（# 始まり）を飛ばして、この Issue にかかった総額を出す
+# The total spent on this Issue, skipping header lines (starting with #)
 total_cost() { awk '/^[0-9]/ {s+=$1} END {printf "%.2f", s+0}' "$COST_LOG"; }
 
 fail() {
   echo "Error: [$PHASE] $1" >&2
-  notify ":x: *$PHASE 中断*
+  notify ":x: *$PHASE aborted*
 $1
 
-累計コスト: \$$(total_cost)"
+Cumulative cost: \$$(total_cost)"
   exit 1
 }
 
-# 人待ちで止まる。失敗ではないので終了コードは 0
+# Stops to wait for a human. Not a failure, so the exit code is 0
 halt() {
   echo "[$PHASE] $1" >&2
   notify "$2
 
-累計コスト: \$$(total_cost)"
+Cumulative cost: \$$(total_cost)"
   exit 0
 }
 
-# 作業ツリーに出ているパスを1行1件、クォートなしで出す。
-# 普通の --porcelain は非 ASCII やスペースを含むパスを "docs/\350..." とクォートするので、
-# 先頭に " が付いて TOOLING_PATHS の ^ に当たらず、基盤ファイルの改変が素通りする
-# （core.quotePath=false でもスペースはクォートされる）。-z はクォートしない。
-# リネームは「移動先\0移動元\0」の2件で来るので、両方出す（基盤から出す移動も基盤の改変）。
+# Prints the paths in the working tree, one per line, unquoted.
+# Plain --porcelain quotes paths containing non-ASCII characters or spaces as "docs/\350...",
+# so the leading " would not match the ^ in TOOLING_PATHS and modified tooling files would pass
+# (spaces are quoted even with core.quotePath=false). -z does not quote.
+# A rename comes as two entries, "destination\0source\0"; print both (moving out of the tooling is a tooling change too).
 worktree_paths() {
   local entry
   git status --porcelain -z --untracked-files=all | while IFS= read -r -d '' entry; do
@@ -117,25 +116,25 @@ worktree_paths() {
   done
 }
 
-# Write / Edit にパスを付けた権限ルールは効かない（scripts/claude-run.sh 冒頭）。
-# 代わりに、基盤ファイルが書き換えられていないかを作業ツリーで確認する。
-# .claude/ は Claude Code 自身が書き込みを塞ぐが、prompts/ や scripts/ は素通りする。
-# gitignore 対象（.env tmp/）はここに出ない。
+# Permission rules with a path do not work for Write / Edit (see the top of scripts/claude-run.sh).
+# Instead, check the working tree for modified tooling files.
+# Claude Code itself blocks writes to .claude/, but prompts/ and scripts/ are not covered.
+# Gitignored files (.env, tmp/) do not show up here.
 tooling_state() {
   worktree_paths | grep -E "$TOOLING_PATHS" | sort || true
 }
 [ -z "${flow_paths_error}" ] || fail "${flow_paths_error}"
 TOOLING_BEFORE=$(tooling_state)
 
-# 整形チェックの言語依存部分。コマンドと対象は案件設定（.ai-flow/config.mk）から受け取る。
-#   format_target : 整形チェックの対象なら真。FORMAT_GLOBS（空白区切りの case パターン）のどれかに当たるか
-#   format_ok     : 整形済みなら真。FORMAT_FILE_CMD の終了コードで判定する。gofmt -l のように「出力が空なら
-#                   整形済み」のツールは、終了コードで返すラッパーを案件側に用意して指定する。
-#                   チェック自体が失敗したら（未インストール・構文エラー）偽を返して止める。
-#                   真に倒すと、フォーマッタが無い環境で黙って全部通る
-#   FORMAT_FIX    : 中断メッセージで案内する、エージェントに掛けさせるコマンド
-# FORMAT_FILE_CMD が空の案件は整形チェックをしない（unformatted_files が何も返さない）。
-# 値はクォートせずに単語に分けて実行する。read -a はパス名展開をしないので、*.js がカレントのファイルに化けない。
+# The language-dependent part of the formatting check. Commands and targets come from the project settings (.ai-flow/config.mk).
+#   format_target : true if the file is subject to the check, i.e. matches one of FORMAT_GLOBS (space-separated case patterns)
+#   format_ok     : true if the file is formatted, judged by the exit code of FORMAT_FILE_CMD. For tools such as gofmt -l that mean
+#                   "formatted" by printing nothing, the project provides a wrapper that answers with the exit code.
+#                   If the check itself fails (not installed, syntax error) it returns false and the flow stops.
+#                   Returning true would let everything through silently where no formatter is installed
+#   FORMAT_FIX    : the command shown in the abort message, for the agent to apply
+# Projects with an empty FORMAT_FILE_CMD get no formatting check (unformatted_files returns nothing).
+# Values are split into words unquoted. read -a does no pathname expansion, so *.js never turns into files in the current directory.
 format_target() {
   local g globs
   [ -n "${FORMAT_GLOBS:-}" ] || return 1
@@ -152,19 +151,19 @@ format_ok() {
 }
 FORMAT_FIX="${FORMAT_FIX_CMD:-}"
 
-# 変更・追加されたファイルが整形済みかを見る。ここでは整形しない。
-# シェルが勝手に書き換えると、レビュアーが読んだ差分と実際の差分が食い違うため。
-# 対象は作業ツリーに出ているファイルだけなので、コミット済みのファイルは巻き込まない。
-# worktree_paths のパスはリポジトリのルートからの相対なので、ルートを前置してから見る。
-# 前置しないとフローのディレクトリから見て存在しないことになり、案件のファイルが全部素通りしていた（実測）。
+# Checks whether changed or added files are formatted. It does not format them here:
+# if the shell rewrote them, the diff the reviewer read and the actual diff would differ.
+# Only files in the working tree are checked, so committed files are never dragged in.
+# worktree_paths gives paths relative to the repository root, so prefix the root before looking.
+# Without the prefix they would not exist from the flow directory, and every project file passed (found by measurement).
 unformatted_files() {
   local f root out=""
   [ -n "${FORMAT_FILE_CMD:-}" ] || return 0
-  root=$(git rev-parse --show-toplevel) || { printf '(git rev-parse --show-toplevel が失敗)\n'; return; }
+  root=$(git rev-parse --show-toplevel) || { printf '(git rev-parse --show-toplevel failed)\n'; return; }
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     format_target "$f" || continue
-    [ -f "${root}/${f}" ] || continue   # 削除・リネーム元は対象外
+    [ -f "${root}/${f}" ] || continue   # skip deletions and rename sources
     format_ok "${root}/${f}" || out="$out$f
 "
   done <<EOF
@@ -173,23 +172,23 @@ EOF
   printf '%s' "$out"
 }
 
-# 返答は RESULT に入れる。$(...) の中で fail を呼ぶとサブシェルだけ終わって
-# 呼び出し元が続行してしまうため、代入と判定を分けている
+# The reply goes into RESULT. Calling fail inside $(...) would only end the subshell
+# and the caller would carry on, so assignment and checking are kept apart
 RESULT=""
 run_step() {
   local label="$1" prompt="$2" model="$3" profile="${4:-$BASE_PROFILE}"
   echo "--- [$PHASE] $label" >&2
   RESULT=$(./scripts/claude-run.sh "$prompt" "$model" "$ISSUE" "$profile")
   local st=$?
-  [ $st -eq 0 ] || fail "$label が失敗しました（終了コード ${st}）。"
+  [ $st -eq 0 ] || fail "$label failed (exit code ${st})."
   if [ "$(tooling_state)" != "$TOOLING_BEFORE" ]; then
-    fail "$label が基盤ファイルを書き換えました。フローの土台なのでエージェントには触らせません。git で戻してから再実行してください:
+    fail "$label modified tooling files. They are the flow's foundation, so agents must not touch them. Restore them with git and re-run:
 $(tooling_state)"
   fi
   local unformatted
   unformatted=$(unformatted_files)
   if [ -n "$unformatted" ]; then
-    fail "$label が整形チェックを通らないファイルを残しました（未整形か、チェック自体が失敗）。${FORMAT_FIX} を掛けてから make review で再開してください:
+    fail "$label left files that fail the formatting check (unformatted, or the check itself failed). Apply ${FORMAT_FIX} and resume with make review:
 $unformatted"
   fi
   printf '%s\n' "$RESULT"
@@ -200,125 +199,124 @@ read_verdict() {
   tr -d '[:space:]' < "$VERDICT_FILE" | tr '[:lower:]' '[:upper:]'
 }
 
-# 計画・実装の判定ループ共通の分岐。APPROVED なら 0（ループを抜ける）、CHANGES_REQUESTED なら 1（次の周へ）。
-# NEEDS_HUMAN は周回を待たずに halt する。判定役が「改訂・修正役にはどう直しても解消できない」
-# と判断したもの（AC どうしの矛盾、指示書の前提違いなど）で、回しても空回りするだけのため
-# （#9 で AC-13 と AC-15 が両立せず、MAX_ROUNDS の3周を空費した）。
-# 使い方: handle_verdict <判定> <段階名> <再開コマンド>
+# The branch shared by the plan and implementation judging loops. APPROVED returns 0 (leave the loop), CHANGES_REQUESTED returns 1 (next round).
+# NEEDS_HUMAN halts without waiting for more rounds. It is for what the judge concluded the reviser / fixer cannot resolve however
+# they try (contradictory ACs, a wrong premise in the instruction document, ...); more rounds would only spin
+# (two contradictory ACs once used up all MAX_ROUNDS rounds for nothing).
+# Usage: handle_verdict <verdict> <stage name> <resume command>
 handle_verdict() {
   local verdict="$1" stage="$2" resume="$3"
   case "$verdict" in
     APPROVED) return 0 ;;
     CHANGES_REQUESTED) return 1 ;;
     NEEDS_HUMAN)
-      halt "${stage}の判定が人の判断を求めています（NEEDS_HUMAN）。" ":raising_hand: *${PHASE} — ${stage}に人の判断が必要です*
-判定役が、受入基準の矛盾や指示書の前提違いなど、指示書の範囲では解消できない未達を報告しました。Issue の最新の判定コメントを読み、指示書を直して新しい INSTRUCTION を投稿してから ${resume} で再開してください。
+      halt "The ${stage} verdict asks for a human decision (NEEDS_HUMAN)." ":raising_hand: *${PHASE} - the ${stage} needs a human decision*
+The judge reported unmet criteria that cannot be resolved within the instruction document, such as contradictory acceptance criteria or a wrong premise. Read the latest verdict comment on the Issue, fix the instruction document and post a new INSTRUCTION, then resume with ${resume}.
 
 $RESULT" ;;
     *)
-      fail "判定ファイルの内容が想定外です: '${verdict}'（APPROVED / CHANGES_REQUESTED / NEEDS_HUMAN のいずれかを期待）。" ;;
+      fail "Unexpected verdict file contents: '${verdict}' (expected APPROVED / CHANGES_REQUESTED / NEEDS_HUMAN)." ;;
   esac
 }
 
-# 人間ゲートの実効化。指示書が無いのに先へ進めない。
-# 行頭のタグそのものを探す。部分一致にすると「指示書（AI-TAG: INSTRUCTION）がありません」と
-# 書いた人のコメントや、このフローについて論じたコメントに当たってゲートが通ってしまう
-# （このメッセージ自身がその形をしている）。フローで唯一の人間ゲートを機械的に担保している
-# 場所なので、緩い一致で済ませてはいけない。
+# Enforces the human gate: never go on without an instruction document.
+# Look for the tag itself at the start of a line. With a partial match, a human comment saying "there is no instruction
+# (AI-TAG: INSTRUCTION)" or a comment discussing this flow would pass the gate (this very message has that shape).
+# This is where the flow's only human gate is enforced mechanically, so a loose match is not acceptable.
 #
-# gh issue view の出力を直接 grep -q にパイプしないこと（実測でハマった）。
-# コメントが増えて出力が大きくなると、grep -q は先頭付近でマッチした時点で読み込みをやめて
-# 終了するため、まだ書き込み中の gh 側が SIGPIPE を受けて終了コード 141 で終わる。
-# set -o pipefail の下では、grep 自身はマッチに成功していてもパイプライン全体が失敗扱いになり、
-# 指示書が実在するのに「指示書がありません」で落ちる。一時ファイルに落としてから grep すれば
-# 書き込み側にパイプが無くなるので、この競合は起きない。
+# Do not pipe gh issue view straight into grep -q (learned the hard way).
+# As comments grow and the output gets large, grep -q stops reading as soon as it matches near the top and exits,
+# so gh, still writing, gets SIGPIPE and exits with 141.
+# Under set -o pipefail the whole pipeline then counts as failed even though grep matched,
+# and it stops with "no instruction document" although one exists. Writing to a temporary file first and grepping that
+# removes the pipe on the writing side, so the race cannot happen.
 #
-# gh の失敗は「指示書が無い」と区別して止める。以前は stderr を捨てていたため、認証切れや
-# 一時的な API エラーでも「指示書がありません」と出て、原因が分からなかった（実測）。
+# A gh failure is reported separately from "no instruction document". stderr used to be discarded, so an expired login or a
+# transient API error also said "no instruction document" and the cause was unclear (found by measurement).
 require_instruction() {
   local tmp err matched=1
-  tmp=$(mktemp) || fail "一時ファイルを作れませんでした。"
-  err=$(mktemp) || { rm -f "$tmp"; fail "一時ファイルを作れませんでした。"; }
+  tmp=$(mktemp) || fail "could not create a temporary file."
+  err=$(mktemp) || { rm -f "$tmp"; fail "could not create a temporary file."; }
   if ! gh issue view "$ISSUE" --comments >"$tmp" 2>"$err"; then
     local msg
     msg=$(tail -n 5 "$err")
     rm -f "$tmp" "$err"
-    fail "Issue #${ISSUE} を gh で取得できませんでした（指示書の有無は未確認）。gh auth status を確認して再実行してください:
+    fail "Could not fetch Issue #${ISSUE} with gh (whether an instruction document exists is unknown). Check gh auth status and re-run:
 ${msg}"
   fi
   grep -q '^<!-- AI-TAG: INSTRUCTION -->' "$tmp" || matched=0
   rm -f "$tmp" "$err"
   [ "$matched" -eq 1 ] \
-    || fail "Issue #$ISSUE に指示書がありません。先に make spec を実行し、指示書を人が確認してください。"
+    || fail "Issue #$ISSUE has no instruction document. Run make spec first and have a human check the instruction document."
 }
 
-# push と PR 作成はエージェントに渡さず、ここで行う。
-# 外向きの操作の直前に、ブランチ名とコミット対象を機械的に検査したいため。
-# 権限ルールの列挙で危険な push の形を塞ぐのは漏れるので、そもそも渡さない。
+# push and PR creation are not given to the agent; they happen here,
+# so the branch name and what is committed can be checked mechanically right before the outward-facing operation.
+# Blocking dangerous push forms by enumerating permission rules leaks, so push is simply not granted.
 create_pr() {
   local branch title body_lines mixed commits
   branch=$(git branch --show-current)
 
   case "$branch" in
     feature/*) ;;
-    "") fail "HEAD が detached です。PRを作れません。" ;;
-    *)  fail "ブランチ名が feature/ で始まっていません（${branch}）。案件の変更は feature/ ブランチに載せる決まりです。" ;;
+    "") fail "HEAD is detached. Cannot create a PR." ;;
+    *)  fail "The branch name does not start with feature/ (${branch}). Project changes go on feature/ branches." ;;
   esac
 
-  # ベースが無いと、下の混入検査は git diff のエラーを || true が飲んで素通りする。先に確かめる
+  # Without the base, the mixing check below would let git diff's error be swallowed by || true. Check it first
   git rev-parse --verify --quiet "origin/${BASE_BRANCH}" >/dev/null \
-    || fail "origin/${BASE_BRANCH} が見つかりません。Makefile の BASE_BRANCH が既定ブランチと合っているか確認してください。"
+    || fail "origin/${BASE_BRANCH} not found. Check that BASE_BRANCH in .ai-flow/config.mk matches the default branch."
 
   commits=$(git rev-list --count "origin/${BASE_BRANCH}..${branch}")
-  [ "$commits" -gt 0 ] || fail "origin/${BASE_BRANCH} と差がありません。エージェントがコミットしていない可能性があります。"
+  [ "$commits" -gt 0 ] || fail "No difference from origin/${BASE_BRANCH}. The agent may not have committed."
 
-  # 案件のコミットに基盤ファイルが混ざっていないか。
-  # -z はクォート対策（worktree_paths と同じ理由）。--no-renames は、リネームだと
-  # 移動先しか出ず、基盤から外へ出す移動を見落とすため。
+  # Are tooling files mixed into the project's commits?
+  # -z avoids quoting (same reason as worktree_paths). --no-renames because a rename only shows
+  # the destination, which would miss moving a file out of the tooling.
   mixed=$(git diff --name-only -z --no-renames "origin/${BASE_BRANCH}..${branch}" | tr '\0' '\n' | grep -E "$TOOLING_PATHS" || true)
   if [ -n "$mixed" ]; then
-    fail "案件のコミットに基盤ファイルが混ざっています。別コミットにしてください:
+    fail "Tooling files are mixed into the project's commits. Put them in a separate commit:
 $mixed"
   fi
 
   title=$(head -n 1 "$PR_TITLE_FILE")
-  [ -n "$title" ] || fail "$PR_TITLE_FILE が空です。"
+  [ -n "$title" ] || fail "$PR_TITLE_FILE is empty."
   body_lines=$(wc -l < "$PR_BODY_FILE" | tr -d ' ')
-  [ "$body_lines" -gt 0 ] || fail "$PR_BODY_FILE が空です。"
+  [ "$body_lines" -gt 0 ] || fail "$PR_BODY_FILE is empty."
 
-  echo "--- [$PHASE] push と PR 作成（make が実行）" >&2
-  git push -u origin "$branch" >&2 || fail "push に失敗しました。"
+  echo "--- [$PHASE] push and PR creation (run by make)" >&2
+  git push -u origin "$branch" >&2 || fail "push failed."
 
   PR_URL=$(gh pr create --base "$BASE_BRANCH" --head "$branch" \
     --title "$title" --body-file "$PR_BODY_FILE") \
-    || fail "gh pr create に失敗しました。ブランチは push 済みなので、PRは手で作れます。"
+    || fail "gh pr create failed. The branch is already pushed, so you can create the PR by hand."
 
   echo "$PR_URL" >&2
-  notify ":white_check_mark: *review 完了 — PRを作成しました*（レビューは${round}周目で承認）
+  notify ":white_check_mark: *review done - PR created* (review approved in round ${round})
 $PR_URL
 
-マージ前に人が確認してください。
+A human should check it before merging.
 
 $RESULT
 
-累計コスト: \$$(total_cost)"
+Cumulative cost: \$$(total_cost)"
 }
 
-[ -n "$STRONG" ] || fail "STRONG_MODEL が空です。CLAUDE_CODE_OPUS_MODEL を確認するか、.env に STRONG_MODEL を書いてください（.zshrc 定義の場合、非対話実行では読まれません）。"
-[ -n "$FAST" ]   || fail "FAST_MODEL が空です。CLAUDE_CODE_SONNET_MODEL を確認するか、.env に FAST_MODEL を書いてください。"
+[ -n "$STRONG" ] || fail "STRONG_MODEL is empty. Check CLAUDE_CODE_OPUS_MODEL or write STRONG_MODEL in .env (if it is defined in .zshrc, non-interactive runs do not read it)."
+[ -n "$FAST" ]   || fail "FAST_MODEL is empty. Check CLAUDE_CODE_SONNET_MODEL or write FAST_MODEL in .env."
 
-# 判定役（plan-judge / review-judge）のモデルだけ差し替えられるようにしてある。ここの既定は強モデル。
-# review-judge は実装を相手にするのでテスト実行・整形チェック・差分で裏を取れる（移植元での差し戻しは
-# 「指示書が挙げた4文書のうち1つが未更新」の突き合わせだった）。高速モデルで足りるかを
-# A/B するために、REVIEW_JUDGE_MODEL=fast で切り替えられるようにしてある（Makefile の既定は高速モデル。ここの既定は直接叩いたとき用）。
+# Only the judges' model (plan-judge / review-judge) can be swapped. The default here is the strong model.
+# review-judge works against an implementation, so it can verify with test runs, the formatting check, and the diff (the send-backs
+# seen in the original repository were cross-checks such as "one of the four documents the instruction listed was not updated").
+# To A/B whether the fast model is enough, REVIEW_JUDGE_MODEL=fast switches it (the Makefile default is the fast model; the default
+# here is for running the script directly).
 #
-# 移植元では plan-judge は強モデルに固定していた。あちらは文章同士（指示書 vs 計画書）の突き合わせで実行による
-# 裏取りができず、移植元での差し戻し2件はどちらも「提案されたテストは実装を壊しても通る」という
-# プロンプトが要求していない推論だったため（落とすと最初に失われる）。このリポジトリでは c322b99 で
-# plan-judge も REVIEW_JUDGE に揃え、Makefile の既定で高速モデルにしている。
+# In the original repository plan-judge was fixed to the strong model: it compares documents (instruction vs plan) and cannot verify
+# by running anything, and both of its send-backs there were inferences the prompt did not ask for ("the proposed tests would pass even
+# with the implementation broken") - the first thing lost with a weaker model. Later plan-judge was aligned with REVIEW_JUDGE too, and
+# the Makefile default makes it the fast model.
 #
-# 実際に使ったモデルIDは claude-run.sh がステップごとに stderr へ出すので、
-# どちらで回したかはログで区別できる。
+# claude-run.sh prints the model ID used for each step to stderr, so the logs show which one ran.
 case "${REVIEW_JUDGE_MODEL:-}" in
   ""|strong) REVIEW_JUDGE="$STRONG" ;;
   fast)      REVIEW_JUDGE="$FAST" ;;
@@ -328,22 +326,22 @@ esac
 phase_spec() {
   PHASE=spec
   : > "$VERDICT_FILE"
-  run_step "指示書の作成" prompts/spec.md "$STRONG"
+  run_step "Writing the instruction document" prompts/spec.md "$STRONG"
   case "$(read_verdict)" in
     INSTRUCTION_READY)
-      halt "指示書ができました。人の確認待ちです。" ":memo: *spec 完了 — 指示書ができました*
-確認して問題なければ \`make impl ISSUE=$ISSUE\` に進んでください。直したいところがあれば Issue にコメントして \`make spec ISSUE=$ISSUE\` を再実行してください。
+      halt "The instruction document is ready. Waiting for a human to check it." ":memo: *spec done - the instruction document is ready*
+Check it, and if it looks right, go on with \`make impl ISSUE=$ISSUE\`. To change something, comment on the Issue and re-run \`make spec ISSUE=$ISSUE\`.
 
 $RESULT"
       ;;
     NEED_ANSWERS)
-      halt "質問状を投稿しました。回答待ちです。" ":raising_hand: *spec — 回答待ち*
-質問状を投稿しました。Issue にコメントで回答してから \`make spec ISSUE=$ISSUE\` を再実行してください。
+      halt "Questions posted. Waiting for answers." ":raising_hand: *spec - waiting for answers*
+Questions were posted. Answer them in an Issue comment, then re-run \`make spec ISSUE=$ISSUE\`.
 
 $RESULT"
       ;;
     *)
-      fail "判定ファイルの内容が想定外です: '$(read_verdict)'（INSTRUCTION_READY か NEED_ANSWERS を期待）。Issue のコメントを確認してください。"
+      fail "Unexpected verdict file contents: '$(read_verdict)' (expected INSTRUCTION_READY or NEED_ANSWERS). Check the Issue comments."
       ;;
   esac
 }
@@ -351,31 +349,31 @@ $RESULT"
 phase_impl() {
   PHASE=impl
   require_instruction
-  run_step "実装計画書・テストシナリオの作成" prompts/plan.md "$FAST"
+  run_step "Writing the implementation plan and test scenarios" prompts/plan.md "$FAST"
 
   round=1
   while : ; do
     : > "$VERDICT_FILE"
-    run_step "指示書との齟齬判定 ${round}/${MAX_ROUNDS} 周" prompts/plan-judge.md "$REVIEW_JUDGE"
+    run_step "Judging against the instruction document, round ${round}/${MAX_ROUNDS}" prompts/plan-judge.md "$REVIEW_JUDGE"
     verdict=$(read_verdict)
-    handle_verdict "$verdict" "計画" "make impl ISSUE=${ISSUE}" && break
+    handle_verdict "$verdict" "plan" "make impl ISSUE=${ISSUE}" && break
     if [ "$round" -ge "$MAX_ROUNDS" ]; then
-      halt "${MAX_ROUNDS}周しても計画が承認されませんでした。" ":raising_hand: *impl — 計画が収束しませんでした*
-${MAX_ROUNDS}周しても指示書との齟齬が解消しませんでした。Issue のやり取りを読んで、指示書の受入基準を見直してください。受入基準が曖昧なときにこうなります。
+      halt "The plan was not approved after ${MAX_ROUNDS} rounds." ":raising_hand: *impl - the plan did not converge*
+After ${MAX_ROUNDS} rounds the discrepancies with the instruction document remain. Read the exchange on the Issue and revisit the acceptance criteria in the instruction document. This happens when they are vague.
 
 $RESULT"
     fi
-    run_step "計画の改訂" prompts/plan-revise.md "$FAST"
+    run_step "Revising the plan" prompts/plan-revise.md "$FAST"
     round=$((round + 1))
   done
 
-  run_step "実装" prompts/implement.md "$FAST"
-  notify ":hammer: *実装できました*（計画は${round}周目で承認）
-このままレビューに進みます。
+  run_step "Implementing" prompts/implement.md "$FAST"
+  notify ":hammer: *Implementation done* (plan approved in round ${round})
+Going on to review.
 
 $RESULT
 
-ここまでのコスト: \$$(total_cost)"
+Cost so far: \$$(total_cost)"
 }
 
 phase_review() {
@@ -385,71 +383,70 @@ phase_review() {
   round=1
   while : ; do
     : > "$VERDICT_FILE"
-    run_step "実装レビュー ${round}/${MAX_ROUNDS} 周" prompts/review-judge.md "$REVIEW_JUDGE"
+    run_step "Reviewing the implementation, round ${round}/${MAX_ROUNDS}" prompts/review-judge.md "$REVIEW_JUDGE"
     verdict=$(read_verdict)
-    handle_verdict "$verdict" "実装" "make review ISSUE=${ISSUE}" && break
+    handle_verdict "$verdict" "implementation" "make review ISSUE=${ISSUE}" && break
     if [ "$round" -ge "$MAX_ROUNDS" ]; then
-      halt "${MAX_ROUNDS}周しても実装が承認されませんでした。" ":raising_hand: *review — レビューが収束しませんでした*
-${MAX_ROUNDS}周しても受入基準の未達が残りました。作業ツリーの差分と Issue のやり取りを確認してください。
+      halt "The implementation was not approved after ${MAX_ROUNDS} rounds." ":raising_hand: *review - the review did not converge*
+After ${MAX_ROUNDS} rounds some acceptance criteria are still unmet. Check the diff in the working tree and the exchange on the Issue.
 
 $RESULT"
     fi
-    run_step "指摘の修正" prompts/review-fix.md "$FAST"
+    run_step "Fixing the findings" prompts/review-fix.md "$FAST"
     round=$((round + 1))
   done
 
   : > "$PR_TITLE_FILE"
   : > "$PR_BODY_FILE"
-  run_step "コミットとPR本文の作成" prompts/pr.md "$STRONG" "$COMMIT_PROFILE"
+  run_step "Committing and writing the PR body" prompts/pr.md "$STRONG" "$COMMIT_PROFILE"
   create_pr
 }
 
-# review の最後（コミット・PR本文の作成 → push・PR作成）のうち、push・PR作成側だけをやり直す。
-# 対象は BASE_BRANCH の設定違いなど create_pr 自身の事情による失敗（origin/<branch> が無い、
-# 一時的な push/API 失敗など）。review-judge やコミットからやり直すと、Issue にレビューコメントが
-# 重複したり、pr.md がもう一度コミットしようとして「差分がない」で失敗したりする。
-# pr.md（コミットと PR 本文の作成）は既に済んでいる前提なので、ここでは呼ばない。
+# Of the end of review (commit and PR body -> push and PR creation), redo only the push and PR creation.
+# For failures caused by create_pr itself, such as a wrong BASE_BRANCH (origin/<branch> missing, a transient push / API failure).
+# Redoing it from review-judge or the commit would duplicate the review comments on the Issue, or make pr.md try to commit again
+# and fail with "nothing to commit".
+# It assumes pr.md (commit and PR body) is already done, so it is not called here.
 #
-# create_pr() の通知メッセージは review ループの $round / $RESULT を参照するが、
-# ここでは review をやっていないのでどちらも実体が無い。place-holder を入れて代替する。
+# create_pr()'s notification refers to $round / $RESULT from the review loop, which do not exist here
+# because no review ran. Placeholders stand in for them.
 phase_create_pr() {
   PHASE=create-pr
   [ -s "$PR_TITLE_FILE" ] && [ -s "$PR_BODY_FILE" ] \
-    || fail "$PR_TITLE_FILE か $PR_BODY_FILE が空です。先に make review でコミットと PR 本文の作成まで進めてください。"
+    || fail "$PR_TITLE_FILE or $PR_BODY_FILE is empty. Run make review first, through the commit and the PR body."
   round="-"
-  RESULT="(make create-pr で単独実行。実装・レビューの経緯は Issue のコメントを参照してください)"
+  RESULT="(run on its own with make create-pr; see the Issue comments for the implementation and review history)"
   create_pr
 }
 
-# PR ができた後の純粋なコードレビュー。判定ではないので、ここで何が出ても PR は閉じない
-# （マージの判断は人）。review-judge は AC を満たしているかしか見ないため、AC に書かれていない
-# バグ・セキュリティ・エラー処理の抜けをここで補う。
+# A plain code review after the PR exists. It is not a verdict, so nothing here closes the PR
+# (a human decides on merging). review-judge only checks whether the ACs are met, so this covers
+# bugs, security, and missing error handling that the ACs do not mention.
 #
-# 権限は pr-review のプロファイルを使い回す。このフェーズに git restore は要らないが、
-# ベースのプロファイルと違って gh issue comment を渡していない点が要る（投稿先は PR で、
-# Issue に書かせない）。
+# It reuses the pr-review profile. This phase does not need git restore, but it does need
+# gh issue comment to be absent, unlike the base profile (the destination is the PR; it must not write to the Issue).
 #
-# PR_URL が空なら（code-review / pr-review を単独で叩いたとき）、現在のブランチの PR を引いて入れる。
-# $(...) の中で fail を呼ぶとサブシェルだけ終わるので、値は PR_URL に直接入れる。
-# gh のエラーは捨てずに添える。以前は捨てていたため、作業ツリーが master のままだと
-# 「PR が見つかりません」だけが出て、どのブランチで探したのかが分からなかった（#10 で発生）。
+# If PR_URL is empty (code-review / pr-review run on their own), look up the current branch's PR.
+# Calling fail inside $(...) would only end the subshell, so the value goes straight into PR_URL.
+# gh's error is attached rather than discarded. It used to be discarded, so with the working tree still on the default branch
+# only "PR not found" appeared and you could not tell which branch had been searched.
 ensure_pr_url() {
   [ -n "$PR_URL" ] && return 0
   local out err branch
   branch=$(git branch --show-current)
-  # stderr は別に受ける。まとめると、成功時に gh の更新通知などが URL に混ざる
-  err=$(mktemp) || fail "一時ファイルを作れませんでした。"
+  # Capture stderr separately. Merged, gh's update notices and the like would get mixed into the URL on success
+  err=$(mktemp) || fail "could not create a temporary file."
   if ! out=$(gh pr view --json url -q .url 2>"$err") || [ -z "$out" ]; then
     out=$(tail -n 5 "$err")
     rm -f "$err"
-    fail "PR が見つかりません（現在のブランチ: ${branch:-detached}）。PR のブランチに切り替えてから再実行してください:
+    fail "PR not found (current branch: ${branch:-detached}). Switch to the PR's branch and re-run:
 ${out}"
   fi
   rm -f "$err"
   PR_URL="$out"
 }
 
-# gh pr はエージェントに渡していないので、本文はファイルに書かせて投稿はここで行う。
+# gh pr is not given to the agent, so it writes the body to a file and the posting happens here.
 phase_code_review() {
   PHASE=code-review
   local url before after
@@ -457,40 +454,40 @@ phase_code_review() {
   ensure_pr_url
   url="$PR_URL"
 
-  # このフェーズはコードを直さない決まりだが、Write / Edit はパスを絞れないので渡っている。
-  # run_step の検査は基盤ファイルと未整形のファイルしか見ず、整形済みの書き換えは素通りする。
-  # PR は push 済みなので、直されても PR には入らず作業ツリーにだけ残る。前後比較で捕まえる。
+  # This phase is not supposed to fix code, but Write / Edit are granted without path restrictions.
+  # run_step's checks only look at tooling files and unformatted files, so a formatted rewrite would pass.
+  # The PR is already pushed, so a fix would not reach the PR and would only remain in the working tree. Catch it by comparing before and after.
   before=$(git status --porcelain --untracked-files=all)
 
   : > "${CODE_REVIEW_FILE}"
-  run_step "コードレビュー" prompts/code-review.md "$STRONG" "$PR_REVIEW_PROFILE"
+  run_step "Code review" prompts/code-review.md "$STRONG" "$PR_REVIEW_PROFILE"
 
   after=$(git status --porcelain --untracked-files=all)
   if [ "$after" != "$before" ]; then
-    fail "コードレビューが作業ツリーを変更したまま終わりました。このフェーズはコードを直しません。git restore で戻してから make code-review ISSUE=$ISSUE で再実行してください:
+    fail "The code review finished with the working tree changed. This phase does not fix code. Restore with git restore and re-run make code-review ISSUE=$ISSUE:
 $after"
   fi
 
   [ -s "${CODE_REVIEW_FILE}" ] \
-    || fail "${CODE_REVIEW_FILE} が空です。PRは作成済みなので make code-review ISSUE=$ISSUE で再実行できます。"
+    || fail "${CODE_REVIEW_FILE} is empty. The PR already exists, so you can re-run make code-review ISSUE=$ISSUE."
 
   gh pr comment "$url" --body-file "${CODE_REVIEW_FILE}" >&2 \
-    || fail "PRへのコメント投稿に失敗しました。本文は ${CODE_REVIEW_FILE} に残っています。"
+    || fail "Posting the comment to the PR failed. The body remains in ${CODE_REVIEW_FILE}."
 
-  notify ":mag: *PRへのコードレビューを投稿しました*
+  notify ":mag: *Code review posted on the PR*
 ${url}
 
-判定ではありません。マージするかどうかは人が決めます。
+This is not a verdict. A human decides whether to merge.
 
 $RESULT
 
-累計コスト: \$$(total_cost)"
+Cumulative cost: \$$(total_cost)"
 }
 
-# PR ができた後の反論レビュー（Devil's Advocate）。現在メインフローからは外してある。
-# 受入基準そのものが間違っていなかったかを問う。単独実行は make pr-review で可能。
+# Arguments against the PR after it exists (Devil's Advocate). Currently outside the main flow.
+# It asks whether the acceptance criteria themselves were wrong. Run it on its own with make pr-review.
 #
-# gh pr はエージェントに渡していないので、本文はファイルに書かせて投稿はここで行う。
+# gh pr is not given to the agent, so it writes the body to a file and the posting happens here.
 phase_pr_review() {
   PHASE=pr-review
   local url before after
@@ -498,40 +495,40 @@ phase_pr_review() {
   ensure_pr_url
   url="$PR_URL"
 
-  # 主張2（テストを壊して落ちるか見る）で書き換えた実装が戻っているかを、前後の比較で見る。
-  # 整形チェックは素通りする（壊した行が整形済みなら通る）ので、ここで見るしかない。
+  # Check by comparing before and after that the implementation broken for Claim 2 (break the tests and see them fail) was restored.
+  # The formatting check would not catch it (a broken line that is formatted passes), so this is the only place to look.
   before=$(git status --porcelain --untracked-files=all)
 
   : > "$PR_REVIEW_FILE"
-  run_step "PR への反論レビュー" prompts/pr-review.md "$STRONG" "$PR_REVIEW_PROFILE"
+  run_step "Arguing against the PR" prompts/pr-review.md "$STRONG" "$PR_REVIEW_PROFILE"
 
   after=$(git status --porcelain --untracked-files=all)
   if [ "$after" != "$before" ]; then
-    fail "反論レビューが作業ツリーを変更したまま終わりました。壊した実装を git restore で戻してから make pr-review ISSUE=$ISSUE で再実行してください:
+    fail "The Devil's Advocate review finished with the working tree changed. Restore the broken implementation with git restore and re-run make pr-review ISSUE=$ISSUE:
 $after"
   fi
 
   [ -s "$PR_REVIEW_FILE" ] \
-    || fail "$PR_REVIEW_FILE が空です。PRは作成済みなので make pr-review ISSUE=$ISSUE で再実行できます。"
+    || fail "$PR_REVIEW_FILE is empty. The PR already exists, so you can re-run make pr-review ISSUE=$ISSUE."
 
   gh pr comment "$url" --body-file "$PR_REVIEW_FILE" >&2 \
-    || fail "PRへのコメント投稿に失敗しました。本文は $PR_REVIEW_FILE に残っています。"
+    || fail "Posting the comment to the PR failed. The body remains in $PR_REVIEW_FILE."
 
-  notify ":smiling_imp: *PRへの反論レビューを投稿しました*
+  notify ":smiling_imp: *Devil's Advocate review posted on the PR*
 $url
 
-判定ではありません。マージするかどうかは人が決めます。
+This is not a verdict. A human decides whether to merge.
 
 $RESULT
 
-累計コスト: \$$(total_cost)"
+Cumulative cost: \$$(total_cost)"
 }
 
-# impl はレビューまで通す。実装できた時点で人に返す理由がなく、レビューの指摘は
-# 高速モデルが直せるため。収束しなければ halt して人に投げるので、止まる場所は変わらない。
-# review 単独は、halt から人が直して再開するときの入口として残してある。
-# code-review 単独は、投稿だけ失敗したときの再実行用。
-# pr-review（Devil's Advocate）はメインフローから外してある。単独実行は残す。
+# impl goes all the way through review. There is no reason to hand back to a human once implemented, and the fast model
+# can fix review findings. If it does not converge it halts and hands over, so where it stops does not change.
+# review on its own is kept as the entry point for resuming after a halt and a human fix.
+# code-review on its own is for retrying when only the posting failed.
+# pr-review (Devil's Advocate) is outside the main flow; running it on its own remains.
 case "$PHASE" in
   spec)        phase_spec ;;
   impl)        phase_impl; phase_review; phase_code_review ;;
@@ -539,5 +536,5 @@ case "$PHASE" in
   code-review) phase_code_review ;;
   pr-review)   phase_pr_review ;;
   create-pr)   phase_create_pr ;;
-  *)           fail "不明なフェーズです: ${PHASE}（spec / impl / review / code-review / pr-review / create-pr のいずれか）" ;;
+  *)           fail "Unknown phase: ${PHASE} (one of spec / impl / review / code-review / pr-review / create-pr)" ;;
 esac

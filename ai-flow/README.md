@@ -47,6 +47,12 @@ Requirements: `claude`, `gh` (authenticated), `jq`, `curl`, `make`, `bash` (3.2 
 Changes to the flow itself are made by humans through PRs here, not through the flow.
 `./scripts/ci-check.sh` lays the files out the way a host repository would and runs `make check`; CI runs it on macOS and Ubuntu.
 
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 The early commit history was written in [maepon/jumpmark-dock](https://github.com/maepon/jumpmark-dock), where this flow was developed,
-and was carried over with `git subtree split`. Issue and PR numbers such as `#38` in those commit messages refer to that repository.
-The scripts' comments and terminal/Slack messages are still in Japanese.
+and was carried over with `git subtree split`. Those commit messages are in Japanese, and Issue / PR numbers such as `#38` in them
+refer to that repository.
+
+## License
+
+[MIT](LICENSE)
