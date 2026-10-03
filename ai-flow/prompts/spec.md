@@ -57,7 +57,13 @@ Include the following.
 {{#if FORMAT_CHECK_CMD}}
     - Formatting: `{{FORMAT_CHECK_CMD}}` exits with code 0. Do not use a command that only looks below the directory it runs in
 {{/if}}
+{{#if TEST_CMD}}
     - Tests: `{{TEST_CMD}}`
+{{/if}}
+{{#unless TEST_CMD}}
+    - This project has no automated tests. Prefer criteria a command can check from the outside (running a script, building or
+      rendering the document, the content of a generated file). If a criterion can only be checked by a human, say so in the criterion
+{{/unless}}
     - Presence of a string: `git grep -n "<pattern>" -- ':/'` (`':/'` makes it search the whole repository)
   - **Before writing the instruction document, check that the criteria can be met given the existing repository.** For formatting
     and test ACs, run them once on the current {{BASE_BRANCH}} and see that they pass. If they fail because of existing files,

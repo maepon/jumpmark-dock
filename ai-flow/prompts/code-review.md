@@ -44,8 +44,14 @@ Attach to the evidence how you verified it (`verified:run` / `verified:inference
 Read the code's logic and look for paths where a user's normal operation leads to an unexpected error or an infinite loop.
 In a change that adds a guard, especially suspect "**normal usage gets caught by the new guard**".
 
+{{#if TEST_CMD}}
 To actually run something suspicious, write a throwaway test file under `tmp/` (`{{FLOW_DIR}}/tmp/`),
 and call the function with `{{SCRATCH_TEST_CMD}} <file>`, or go through the path a user takes with `{{TEST_CMD}}` (direct interpreter invocations are denied).
+{{/if}}
+{{#unless TEST_CMD}}
+To actually run something suspicious, put throwaway input files under `tmp/` (`{{FLOW_DIR}}/tmp/`),
+and run the project's commands on them, the same way the plan's verification table does (direct interpreter invocations are denied).
+{{/unless}}
 `rm` is not allowed, so no cleanup is needed (`tmp/` is not tracked by git).
 
 ---

@@ -14,6 +14,8 @@
 # Conditional blocks are handled as well. From a line consisting only of {{#if NAME}} to a line {{/if}}: if the value of NAME
 # (one of VALUE_KEYS) is empty, the whole block is removed; otherwise only the two marker lines are removed. This drops the
 # formatting steps from the prompts in projects without a formatter (empty FORMAT_*). Nesting and blocks spanning files are rejected.
+# {{#unless NAME}} ... {{/unless}} is the opposite: the block is kept only when the value is empty. Projects without tests
+# (empty TEST_CMD) use it to get verification-command wording in place of test wording.
 #
 # A placeholder with an empty value, or a {{...}} left over after filling, stops before claude starts (before any cost).
 # Placeholders inside a removed block are not filled, so an empty value there does not stop it.
@@ -64,7 +66,7 @@ out=$(LC_ALL=C awk '
   }
   FNR == 1 && NR != 1 {
     if (inblock) {
-      printf "Error: render-prompt.sh: {{#if %s}} is not closed (%s).\n", blockkey, prevfile > "/dev/stderr"
+      printf "Error: render-prompt.sh: {{#%s %s}} is not closed (%s).\n", blockkind, blockkey, prevfile > "/dev/stderr"
       err = 1
       inblock = 0
       skip = 0
@@ -72,23 +74,30 @@ out=$(LC_ALL=C awk '
     print ""
   }
   { prevfile = FILENAME }
-  /^\{\{#if [A-Z_]+\}\}$/ {
-    name = substr($0, 7, length($0) - 8)
+  /^\{\{#(if|unless) [A-Z_]+\}\}$/ {
+    sp = index($0, " ")
+    kind = substr($0, 4, sp - 4)
+    name = substr($0, sp + 1, length($0) - sp - 2)
     if (inblock) {
-      printf "Error: render-prompt.sh: conditional blocks cannot be nested ({{#if %s}} in %s).\n", name, FILENAME > "/dev/stderr"
+      printf "Error: render-prompt.sh: conditional blocks cannot be nested ({{#%s %s}} in %s).\n", kind, name, FILENAME > "/dev/stderr"
       err = 1
     } else if (!(name in iskey)) {
-      printf "Error: render-prompt.sh: the name in {{#if %s}} is not a value placeholder (%s).\n", name, FILENAME > "/dev/stderr"
+      printf "Error: render-prompt.sh: the name in {{#%s %s}} is not a value placeholder (%s).\n", kind, name, FILENAME > "/dev/stderr"
       err = 1
     }
     inblock = 1
+    blockkind = kind
     blockkey = name
-    skip = (ENVIRON[name] == "")
+    skip = (kind == "if") ? (ENVIRON[name] == "") : (ENVIRON[name] != "")
     next
   }
-  /^\{\{\/if\}\}$/ {
+  /^\{\{\/(if|unless)\}\}$/ {
+    kind = substr($0, 4, length($0) - 5)
     if (!inblock) {
-      printf "Error: render-prompt.sh: {{/if}} without a matching {{#if ...}} (%s).\n", FILENAME > "/dev/stderr"
+      printf "Error: render-prompt.sh: {{/%s}} without a matching {{#%s ...}} (%s).\n", kind, kind, FILENAME > "/dev/stderr"
+      err = 1
+    } else if (kind != blockkind) {
+      printf "Error: render-prompt.sh: {{/%s}} closes {{#%s %s}} (%s).\n", kind, blockkind, blockkey, FILENAME > "/dev/stderr"
       err = 1
     }
     inblock = 0
@@ -110,7 +119,7 @@ out=$(LC_ALL=C awk '
   { print fill($0) }
   END {
     if (inblock) {
-      printf "Error: render-prompt.sh: {{#if %s}} is not closed (%s).\n", blockkey, prevfile > "/dev/stderr"
+      printf "Error: render-prompt.sh: {{#%s %s}} is not closed (%s).\n", blockkind, blockkey, prevfile > "/dev/stderr"
       err = 1
     }
     exit err

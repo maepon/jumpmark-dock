@@ -36,7 +36,12 @@ checking your commits. Your part ends at preparing the branch, the commits, and 
 - `Closes #{{ISSUE}}` at the top
 - **Changes** — if usage changes, before / after command examples
 - **Why** — what the problem was
+{{#if TEST_CMD}}
 - **How each acceptance criterion is met** — `AC-n` / the test that verifies it
+{{/if}}
+{{#unless TEST_CMD}}
+- **How each acceptance criterion is met** — `AC-n` / the verification (command or `manual`) and its result
+{{/unless}}
 - **Points raised in review but not addressed** — honestly list the `non-blocking` items that were not addressed.
   If none, write "none". So the reviewer can judge
 - **Residual risks** — if there is a `<!-- AI-TAG: RESIDUAL_RISK -->` comment, summarize from it the `AC-n`
