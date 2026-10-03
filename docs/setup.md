@@ -3,9 +3,6 @@
 This guide covers installing the flow into a repository and running it day to day.
 For a short overview, see the [README](../README.md).
 
-> The scripts' terminal and Slack messages are currently in Japanese. Where this guide quotes a message,
-> the Japanese text is shown as it appears, followed by an English gloss.
-
 ---
 
 ## 1. What this is
@@ -63,10 +60,12 @@ Using bash 4/5 is fine; keeping 3.2 compatibility makes them run everywhere. CI 
 
 bash 3.2 has a pitfall: **variable name parsing is not multibyte-aware.** If a non-ASCII character directly follows `$x`,
 the first byte of that character is taken into the variable name, and together with `set -u` it fails with `unbound variable`.
+The scripts' messages are in English, but this matters as soon as someone writes a message in another language
+(the flow was first written with Japanese messages, which is where this was found).
 
 ```bash
-fail "ブランチ名が feature/ で始まっていません（$branch）"   # ✗ fails
-fail "ブランチ名が feature/ で始まっていません（${branch}）" # ✓
+fail "ブランチ名が不正です（$branch）"   # ✗ fails: the first byte of "（" is read as part of the name
+fail "ブランチ名が不正です（${branch}）" # ✓
 ```
 
 **This happens inside error messages, so things work normally and only break when something fails.**
@@ -180,7 +179,7 @@ make check-env               # environment variable checks. No cost
 make help                    # list of phases
 ```
 
-When `check: 基盤ファイルの静的検査は問題なしです。` ("static checks of the tooling files passed") appears, the foundation is in place.
+When `check: static checks of the tooling files passed.` appears, the foundation is in place.
 
 Settings live in two places:
 
@@ -197,7 +196,7 @@ The flow directory only contains what is the same for every project. What you ad
 |---|---|
 | Slack arrives | `./scripts/notify-slack.sh "http://example.test" "test"` |
 | Slack fires on abort | `./scripts/run-phase.sh bogus-phase 99999 "http://example.test"` |
-| The human gate works | `make impl ISSUE=n` on an Issue without an instruction document (stops with `指示書がありません`, "no instruction document") |
+| The human gate works | `make impl ISSUE=n` on an Issue without an instruction document (stops with `Issue #n has no instruction document`) |
 
 Running `run-phase.sh` directly appends a header line to `tmp/cost-issue<N>.txt`. Use an unused Issue number when trying it,
 and delete `tmp/cost-issue<N>.txt` afterwards.
@@ -456,6 +455,7 @@ Makefile                             Entry point (make help). Includes .ai-flow/
 .gitignore                           Ignore rules for the flow (tmp/, .env, bringing back the permission files)
 .env.example                         Template for personal settings (→ copy to .env)
 README.md / CHANGELOG.md             Overview / changes per tag
+LICENSE / CONTRIBUTING.md            MIT license / how changes to the flow are made
 
 scripts/
   run-phase.sh                       The flow's script: phase progression, checks, push, PR creation, notifications
@@ -562,7 +562,7 @@ There are three ways it ends.
 |---|---|---|---|
 | Ran to completion | 0 | Result notification | On to the next step |
 | `halt` (waiting for a human) | **0** | `:raising_hand:` | Not a failure. A human reads and decides |
-| `fail` (aborted) | 1 | `:x: *<phase> 中断*` ("aborted") | Unexpected. The message says how to resume |
+| `fail` (aborted) | 1 | `:x: *<phase> aborted*` | Unexpected. The message says how to resume |
 
 `halt` exits with 0 because **waiting for a human is not a failure.** Keep this in mind if you wire it into CI.
 
@@ -575,17 +575,17 @@ Common ones:
 
 | Message | Cause and remedy |
 |---|---|
-| `Issue #n に指示書がありません` (no instruction document) | Run `make spec` first; this is the human gate. **If it appears although there is an instruction document**, suspect a SIGPIPE race in `require_instruction` (`run-phase.sh`) caused by large `gh issue view --comments` output. Piping `gh` output straight into `grep -q` can make `grep -q` exit early when the output is large; `gh` gets SIGPIPE (exit code 141), and under `pipefail` the match is treated as a failure. Going through a temporary file avoids it (learned the hard way) |
-| `判定ファイルの内容が想定外です: '…'` (unexpected verdict file contents) | The agent wrote something other than the one-word verdict. Read the Issue comments and decide |
-| `… が基盤ファイルを書き換えました` (modified tooling files) | Restore with `git` and re-run. **This also happens if a human touched them during a phase** |
-| `… が整形チェックを通らないファイルを残しました` (left files that fail the formatting check) | Apply the formatter, then resume with `make review`. If it appears for formatted files, the formatter is missing or there is a syntax error (a failing check is treated as a stop too) |
-| `ブランチ名が feature/ で始まっていません` (branch name does not start with feature/) | The naming rule. The implementation remains, so recreate the branch |
-| `案件のコミットに基盤ファイルが混ざっています` (tooling files mixed into the project's commits) | Split them into separate commits. **It also happens when the project branch forked from an old point and tooling updates have since landed on `BASE_BRANCH`** (they show up reversed in the `origin/<BASE_BRANCH>..<branch>` diff). In that case rebase the project branch onto `origin/<BASE_BRANCH>` and run `make create-pr` |
-| `origin/… が見つかりません` (origin/… not found) | `BASE_BRANCH` in `.ai-flow/config.mk` does not match the default branch. After fixing it, resume with `make create-pr` without redoing the review (resuming from `review` duplicates the `review-judge` comments) |
-| `origin/… と差がありません` (no difference from origin/…) | The agent did not commit. Resume with `make review` |
-| `PR が見つかりません` (PR not found) | When running `code-review` / `pr-review` on their own, the current branch has no PR |
-| `MAX_ROUNDS 周しても…承認されませんでした` (not approved after MAX_ROUNDS rounds) | **This happens when the acceptance criteria are vague.** Revisit the instruction document |
-| `…の判定が人の判断を求めています（NEEDS_HUMAN）` (the verdict asks for a human decision) | Contradictory acceptance criteria or a wrong premise. Read the options in the latest verdict comment, fix the instruction document and post a new INSTRUCTION, then resume with `make impl` (planning stage) or `make review` (implementation stage). It is a halt, so the exit code is 0 |
+| `Issue #n has no instruction document` | Run `make spec` first; this is the human gate. **If it appears although there is an instruction document**, suspect a SIGPIPE race in `require_instruction` (`run-phase.sh`) caused by large `gh issue view --comments` output. Piping `gh` output straight into `grep -q` can make `grep -q` exit early when the output is large; `gh` gets SIGPIPE (exit code 141), and under `pipefail` the match is treated as a failure. Going through a temporary file avoids it (learned the hard way) |
+| `Unexpected verdict file contents: '…'` | The agent wrote something other than the one-word verdict. Read the Issue comments and decide |
+| `… modified tooling files` | Restore with `git` and re-run. **This also happens if a human touched them during a phase** |
+| `… left files that fail the formatting check` | Apply the formatter, then resume with `make review`. If it appears for formatted files, the formatter is missing or there is a syntax error (a failing check is treated as a stop too) |
+| `The branch name does not start with feature/` | The naming rule. The implementation remains, so recreate the branch |
+| `Tooling files are mixed into the project's commits` | Split them into separate commits. **It also happens when the project branch forked from an old point and tooling updates have since landed on `BASE_BRANCH`** (they show up reversed in the `origin/<BASE_BRANCH>..<branch>` diff). In that case rebase the project branch onto `origin/<BASE_BRANCH>` and run `make create-pr` |
+| `origin/… not found` | `BASE_BRANCH` in `.ai-flow/config.mk` does not match the default branch. After fixing it, resume with `make create-pr` without redoing the review (resuming from `review` duplicates the `review-judge` comments) |
+| `No difference from origin/…` | The agent did not commit. Resume with `make review` |
+| `PR not found` | When running `code-review` / `pr-review` on their own, the current branch has no PR |
+| `… was not approved after <MAX_ROUNDS> rounds` | **This happens when the acceptance criteria are vague.** Revisit the instruction document |
+| `The … verdict asks for a human decision (NEEDS_HUMAN)` | Contradictory acceptance criteria or a wrong premise. Read the options in the latest verdict comment, fix the instruction document and post a new INSTRUCTION, then resume with `make impl` (planning stage) or `make review` (implementation stage). It is a halt, so the exit code is 0 |
 
 ### Reading the cost
 
@@ -610,11 +610,9 @@ Reading the end shows what the agent tried and what was denied. **No cost.**
 ### Permission denial warnings
 
 ```
-警告: 許可されていないツール呼び出しが 3 件拒否されました。
-  拒否: Bash — cd pkg && npm test
+Warning: 3 disallowed tool call(s) were denied.
+  denied: Bash - cd pkg && npm test
 ```
-
-("Warning: 3 disallowed tool calls were denied.")
 
 **A denial is not necessarily a failure.** The agent may work around it and finish, so it does not stop;
 it is printed so a human notices. **Add only the ones that recur** to `allow` in `.ai-flow/permissions.json`

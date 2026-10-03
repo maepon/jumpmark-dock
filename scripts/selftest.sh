@@ -1,67 +1,69 @@
 #!/bin/bash
-# run-phase.sh の関数の回帰テスト。check-scripts.sh の最後から呼ぶ（make check で毎回走る）。
-# 使い方: ./scripts/selftest.sh（フローのディレクトリで実行）
+# Regression tests for run-phase.sh functions. Called at the end of check-scripts.sh (runs on every make check).
+# Usage: ./scripts/selftest.sh (run in the flow directory)
 #
-# ここで見るのは「動かして初めて分かる」種類の基盤のバグ。実際に踏んだものを1件ずつ固定している。
-#   - TOOLING_PATHS / unformatted_files がルート相対のパスをフローのディレクトリから見て取り違える（#10 で発覚）
-#   - フローのディレクトリ名・深さに依存する（名前を変えると基盤ファイルの改変が素通りする）
-#   - require_instruction / ensure_pr_url が gh の失敗を別の意味のエラーに化けさせる（#9、#10）
-#   - 判定役の NEEDS_HUMAN が周回を待たずに止まる
-#   - 案件設定（.ai-flow/config.mk）の整形コマンド・対象パターンの扱い、render-prompt.sh のプレースホルダの埋め方
+# What is checked here are tooling bugs of the kind that "only show when run". Each one actually happened and is pinned here.
+#   - TOOLING_PATHS / unformatted_files misreading root-relative paths from the flow directory
+#   - Dependence on the flow directory's name and depth (renaming it let modifications to tooling files through)
+#   - require_instruction / ensure_pr_url turning a gh failure into an error that means something else
+#   - The judges' NEEDS_HUMAN stopping without waiting for more rounds
+#   - Handling of the formatting commands and target patterns from the project settings (.ai-flow/config.mk),
+#     and how render-prompt.sh fills placeholders
 #
-# run-phase.sh は読み込むと本体が走るので、テスト対象の関数と TOOLING_PATHS の定義だけを sed で抜き出して
-# 読み込む。関数の書き方（name() { … } の } が行頭）が変わって抜き出せなくなったら、黙って通さずに落とす。
-# gh と npx は PATH の先頭に置いたスタブで差し替えるので、ネットワークにも課金にも触れない。
+# Sourcing run-phase.sh would run its body, so only the functions under test and the TOOLING_PATHS definition are extracted
+# with sed and sourced. If the way functions are written changes (name() { ... } with the } at the start of a line) and extraction
+# fails, the tests fail rather than passing silently.
+# gh and npx are replaced by stubs placed first in PATH, so neither the network nor any cost is involved.
 set -uo pipefail
 
-# 整形チェックの設定は jumpmark-dock と同じ形にしておく（npx はスタブ）。案件設定の値には依存させない
+# Use the same formatting settings as a Node.js project (npx is a stub). Do not depend on the project settings' values
 export FORMAT_FILE_CMD="npx prettier --check"
 export FORMAT_GLOBS="*.js *.css *.html"
 
 SRC="$(pwd)/scripts/run-phase.sh"
 FLOW_PATHS="$(pwd)/scripts/flow-paths.sh"
-[ -f "${SRC}" ] || { echo "NG: ${SRC} がありません。フローのディレクトリで実行してください。" >&2; exit 1; }
+[ -f "${SRC}" ] || { echo "NG: ${SRC} is missing. Run in the flow directory." >&2; exit 1; }
 
 status=0
 pass=0
 ng() { echo "NG: $1" >&2; status=1; }
 
-WORK=$(mktemp -d) || { echo "NG: 一時ディレクトリを作れませんでした。" >&2; exit 1; }
+WORK=$(mktemp -d) || { echo "NG: could not create a temporary directory." >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
 
-# --- テスト対象の抜き出し ---------------------------------------------------------------
+# --- Extract what is under test -------------------------------------------------------------
 LIB="${WORK}/lib.sh"
 grep '^TOOLING_PATHS=' "${SRC}" > "${LIB}"
-[ -s "${LIB}" ] || ng "run-phase.sh から TOOLING_PATHS の定義を抜き出せませんでした。"
+[ -s "${LIB}" ] || ng "Could not extract the TOOLING_PATHS definition from run-phase.sh."
 FUNCS="worktree_paths tooling_state format_target format_ok unformatted_files require_instruction ensure_pr_url handle_verdict"
 for fn in ${FUNCS}; do
   body=$(sed -n "/^${fn}() {/,/^}/p" "${SRC}")
   if [ -z "${body}" ]; then
-    ng "run-phase.sh から関数 ${fn} を抜き出せませんでした（定義の形が変わった可能性）。"
+    ng "Could not extract function ${fn} from run-phase.sh (its definition may have changed shape)."
     continue
   fi
   printf '%s\n' "${body}" >> "${LIB}"
 done
 [ "${status}" -eq 0 ] || exit 1
 
-# --- スタブ ------------------------------------------------------------------------------
+# --- Stubs -----------------------------------------------------------------------------------
 BIN="${WORK}/bin"
 mkdir -p "${BIN}"
 
-# gh: GH_MODE で振る舞いを切り替える
+# gh: behavior switched by GH_MODE
 cat > "${BIN}/gh" <<'EOF'
 #!/bin/sh
 case "${GH_MODE:-}" in
-  issue_tag)   printf 'author:\tx\n--\n<!-- AI-TAG: INSTRUCTION -->\n\n# 指示書\n' ;;
-  issue_notag) printf 'author:\tx\n--\n本文で <!-- AI-TAG: INSTRUCTION --> に言及しているだけ\n' ;;
+  issue_tag)   printf 'author:\tx\n--\n<!-- AI-TAG: INSTRUCTION -->\n\n# Instruction\n' ;;
+  issue_notag) printf 'author:\tx\n--\nonly mentions <!-- AI-TAG: INSTRUCTION --> in the body\n' ;;
   fail)        echo "HTTP 401: Bad credentials (https://api.github.com/graphql)" >&2; exit 1 ;;
   pr_nopr)     echo 'no pull requests found for branch "master"' >&2; exit 1 ;;
   pr_warn)     echo "A new release of gh is available" >&2; echo "https://github.com/o/r/pull/9" ;;
-  *)           echo "gh stub: GH_MODE が未設定" >&2; exit 99 ;;
+  *)           echo "gh stub: GH_MODE is not set" >&2; exit 99 ;;
 esac
 EOF
 
-# npx prettier --check <file>: ファイルが無いか、中身に UNFORMATTED を含めば失敗
+# npx prettier --check <file>: fails if the file is missing or contains UNFORMATTED
 cat > "${BIN}/npx" <<'EOF'
 #!/bin/sh
 f=""
@@ -72,8 +74,8 @@ exit 0
 EOF
 chmod +x "${BIN}/gh" "${BIN}/npx"
 
-# 1ケースを別プロセスで走らせ、出力（標準出力+標準エラー）と終了コードを返す。
-# fail / halt は run-phase.sh 本体の定義ではなく、判別できる印を出して終わるスタブにする。
+# Runs one case in a separate process and returns its output (stdout+stderr) and exit code.
+# fail / halt are not run-phase.sh's definitions but stubs that print a recognizable marker and end.
 run_case() {
   local dir="$1" body="$2"
   ( cd "${dir}" && PATH="${BIN}:${PATH}" /bin/bash -c "
@@ -87,32 +89,32 @@ run_case() {
     " 2>&1 )
 }
 
-# 期待: 出力に needle を含み、終了コードが code
+# Expect: the output contains needle and the exit code is code
 expect() {
   local name="$1" code="$2" needle="$3" out="$4" got="$5"
   if [ "${got}" != "${code}" ]; then
-    ng "${name}: 終了コード ${got}（期待 ${code}）。出力: ${out}"
+    ng "${name}: exit code ${got} (expected ${code}). Output: ${out}"
   elif [ -n "${needle}" ] && ! printf '%s' "${out}" | grep -qF -- "${needle}"; then
-    ng "${name}: 出力に「${needle}」がありません。出力: ${out}"
+    ng "${name}: \"${needle}\" not in the output. Output: ${out}"
   else
     pass=$((pass + 1))
   fi
 }
 
-# --- 使い捨てリポジトリ（本番と同じくフローのディレクトリから実行する） ---
-# フローのディレクトリ名に依存したバグ（TOOLING_PATHS の直書きなど）を見逃さないように、名前と深さを変えて2回回す。
-#   ai-flow        このリポジトリと同じ
-#   tools/ai.flow  深さ2で、名前に正規表現の特殊文字（.）を含む。エスケープし忘れると tools/aiXflow/ も基盤扱いになる
+# --- Throwaway repositories (run from the flow directory, as in real use) ---
+# To catch bugs that depend on the flow directory's name (such as a hard-coded TOOLING_PATHS), run twice with different names and depths.
+#   ai-flow        the common layout
+#   tools/ai.flow  depth 2, with a regex metacharacter (.) in the name. Forgetting to escape it would treat tools/aiXflow/ as tooling too
 repo_suite() {
   local F="$1" REPO="${WORK}/repo-$2" decoy=""
   mkdir -p "${REPO}/${F}/scripts" "${REPO}/${F}/docs" "${REPO}/docs" "${REPO}/test" "${REPO}/web" "${REPO}/.ai-flow"
   git -C "${REPO}" init -q
   echo 'x' > "${REPO}/${F}/scripts/a.sh"
   echo 'x' > "${REPO}/${F}/docs/g.md"
-  printf 'tmp/\n.env\n' > "${REPO}/${F}/.gitignore"          # 実物のフローの .gitignore と同じく tmp/ と .env を無視する
+  printf 'tmp/\n.env\n' > "${REPO}/${F}/.gitignore"          # ignores tmp/ and .env like the real flow's .gitignore
   echo 'x' > "${REPO}/${F}/README.md"
   echo 'x' > "${REPO}/docs/pp.md"
-  echo 'x' > "${REPO}/docs/日本語 ファイル.md"
+  echo 'x' > "${REPO}/docs/日本語 ファイル.md"                 # non-ASCII and a space on purpose: git quotes such paths without -z
   echo 'x' > "${REPO}/README.md"
   echo 'x' > "${REPO}/.gitignore"
   echo 'x' > "${REPO}/.ai-flow/permissions.json"
@@ -121,40 +123,40 @@ repo_suite() {
   git -C "${REPO}" add -A
   git -C "${REPO}" -c user.name=t -c user.email=t@example.com commit -q -m init
 
-  # 案件のファイルと基盤ファイルを混ぜて変更する
+  # Change project files and tooling files together
   echo 'y' >> "${REPO}/docs/pp.md"
   echo 'y' >> "${REPO}/docs/日本語 ファイル.md"
   echo 'y' >> "${REPO}/README.md"
   echo 'y' >> "${REPO}/${F}/scripts/a.sh"
-  echo 'y' >> "${REPO}/${F}/.gitignore"                     # フローの .gitignore も基盤
-  echo 'y' >> "${REPO}/.gitignore"                          # ルートの .gitignore も保護を続ける
-  echo 'y' >> "${REPO}/.ai-flow/permissions.json"           # 案件設定（権限の追加分）も基盤
+  echo 'y' >> "${REPO}/${F}/.gitignore"                     # the flow's .gitignore is tooling too
+  echo 'y' >> "${REPO}/.gitignore"                          # the root .gitignore stays protected
+  echo 'y' >> "${REPO}/.ai-flow/permissions.json"           # project settings (extra permissions) are tooling too
   echo 'new' > "${REPO}/${F}/docs/new.md"
-  echo 'y' >> "${REPO}/${F}/README.md"                      # フローのディレクトリの中は丸ごと基盤
+  echo 'y' >> "${REPO}/${F}/README.md"                      # everything in the flow directory is tooling
   mkdir -p "${REPO}/${F}/examples/project"
   echo 'new' > "${REPO}/${F}/examples/project/x.md"
-  mkdir -p "${REPO}/${F}/tmp" && echo 'w' > "${REPO}/${F}/tmp/work.md"   # 作業ファイルはフローの .gitignore で無視される
-  git -C "${REPO}" mv "${F}/docs/g.md" docs/g.md            # 基盤から出す移動も基盤の改変
-  echo 'UNFORMATTED' >> "${REPO}/test/x.js"                # 既存ファイルを未整形に
-  echo 'UNFORMATTED' > "${REPO}/web/a b.js"                # スペースを含む新規の未整形ファイル
-  echo 'const ok = 1;' > "${REPO}/web/ok.js"               # 整形済みの新規ファイル
-  echo 'UNFORMATTED' > "${REPO}/${F}/docs/note.md"         # 整形対象外の拡張子
-  [ -z "${decoy}" ] || echo 'y' >> "${REPO}/${decoy}/scripts/a.sh"   # 名前が似ているだけの案件のファイル
+  mkdir -p "${REPO}/${F}/tmp" && echo 'w' > "${REPO}/${F}/tmp/work.md"   # scratch files are ignored by the flow's .gitignore
+  git -C "${REPO}" mv "${F}/docs/g.md" docs/g.md            # moving a file out of the tooling is a tooling change too
+  echo 'UNFORMATTED' >> "${REPO}/test/x.js"                # make an existing file unformatted
+  echo 'UNFORMATTED' > "${REPO}/web/a b.js"                # a new unformatted file with a space in its name
+  echo 'const ok = 1;' > "${REPO}/web/ok.js"               # a new formatted file
+  echo 'UNFORMATTED' > "${REPO}/${F}/docs/note.md"         # an extension not subject to the check
+  [ -z "${decoy}" ] || echo 'y' >> "${REPO}/${decoy}/scripts/a.sh"   # a project file whose name only looks similar
 
   # --- flow-paths.sh ---
   local depth_rel
   depth_rel=$(printf '%s/' "${F}" | sed -e 's,[^/][^/]*/,../,g')
   out=$(run_case "${REPO}/${F}" 'printf "%s|%s|%s|%s" "${FLOW_PREFIX}" "${FLOW_DIR}" "${ROOT_REL}" "${flow_paths_error}"'); got=$?
-  expect "flow-paths（${F}）" 0 "${F}/|${F}|${depth_rel}|" "${out}" "${got}"
+  expect "flow-paths (${F})" 0 "${F}/|${F}|${depth_rel}|" "${out}" "${got}"
 
   # --- tooling_state ---
   out=$(run_case "${REPO}/${F}" 'tooling_state'); got=$?
   expected=$(printf '%s\n' .ai-flow/permissions.json .gitignore "${F}/.gitignore" "${F}/README.md" "${F}/docs/g.md" "${F}/docs/new.md" "${F}/docs/note.md" "${F}/examples/project/x.md" "${F}/scripts/a.sh" | LC_ALL=C sort)
   if [ "${got}" -ne 0 ] || [ "$(printf '%s\n' "${out}" | LC_ALL=C sort)" != "${expected}" ]; then
-    ng "tooling_state: 基盤ファイルの判定が期待と違います（${F}/ から実行）。
-期待:
+    ng "tooling_state: the tooling files detected differ from what was expected (run from ${F}/).
+Expected:
 ${expected}
-実際:
+Actual:
 ${out}"
   else
     pass=$((pass + 1))
@@ -164,26 +166,26 @@ ${out}"
   out=$(run_case "${REPO}/${F}" 'unformatted_files'); got=$?
   expected=$(printf '%s\n' test/x.js 'web/a b.js')
   if [ "${got}" -ne 0 ] || [ "$(printf '%s' "${out}" | sort)" != "${expected}" ]; then
-    ng "unformatted_files: 未整形の検出が期待と違います（${F}/ から実行。ルート相対のパスを見られているか）。
-期待:
+    ng "unformatted_files: unformatted files detected differ from what was expected (run from ${F}/; are root-relative paths handled?).
+Expected:
 ${expected}
-実際:
+Actual:
 ${out}"
   else
     pass=$((pass + 1))
   fi
 
-  # --- 整形チェックの設定 ---
+  # --- Formatting settings ---
   out=$(FORMAT_FILE_CMD='' run_case "${REPO}/${F}" 'unformatted_files; echo END'); got=$?
-  expect "unformatted_files（FORMAT_FILE_CMD が空なら整形チェックをしない）" 0 "END" "${out}" "${got}"
-  [ "${out}" = "END" ] || ng "unformatted_files（FORMAT_FILE_CMD が空）: 何も出ないはずが「${out}」が出ました。"
+  expect "unformatted_files (no formatting check when FORMAT_FILE_CMD is empty)" 0 "END" "${out}" "${got}"
+  [ "${out}" = "END" ] || ng "unformatted_files (FORMAT_FILE_CMD empty): expected no output but got \"${out}\"."
   out=$(FORMAT_FILE_CMD='false' run_case "${REPO}/${F}" 'unformatted_files'); got=$?
   expected=$(printf '%s\n' test/x.js 'web/a b.js' web/ok.js)
   if [ "${got}" -ne 0 ] || [ "$(printf '%s' "${out}" | sort)" != "${expected}" ]; then
-    ng "unformatted_files（チェック自体が失敗するなら未整形扱いで止める）: 期待と違います。
-期待:
+    ng "unformatted_files (if the check itself fails, treat files as unformatted and stop): differs from what was expected.
+Expected:
 ${expected}
-実際:
+Actual:
 ${out}"
   else
     pass=$((pass + 1))
@@ -191,117 +193,117 @@ ${out}"
 }
 repo_suite ai-flow 1
 repo_suite tools/ai.flow 2
-REPO="${WORK}/repo-1"   # 以降の ensure_pr_url は git リポジトリの中で走らせる
+REPO="${WORK}/repo-1"   # the ensure_pr_url cases below run inside a git repository
 
-# --- flow-paths.sh（ルートに置かれたら止める） ---
+# --- flow-paths.sh (stops when placed at the root) ---
 mkdir -p "${WORK}/rootflow"
 git -C "${WORK}/rootflow" init -q
 out=$(run_case "${WORK}/rootflow" 'echo "ERR=${flow_paths_error}"'); got=$?
-expect "flow-paths（ルートに置かれたら理由を返す）" 0 "ERR=フローがリポジトリのルートに置かれています" "${out}" "${got}"
-# カレントに *.js に当たるファイルがあっても、パターンがそのファイル名に化けない
+expect "flow-paths (returns the reason when placed at the root)" 0 "ERR=The flow is at the repository root" "${out}" "${got}"
+# Even with a file matching *.js in the current directory, the pattern does not turn into that file name
 echo 'x' > "${WORK}/here.js"
 out=$(run_case "${WORK}" 'format_target web/y.js && echo TARGET'); got=$?
-expect "format_target（パターンがカレントのファイル名に展開されない）" 0 "TARGET" "${out}" "${got}"
+expect "format_target (the pattern is not expanded to file names in the current directory)" 0 "TARGET" "${out}" "${got}"
 out=$(run_case "${WORK}" 'format_target docs/y.md || echo NOT_TARGET'); got=$?
-expect "format_target（対象外の拡張子）" 0 "NOT_TARGET" "${out}" "${got}"
+expect "format_target (extension not subject to the check)" 0 "NOT_TARGET" "${out}" "${got}"
 out=$(FORMAT_GLOBS='' run_case "${WORK}" 'format_target web/y.js || echo NOT_TARGET'); got=$?
-expect "format_target（FORMAT_GLOBS が空なら対象なし）" 0 "NOT_TARGET" "${out}" "${got}"
+expect "format_target (nothing is a target when FORMAT_GLOBS is empty)" 0 "NOT_TARGET" "${out}" "${got}"
 
 # --- render-prompt.sh ---
 RENDER="$(pwd)/scripts/render-prompt.sh"
 PROJ="${WORK}/proj"
 mkdir -p "${PROJ}"
-printf '## 前提\nテストは `{{TEST_CMD}}`\n' > "${PROJ}/context.md"
-printf '%s\n' '- 項目1' > "${PROJ}/risk-catalog.md"
-printf '%s\n' '使い方' > "${PROJ}/user-flows.md"
-printf '%s\n' '# P {{ISSUE}}' 'ここに {{RISK_CATALOG}} は埋めない' '{{RISK_CATALOG}}' > "${WORK}/p.md"
+printf '## Context\nTests: `{{TEST_CMD}}`\n' > "${PROJ}/context.md"
+printf '%s\n' '- item 1' > "${PROJ}/risk-catalog.md"
+printf '%s\n' 'usage' > "${PROJ}/user-flows.md"
+printf '%s\n' '# P {{ISSUE}}' 'a {{RISK_CATALOG}} in the middle of a line is not replaced' '{{RISK_CATALOG}}' > "${WORK}/p.md"
 printf '%s\n' '## R' '{{PROJECT_CONTEXT}}' > "${WORK}/r.md"
 render() {
   ( cd "${WORK}" && env AI_FLOW_PROJECT_DIR="${PROJ}" ISSUE=7 TEST_CMD='a && b | c/d \e' "$@" 2>&1 )
 }
-# 行の途中の {{RISK_CATALOG}} はファイルに置き換えない（そのまま残るので埋め残しで落ちる）
+# A {{RISK_CATALOG}} in the middle of a line is not replaced with the file (it remains, so it fails as unfilled)
 out=$(render "${RENDER}" p.md r.md); got=$?
-expect "render-prompt（埋め残しは止める）" 1 "埋まらなかったプレースホルダがあります: {{RISK_CATALOG}}" "${out}" "${got}"
+expect "render-prompt (stops on unfilled placeholders)" 1 "unfilled placeholders: {{RISK_CATALOG}}" "${out}" "${got}"
 printf '%s\n' '# P {{ISSUE}}' '{{TEST_CMD}}' '{{RISK_CATALOG}}' > "${WORK}/p.md"
 out=$(render "${RENDER}" p.md r.md); got=$?
-expected=$(printf '%s\n' '# P 7' 'a && b | c/d \e' '- 項目1' '' '## R' '## 前提' 'テストは `a && b | c/d \e`')
+expected=$(printf '%s\n' '# P 7' 'a && b | c/d \e' '- item 1' '' '## R' '## Context' 'Tests: `a && b | c/d \e`')
 if [ "${got}" -ne 0 ] || [ "${out}" != "${expected}" ]; then
-  ng "render-prompt（値の & | / \\ とファイルの埋め込み、空行を挟んだ連結）: 期待と違います。
-期待:
+  ng "render-prompt (& | / \\ in values, file includes, joining with a blank line): differs from what was expected.
+Expected:
 ${expected}
-実際:
+Actual:
 ${out}"
 else
   pass=$((pass + 1))
 fi
 out=$(render env TEST_CMD= "${RENDER}" p.md r.md); got=$?
-expect "render-prompt（空の値は止める）" 1 "TEST_CMD が空です" "${out}" "${got}"
+expect "render-prompt (stops on an empty value)" 1 "TEST_CMD is empty" "${out}" "${got}"
 mv "${PROJ}/risk-catalog.md" "${PROJ}/risk-catalog.md.bak"
 out=$(render "${RENDER}" p.md r.md); got=$?
-expect "render-prompt（案件設定のファイルが無ければ止める）" 1 "risk-catalog.md が読めないか空です" "${out}" "${got}"
+expect "render-prompt (stops when a project settings file is missing)" 1 "risk-catalog.md is unreadable or empty" "${out}" "${got}"
 
-# --- render-prompt.sh の条件付きの区間（{{#if 名前}} 〜 {{/if}}） ---
-# 値が空なら区間ごと消し（中のプレースホルダは空でも止めない）、空でなければ印の行だけを消す
+# --- Conditional blocks in render-prompt.sh ({{#if NAME}} ... {{/if}}) ---
+# An empty value removes the whole block (an empty placeholder inside does not stop it); otherwise only the marker lines go
 printf '%s\n' 'A' '{{#if FORMAT_CHECK_CMD}}' 'fmt `{{FORMAT_CHECK_CMD}}`' '{{/if}}' 'B {{ISSUE}}' > "${WORK}/c.md"
 out=$(render env FORMAT_CHECK_CMD= "${RENDER}" c.md); got=$?
 if [ "${got}" -ne 0 ] || [ "${out}" != "$(printf '%s\n' A 'B 7')" ]; then
-  ng "render-prompt（値が空なら区間ごと消す）: 期待と違います（終了コード ${got}）。
-実際:
+  ng "render-prompt (an empty value removes the whole block): differs from what was expected (exit code ${got}).
+Actual:
 ${out}"
 else
   pass=$((pass + 1))
 fi
 out=$(render env FORMAT_CHECK_CMD='x --check' "${RENDER}" c.md); got=$?
 if [ "${got}" -ne 0 ] || [ "${out}" != "$(printf '%s\n' A 'fmt `x --check`' 'B 7')" ]; then
-  ng "render-prompt（値があれば印の行だけを消す）: 期待と違います（終了コード ${got}）。
-実際:
+  ng "render-prompt (with a value, only the marker lines are removed): differs from what was expected (exit code ${got}).
+Actual:
 ${out}"
 else
   pass=$((pass + 1))
 fi
 printf '%s\n' '{{#if FORMAT_CHECK_CMD}}' 'x' > "${WORK}/c1.md"
 out=$(render env FORMAT_CHECK_CMD=x "${RENDER}" c1.md); got=$?
-expect "render-prompt（閉じられていない区間は止める）" 1 "{{#if FORMAT_CHECK_CMD}} が閉じられていません" "${out}" "${got}"
+expect "render-prompt (stops on an unclosed block)" 1 "{{#if FORMAT_CHECK_CMD}} is not closed" "${out}" "${got}"
 printf '%s\n' '{{#if FORMAT_CHECK_CMD}}' '{{#if TEST_CMD}}' 'x' '{{/if}}' '{{/if}}' > "${WORK}/c2.md"
 out=$(render env FORMAT_CHECK_CMD=x "${RENDER}" c2.md); got=$?
-expect "render-prompt（入れ子は止める）" 1 "入れ子にできません" "${out}" "${got}"
+expect "render-prompt (stops on nesting)" 1 "cannot be nested" "${out}" "${got}"
 printf '%s\n' '{{#if NO_SUCH_KEY}}' 'x' '{{/if}}' > "${WORK}/c3.md"
 out=$(render "${RENDER}" c3.md); got=$?
-expect "render-prompt（一覧に無い名前は止める）" 1 "値のプレースホルダの一覧にありません" "${out}" "${got}"
+expect "render-prompt (stops on a name that is not a value placeholder)" 1 "is not a value placeholder" "${out}" "${got}"
 printf '%s\n' 'x' '{{/if}}' > "${WORK}/c4.md"
 out=$(render "${RENDER}" c4.md); got=$?
-expect "render-prompt（対応の無い {{/if}} は止める）" 1 "対応する {{#if …}} の無い {{/if}}" "${out}" "${got}"
+expect "render-prompt (stops on {{/if}} without a match)" 1 "{{/if}} without a matching {{#if ...}}" "${out}" "${got}"
 
 # --- require_instruction ---
 out=$(GH_MODE=issue_tag run_case "${WORK}" 'require_instruction && echo PASSED'); got=$?
-expect "require_instruction（タグあり）" 0 "PASSED" "${out}" "${got}"
+expect "require_instruction (tag present)" 0 "PASSED" "${out}" "${got}"
 out=$(GH_MODE=issue_notag run_case "${WORK}" 'require_instruction && echo PASSED'); got=$?
-expect "require_instruction（行頭のタグなし）" 1 "FAIL:Issue #9 に指示書がありません" "${out}" "${got}"
+expect "require_instruction (no tag at the start of a line)" 1 "FAIL:Issue #9 has no instruction document" "${out}" "${got}"
 out=$(GH_MODE=fail run_case "${WORK}" 'require_instruction && echo PASSED'); got=$?
-expect "require_instruction（gh 失敗）" 1 "HTTP 401: Bad credentials" "${out}" "${got}"
-expect "require_instruction（gh 失敗は指示書なしと区別）" 1 "を gh で取得できませんでした" "${out}" "${got}"
+expect "require_instruction (gh fails)" 1 "HTTP 401: Bad credentials" "${out}" "${got}"
+expect "require_instruction (a gh failure is told apart from no instruction document)" 1 "Could not fetch Issue #9 with gh" "${out}" "${got}"
 
 # --- ensure_pr_url ---
 out=$(PR_URL=https://example.com/pull/1 GH_MODE=fail run_case "${REPO}" 'ensure_pr_url && echo "URL=${PR_URL}"'); got=$?
-expect "ensure_pr_url（指定済みなら gh を呼ばない）" 0 "URL=https://example.com/pull/1" "${out}" "${got}"
+expect "ensure_pr_url (does not call gh when already set)" 0 "URL=https://example.com/pull/1" "${out}" "${got}"
 out=$(GH_MODE=pr_nopr run_case "${REPO}" 'ensure_pr_url && echo "URL=${PR_URL}"'); got=$?
-expect "ensure_pr_url（gh 失敗）" 1 'no pull requests found for branch "master"' "${out}" "${got}"
-expect "ensure_pr_url（ブランチ名を出す）" 1 "現在のブランチ:" "${out}" "${got}"
+expect "ensure_pr_url (gh fails)" 1 'no pull requests found for branch "master"' "${out}" "${got}"
+expect "ensure_pr_url (shows the branch name)" 1 "current branch:" "${out}" "${got}"
 out=$(GH_MODE=pr_warn run_case "${REPO}" 'ensure_pr_url && echo "URL=[${PR_URL}]"'); got=$?
-expect "ensure_pr_url（成功時の警告が URL に混ざらない）" 0 "URL=[https://github.com/o/r/pull/9]" "${out}" "${got}"
+expect "ensure_pr_url (warnings on success do not get into the URL)" 0 "URL=[https://github.com/o/r/pull/9]" "${out}" "${got}"
 
 # --- handle_verdict ---
-out=$(run_case "${WORK}" 'handle_verdict APPROVED 実装 "make review" && echo BREAK'); got=$?
-expect "handle_verdict（APPROVED で抜ける）" 0 "BREAK" "${out}" "${got}"
-out=$(run_case "${WORK}" 'handle_verdict CHANGES_REQUESTED 実装 "make review" || echo NEXT_ROUND'); got=$?
-expect "handle_verdict（CHANGES_REQUESTED で次の周）" 0 "NEXT_ROUND" "${out}" "${got}"
-out=$(run_case "${WORK}" 'handle_verdict NEEDS_HUMAN 実装 "make review"; echo NOT_REACHED'); got=$?
-expect "handle_verdict（NEEDS_HUMAN で即 halt）" 0 "HALT:実装の判定が人の判断を求めています" "${out}" "${got}"
-if printf '%s' "${out}" | grep -qF NOT_REACHED; then ng "handle_verdict（NEEDS_HUMAN）: halt の後も処理が続きました。"; fi
-out=$(run_case "${WORK}" 'handle_verdict "" 実装 "make review"; echo NOT_REACHED'); got=$?
-expect "handle_verdict（空の判定は fail）" 1 "FAIL:判定ファイルの内容が想定外です" "${out}" "${got}"
+out=$(run_case "${WORK}" 'handle_verdict APPROVED implementation "make review" && echo BREAK'); got=$?
+expect "handle_verdict (APPROVED leaves the loop)" 0 "BREAK" "${out}" "${got}"
+out=$(run_case "${WORK}" 'handle_verdict CHANGES_REQUESTED implementation "make review" || echo NEXT_ROUND'); got=$?
+expect "handle_verdict (CHANGES_REQUESTED goes to the next round)" 0 "NEXT_ROUND" "${out}" "${got}"
+out=$(run_case "${WORK}" 'handle_verdict NEEDS_HUMAN implementation "make review"; echo NOT_REACHED'); got=$?
+expect "handle_verdict (NEEDS_HUMAN halts immediately)" 0 "HALT:The implementation verdict asks for a human decision" "${out}" "${got}"
+if printf '%s' "${out}" | grep -qF NOT_REACHED; then ng "handle_verdict (NEEDS_HUMAN): processing continued after halt."; fi
+out=$(run_case "${WORK}" 'handle_verdict "" implementation "make review"; echo NOT_REACHED'); got=$?
+expect "handle_verdict (an empty verdict fails)" 1 "FAIL:Unexpected verdict file contents" "${out}" "${got}"
 
 if [ "${status}" -eq 0 ]; then
-  echo "selftest: run-phase.sh / render-prompt.sh の回帰テスト ${pass} 件すべて通過しました。"
+  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh passed."
 fi
 exit "${status}"

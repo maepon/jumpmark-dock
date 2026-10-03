@@ -10,10 +10,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # BSD（macOS 同梱）と GNU のコマンドの違い、bash 3.2 と 5.x の違いで落ちないかを見る
+        # Catch differences between BSD (bundled with macOS) and GNU commands, and between bash 3.2 and 5.x
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: make check（取り込み先と同じ形に並べて実行）
+      - name: make check (laid out like a host repository)
         run: ./scripts/ci-check.sh

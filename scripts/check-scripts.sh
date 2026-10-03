@@ -1,57 +1,57 @@
 #!/bin/bash
-# 基盤ファイルの静的検査。make の各フェーズが走る前に通す。使い方: ./scripts/check-scripts.sh
+# Static checks of the tooling files. Run before every make phase. Usage: ./scripts/check-scripts.sh
 #
-# フローの fail / halt はフェーズが失敗したときにしか通らない経路なので、書いたまま一度も
-# 実行されずに残る。移植元の Go のリポジトリで実際に踏んだのがそれで、原因は「エラー文の中の変数展開」だった。
-# 動かして初めて分かる関数の挙動は、6番（scripts/selftest.sh）で回帰テストしている。
-# 静かに壊れて、壊れていることが失敗したときにしか分からない種類のバグだけをここで見る。
+# The flow's fail / halt paths only run when a phase fails, so they can sit there written but never executed.
+# That is exactly what happened in the Go repository this flow was first written for: the cause was "variable expansion
+# inside an error message". Function behavior that only shows when run is regression-tested in check 6 (scripts/selftest.sh).
+# Only the kind of bug that breaks silently, and only shows up when something fails, is checked here.
 #
-# 検査は使うたびに走るので、外部コマンドは macOS 同梱のものだけで済ませる。
-# システムの grep は BSD grep で -P が無いため、バイト単位の判定は awk に寄せている。
+# The checks run on every use, so they only use commands that ship with macOS.
+# The system grep is BSD grep without -P, so byte-level checks are done with awk.
 set -uo pipefail
 
 status=0
 ng() { echo "NG: $1" >&2; status=1; }
 
-# フローのディレクトリの場所。ルートに置かれていたら、以降の検査は意味を持たないのでここで止める
+# Where the flow directory is. If it is at the root, the remaining checks are meaningless, so stop here
 . ./scripts/flow-paths.sh
 [ -z "${flow_paths_error}" ] || { echo "NG: ${flow_paths_error}" >&2; exit 1; }
 
-# 1. シェルの文法。実行しないと分からない範囲は見られないが、タイプミスはここで落ちる
+# 1. Shell syntax. It cannot see what only shows at run time, but typos fail here
 for f in scripts/*.sh; do
-  bash -n "${f}" 2>/dev/null || ng "${f}: bash -n が通りません。"
+  bash -n "${f}" 2>/dev/null || ng "${f}: bash -n fails."
 done
 
-# 2. 変数展開の直後に非 ASCII 文字が来る形（${x} と書かねばならない箇所）。
-#    macOS 同梱の bash 3.2 は変数名のパースがマルチバイト非対応で、後続文字の先頭バイトを
-#    変数名に取り込む。set -u と組み合わさると unbound variable で落ちる。
-#    全角文字に限らず非 ASCII 全般（é でも落ちる）なので、バイト値で見る。
-#    $1 のような位置パラメータは1桁で切れるので対象外。
+# 2. A non-ASCII character right after a variable expansion (places that must be written ${x}).
+#    The bash 3.2 that ships with macOS is not multibyte-aware when parsing variable names and takes the first byte
+#    of the following character into the name. Together with set -u it fails with unbound variable.
+#    It is not only full-width characters but any non-ASCII (é breaks too), so bytes are checked.
+#    Positional parameters such as $1 end after one digit and are excluded.
 offenders=$(LC_ALL=C awk '
   /\$[A-Za-z_][A-Za-z_0-9]*[\200-\377]/ { printf "  %s:%d: %s\n", FILENAME, FNR, $0 }
 ' scripts/*.sh Makefile)
 if [ -n "${offenders}" ]; then
-  ng "変数展開の直後に非 ASCII 文字が来ています。bash 3.2 が変数名を取り違えるので \${x} と書いてください:
+  ng "A non-ASCII character follows a variable expansion. bash 3.2 misreads the variable name; write \${x}:
 ${offenders}"
 fi
 
-# 3. 権限プロファイル。JSON が壊れているとフェーズは起動してから落ちる（課金が発生する）
-#    実際に claude に渡るのは、base に案件ごとの追加分（.ai-flow/permissions.json）を足したもの。
-#    追加分で通してはいけないコマンドを足しても落ちるように、マージした後を見る。
-MERGED=$(mktemp) || { echo "NG: 一時ファイルを作れませんでした。" >&2; exit 1; }
+# 3. Permission profiles. Broken JSON would only fail after a phase starts (after cost is incurred).
+#    What actually reaches claude is the base plus the project's additions (.ai-flow/permissions.json).
+#    Check after merging, so that adding a forbidden command through the additions fails too.
+MERGED=$(mktemp) || { echo "NG: could not create a temporary file." >&2; exit 1; }
 trap 'rm -f "${MERGED}"' EXIT
 for base in .claude/*-permissions.json; do
-  jq -e . "${base}" >/dev/null 2>&1 || { ng "${base}: JSON として読めません。"; continue; }
+  jq -e . "${base}" >/dev/null 2>&1 || { ng "${base}: not valid JSON."; continue; }
   ./scripts/merge-permissions.sh "${base}" > "${MERGED}" 2>/dev/null \
-    || { ng "${base}: 案件ごとの追加分とマージできません: $(./scripts/merge-permissions.sh "${base}" 2>&1 >/dev/null)"; continue; }
-  p="${base}（.ai-flow/permissions.json とマージした後）"
+    || { ng "${base}: cannot merge the project's additions: $(./scripts/merge-permissions.sh "${base}" 2>&1 >/dev/null)"; continue; }
+  p="${base} (after merging .ai-flow/permissions.json)"
 
-  # どのプロファイルでも塞がっていなければならない操作。deny は前置一致でベースコマンドの
-  # allow にも勝つ。allow していないコマンドはそもそも拒否されるので、これは二重の防御。
+  # Operations that must be blocked in every profile. A deny is a prefix match and beats an allow of the base command.
+  # Commands that are not allowed are denied anyway, so this is a second line of defense.
   deny=$(jq -r '.permissions.deny[]' "${MERGED}")
   while IFS= read -r rule; do
     printf '%s\n' "${deny}" | LC_ALL=C grep -qxF "${rule}" \
-      || ng "${p}: deny に ${rule} がありません。"
+      || ng "${p}: ${rule} is missing from deny."
   done <<'EOF'
 Read(./.env)
 Bash(git push)
@@ -62,87 +62,86 @@ Bash(git rebase:*)
 Bash(git reset --hard:*)
 EOF
 
-  # 通してはいけないコマンドが allow に混ざっていないか。
-  # ファイルを読める汎用コマンド（grep / cat / sed / awk / head / cp）は Read(./.env) の
-  # deny を素通りできる。git -C / go -C は前置一致をずらして git push の deny を迂回できる。
-  # シェルとインタプリタは、裸か一行実行（-c / -e / -p）か -m の後ろが空の形だと1コマンドで何でも走る。
-  # python -m pytest:* のようにモジュール名まで絞った形は通す。
+  # Commands that must never be allowed.
+  # General-purpose commands that can read files (grep / cat / sed / awk / head / cp) get around the Read(./.env) deny.
+  # git -C / go -C shift the prefix match and get around the git push deny.
+  # Shells and interpreters run anything in one command when bare, as one-liners (-c / -e / -p), or with nothing after -m.
+  # Forms narrowed down to the module name, such as python -m pytest:*, pass.
   bad=$(jq -r '.permissions.allow[]' "${MERGED}" \
     | LC_ALL=C grep -E 'Bash\((grep|cat|sed|awk|head|tail|cp|mv|chmod|curl|ln|tee|xargs|find|git -C|go -C|bash|sh|zsh|env|eval|exec)[ :)]|Bash\((python3?|node|ruby|perl|deno|bun|npx)(:|\)| -[cepE][ :)]| -m[:)])|Bash\(git:|Bash\(gh:|Bash\(\*|Bash\(:' || true)
   if [ -n "${bad}" ]; then
-    ng "${p}: allow に通してはいけないコマンドがあります:
+    ng "${p}: allow contains commands that must never be allowed:
 ${bad}"
   fi
 done
 
-# 4. 人間ゲートの実効化に使っているタグが、プロンプト側の指示と一致しているか。
-#    run-phase.sh の require_instruction はこの文字列を行頭で探して spec の後の
-#    人間ゲートを担保している。プロンプトを書き換えてタグ名がずれると、ゲートは
-#    「常に失敗する」のではなく「常に通らない」側に倒れる（気づけるが止まる）。
-#    逆に require_instruction 側だけを緩めると、ゲートが静かに無効になる。
+# 4. The tag that enforces the human gate matches what the prompt tells the agent to write.
+#    require_instruction in run-phase.sh looks for this string at the start of a line to enforce the human gate after spec.
+#    If a prompt edit makes the tag names drift apart, the gate falls on the "never passes" side rather than
+#    "always fails" (noticeable, but it stops). Conversely, loosening only require_instruction silently disables the gate.
 LC_ALL=C grep -qF '<!-- AI-TAG: INSTRUCTION -->' prompts/spec.md \
-  || ng "prompts/spec.md が <!-- AI-TAG: INSTRUCTION --> を書かせていません。run-phase.sh の require_instruction が探すタグです。"
+  || ng "prompts/spec.md does not make the agent write <!-- AI-TAG: INSTRUCTION -->. It is the tag require_instruction in run-phase.sh looks for."
 LC_ALL=C grep -qF "'^<!-- AI-TAG: INSTRUCTION -->'" scripts/run-phase.sh \
-  || ng "scripts/run-phase.sh の require_instruction が行頭アンカー付きで指示書タグを探していません。本文中の言及に一致してゲートが無効になります。"
+  || ng "require_instruction in scripts/run-phase.sh does not search for the instruction tag with a line-start anchor. A mention in a comment body would then pass the gate."
 
-# 4b. 判定語の対応。判定役のプロンプトが書かせる語を run-phase.sh の handle_verdict が
-#     全部処理しているか。プロンプトにだけ語を足すと fail（想定外の判定）で止まり、
-#     handle_verdict からだけ消すと NEEDS_HUMAN が「想定外」扱いになって即時停止が効かなくなる。
+# 4b. Verdict words. handle_verdict in run-phase.sh handles every word the judge prompts make the agent write.
+#     Adding a word only to a prompt stops with fail (unexpected verdict); removing one only from handle_verdict
+#     makes NEEDS_HUMAN "unexpected" and the immediate halt stops working.
 for word in APPROVED CHANGES_REQUESTED NEEDS_HUMAN; do
   for p in prompts/plan-judge.md prompts/review-judge.md; do
     LC_ALL=C grep -qF "verdict=${word} -->" "${p}" \
-      || ng "${p} が判定タグ verdict=${word} を書かせていません。"
+      || ng "${p} does not make the agent write the verdict tag verdict=${word}."
   done
   LC_ALL=C grep -qE "^    ${word}\)" scripts/run-phase.sh \
-    || ng "scripts/run-phase.sh の handle_verdict が ${word} を処理していません。"
+    || ng "handle_verdict in scripts/run-phase.sh does not handle ${word}."
 done
 
-# 5. ベースブランチの直書き。PR のベースは Makefile の BASE_BRANCH だけで決める。
-#    直書きが1つ残ると、BASE_BRANCH を変えたときにそこだけ古いブランチを見る。
-#    create_pr の混入検査がそうなると git diff のエラーを飲んで素通りする（静かに壊れる）。
-#    変数（${BASE_BRANCH}）とプレースホルダ（{{BASE_BRANCH}}）の形は英数字で始まらないので当たらない。
+# 5. Hard-coded base branches. The PR base is decided only by BASE_BRANCH.
+#    If one hard-coded name remains, that spot keeps looking at the old branch when BASE_BRANCH changes.
+#    In create_pr's mixing check that would swallow the git diff error and let things through (a silent failure).
+#    The variable (${BASE_BRANCH}) and placeholder ({{BASE_BRANCH}}) forms do not start with an alphanumeric, so they do not match.
 offenders=$(LC_ALL=C grep -nE 'origin/[A-Za-z0-9_]|--base +[A-Za-z0-9_]' scripts/*.sh prompts/*.md || true)
 if [ -n "${offenders}" ]; then
-  ng "ベースブランチが直書きされています。\${BASE_BRANCH} か {{BASE_BRANCH}} を使ってください（値は Makefile の BASE_BRANCH）:
+  ng "A base branch is hard-coded. Use \${BASE_BRANCH} or {{BASE_BRANCH}} (the value is BASE_BRANCH in .ai-flow/config.mk):
 ${offenders}"
 fi
 
-# 5b. プロンプトの生成。claude-run.sh と同じ手順（各プロンプト ＋ _rules.md）で埋めてみて、
-#     埋まらないプレースホルダや、空の設定値・読めない案件設定のファイルが無いかを見る。
-#     ここで落とさないと、フェーズを起動してから（ステップの途中で）止まる。
-#     値は make が export した案件設定（.ai-flow/config.mk）を使う。make を通さずに叩くと設定が無くて落ちる
+# 5b. Rendering the prompts. Fill them the same way claude-run.sh does (each prompt + _rules.md) and look for
+#     unfilled placeholders, empty settings, or unreadable project settings files.
+#     If this does not fail here, the phase would stop after starting (in the middle of a step).
+#     The values are the project settings make exported (.ai-flow/config.mk). Running it without make fails for lack of settings
 for prompt in prompts/*.md; do
   [ "${prompt}" = prompts/_rules.md ] && continue
   err=$(ISSUE=0 VERDICT_FILE=./tmp/verdict-check.txt COMMENT_FILE=./tmp/check.md \
     PR_TITLE_FILE=./tmp/pr-title-check.txt PR_BODY_FILE=./tmp/pr-body-check.md BASE_BRANCH="${BASE_BRANCH:-}" \
     ./scripts/render-prompt.sh "${prompt}" prompts/_rules.md 2>&1 >/dev/null) \
-    || ng "${prompt}: プロンプトを生成できません（make check で案件設定を読み込んでいるか）:
+    || ng "${prompt}: cannot render the prompt (is make check loading the project settings?):
 ${err}"
 done
 
-# 7. 共通部分に案件の言葉が入っていないか。共通部分は別リポジトリから subtree で取り込む前提なので、
-#    ある案件の事情を書くと、ほかの案件ではエージェントに誤った指示を出すことになる。
-#    単語は案件側が .ai-flow/project-words.txt に持つ（どの案件に取り込んでも、その案件の言葉で検査が働く）。
-#    見るのはエージェントに渡るもの（プロンプトと権限プロファイル。コメントのキーも含む）だけ。
-#    scripts/ はコメントに経緯の説明があり、selftest がスタブを使うので見ない。scripts/ がディレクトリ名や
-#    案件に依存していないことは、selftest.sh で別の名前のディレクトリに置いて動かして確かめている。
-#    フローのディレクトリ名そのものも、プロンプトに直書きされていたら落とす（{{FLOW_DIR}} を使う）。
+# 7. Project words in the shared part. The shared part is brought into other projects with subtree, so writing one
+#    project's circumstances there gives the agents wrong instructions in other projects.
+#    The words are kept on the project side in .ai-flow/project-words.txt (so wherever it is installed, the check uses that project's words).
+#    Only what reaches the agents is checked (prompts and permission profiles, including comment keys).
+#    scripts/ is not checked: its comments explain history, and selftest uses stubs. That scripts/ does not depend on the
+#    directory name or the project is verified by selftest.sh, which runs them from directories with other names.
+#    The flow directory's own name hard-coded in a prompt also fails (use {{FLOW_DIR}}).
 WORDS="${AI_FLOW_PROJECT_DIR:-$(git rev-parse --show-toplevel)/.ai-flow}/project-words.txt"
 if [ -f "${WORDS}" ]; then
   while IFS= read -r word; do
     case "${word}" in ""|"#"*) continue ;; esac
     offenders=$(LC_ALL=C grep -nwiF -e "${word}" prompts/*.md .claude/*-permissions.json || true)
-    [ -z "${offenders}" ] || ng "共通部分に案件の言葉「${word}」があります（${WORDS}）。案件の言葉は .ai-flow/ に書いてください:
+    [ -z "${offenders}" ] || ng "The project word \"${word}\" appears in the shared part (${WORDS}). Put project words in .ai-flow/:
 ${offenders}"
   done < "${WORDS}"
 fi
 offenders=$(LC_ALL=C grep -nE "(^|[^.A-Za-z0-9_-])${FLOW_PREFIX_RE}" prompts/*.md || true)
-[ -z "${offenders}" ] || ng "プロンプトにフローのディレクトリ名（${FLOW_PREFIX}）が直書きされています。{{FLOW_DIR}} を使ってください:
+[ -z "${offenders}" ] || ng "A prompt hard-codes the flow directory name (${FLOW_PREFIX}). Use {{FLOW_DIR}}:
 ${offenders}"
 
-# 6. run-phase.sh の関数の回帰テスト（静的検査では見えない、動かして初めて分かるバグ）。
-#    gh / npx はスタブに差し替えるので課金もネットワークも無い。数秒で終わる
-./scripts/selftest.sh || ng "scripts/selftest.sh の回帰テストが失敗しました（上の NG を参照）。"
+# 6. Regression tests for run-phase.sh functions (bugs that static checks cannot see and only show when run).
+#    gh / npx are replaced with stubs, so no cost and no network. Takes a few seconds
+./scripts/selftest.sh || ng "The regression tests in scripts/selftest.sh failed (see the NG lines above)."
 
-[ "${status}" -eq 0 ] && echo "check: 基盤ファイルの静的検査は問題なしです。"
+[ "${status}" -eq 0 ] && echo "check: static checks of the tooling files passed."
 exit "${status}"

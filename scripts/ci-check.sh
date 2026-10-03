@@ -1,36 +1,36 @@
 #!/bin/bash
-# このリポジトリ単体で make check を走らせる。手元でも CI（.github/workflows/check.yml）でも使う。
-# 使い方: ./scripts/ci-check.sh（リポジトリのルートで実行）
+# Runs make check for this repository on its own. Used both locally and in CI (.github/workflows/check.yml).
+# Usage: ./scripts/ci-check.sh (run at the repository root)
 #
-# フローは取り込み先のサブディレクトリに置かれ、ルートに案件設定（.ai-flow/）がある前提で動く
-# （scripts/flow-paths.sh）。このリポジトリではフローがルートにあるので、そのままでは make check が
-# 「ルートに置かれています」で止まる。そこで使い捨ての git リポジトリを作り、取り込み先と同じ形
-# （フロー一式を ai-flow/ に、examples/project/.ai-flow/ をルートに）に並べてから make check を走らせる。
-# ひな形の config.mk が make check を通る形になっているかも、これで確かめられる。
+# The flow expects to live in a subdirectory of a host repository, with project settings (.ai-flow/) at the root
+# (scripts/flow-paths.sh). In this repository the flow is at the root, so make check would stop with
+# "The flow is at the repository root". So this creates a throwaway git repository, lays the files out like a host
+# (the flow under ai-flow/, examples/project/.ai-flow/ at the root), and runs make check there.
+# This also verifies that the template config.mk passes make check.
 #
-# コピーするのは git が追跡しているファイルと、無視されていない新規ファイル（作業中の変更も含む）。
-# .env や tmp/ は持ち込まない。
+# It copies the files git tracks plus new files that are not ignored (including uncommitted changes).
+# .env and tmp/ are not brought along.
 set -uo pipefail
 
 SRC=$(cd "$(dirname "$0")/.." && pwd)
-WORK=$(mktemp -d) || { echo "NG: 一時ディレクトリを作れませんでした。" >&2; exit 1; }
+WORK=$(mktemp -d) || { echo "NG: could not create a temporary directory." >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
 
 HOST="${WORK}/host"
 FLOW="${HOST}/ai-flow"
 mkdir -p "${FLOW}"
 git -C "${HOST}" init -q
-# Makefile が origin から Issue の URL を組み立てるので、取り込み先と同じく origin を置く（接続はしない）
+# The Makefile builds the Issue URL from origin, so add an origin like a host would have (never contacted)
 git -C "${HOST}" remote add origin https://github.com/example/host.git
 
 git -C "${SRC}" ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' f; do
-  [ -f "${SRC}/${f}" ] || continue   # 作業ツリーで消したファイルは持ち込まない
+  [ -f "${SRC}/${f}" ] || continue   # skip files deleted in the working tree
   mkdir -p "${FLOW}/$(dirname "${f}")"
   cp -p "${SRC}/${f}" "${FLOW}/${f}"
 done
 
 [ -d "${SRC}/examples/project/.ai-flow" ] \
-  || { echo "NG: examples/project/.ai-flow がありません。" >&2; exit 1; }
+  || { echo "NG: examples/project/.ai-flow is missing." >&2; exit 1; }
 cp -R "${SRC}/examples/project/.ai-flow" "${HOST}/.ai-flow"
 
 git -C "${HOST}" add -A
@@ -38,6 +38,6 @@ git -C "${HOST}" -c user.name=ci -c user.email=ci@example.com commit -q -m "ci-c
 
 make -C "${FLOW}" check || exit 1
 
-# フォーマッタが無い案件の形（FORMAT_* をすべて空）でも、プロンプトが生成できて make check が通るか
-echo "--- FORMAT_* を空にして再実行"
+# A project without a formatter (all FORMAT_* empty) must also render its prompts and pass make check
+echo "--- running again with all FORMAT_* empty"
 make -C "${FLOW}" check FORMAT_CHECK_CMD= FORMAT_FILE_CMD= FORMAT_FIX_CMD= FORMAT_GLOBS=
