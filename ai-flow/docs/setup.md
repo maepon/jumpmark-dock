@@ -360,6 +360,8 @@ Each is one short run on the fast model, so the cost is small (they cannot be ch
 | Claude Code itself blocks writes under `.claude/` | Agents cannot widen their own permissions. `prompts/` and `scripts/` are not covered, though |
 | Blocks by deny do **not** appear in `permission_denials`; they come back as tool errors | Some denials do not show up in the list |
 | Even when a tool call is denied, `claude` exits with **0** | `claude-run.sh` reads `permission_denials` and prints them to stderr |
+| With the flow directory as the current directory, Bash commands whose arguments point outside it (`git diff -- ../README.md`) are denied, while `Read` / `Write` / `Edit` reach those files | `claude-run.sh` passes `--add-dir=<repository root>`. Use the `=` form: `--add-dir` takes several values and would swallow the prompt |
+| Headless runs load the MCP connectors linked to the user's claude.ai account | `claude-run.sh` passes `--strict-mcp-config` so none are loaded |
 
 ### Allows that must never be granted
 
@@ -523,7 +525,11 @@ tmp/                                 Scratch files (not tracked by git; the flow
 | `{{FLOW_DIR}}` / `{{ROOT_REL}}` | The flow directory (e.g. `ai-flow`) and the relative path from it to the root (e.g. `../`), found by `flow-paths.sh`. Hard-coding the directory name in a prompt fails `make check` |
 | `{{PROJECT_CONTEXT}}` / `{{RISK_CATALOG}}` / `{{USER_FLOWS}}` | A line consisting only of one of these is replaced with the contents of `context.md` / `risk-catalog.md` / `user-flows.md` in `.ai-flow/` |
 
-`scripts/render-prompt.sh` does the filling. If a placeholder has an empty value or remains unfilled,
+A block from a line `{{#if NAME}}` to a line `{{/if}}` is conditional: if the value of `NAME` (one of the value placeholders) is empty,
+the whole block is removed; otherwise only the two marker lines are removed. The prompts use this to drop the formatting steps
+when the `FORMAT_*` values are empty. Blocks cannot be nested or span files.
+
+`scripts/render-prompt.sh` does the filling. If a placeholder has an empty value or remains unfilled (outside a removed block),
 it stops before starting claude. `make check` also renders every prompt once to verify this.
 
 **A phase asked for a verdict writes only the single specified word to `{{VERDICT_FILE}}`.**
@@ -536,6 +542,8 @@ If explanations or decoration get mixed in, `make` cannot proceed and stops wait
 - **Labels that later phases search for literally are fixed, language-independent tokens.** These are `verified:run` / `verified:tests` /
   `verified:inference`, `unchecked`, and `non-blocking`, and the prompts say to write them "as is, untranslated".
   If they were translated into the output language, the residual-risk summary in the PR body and the like could not pick them up. Things found by meaning, such as section headings, are translated
+- **Wrap anything that depends on an optional setting in a conditional block** (`{{#if FORMAT_CHECK_CMD}}` … `{{/if}}`), so projects
+  without it still render. Keep numbered steps outside the block so the numbering has no gaps when it is removed
 - **`prompts/_rules.md` applies to every phase.** Anything added there is paid for on every step
 - **An agent can run only one command per call.** Compound commands (`cd X && cmd`, `cmd1; cmd2`,
   control structures, `VAR=value cmd` prefixes, command substitution, pipes, heredocs) are **denied even when the command is allowed.**
@@ -628,7 +636,11 @@ What to check and adapt for your repository.
 - [ ] **`.ai-flow/config.mk`** — `BASE_BRANCH`, tests (`TEST_CMD` / `SCRATCH_TEST_CMD`),
       formatting (`FORMAT_CHECK_CMD` / `FORMAT_FILE_CMD` / `FORMAT_FIX_CMD` / `FORMAT_GLOBS`), `OUTPUT_LANG`.
       `FORMAT_FILE_CMD` must **exit 0 when the file is formatted**. For tools that answer through their output, such as `gofmt -l`,
-      write a wrapper that answers with the exit code. **It must not format** (check only). If the check itself fails, the flow stops
+      write a wrapper that answers with the exit code. **It must not format** (check only). If the check itself fails, the flow stops.
+      **If your project has no formatter, leave all four `FORMAT_*` values empty**: the formatting steps disappear from the prompts and the per-file check is skipped
+- [ ] **Commands run from the flow directory** — the agents use the flow directory (e.g. `ai-flow/`) as the current directory,
+      so every command in `config.mk` must work from there. `npm test` / `npm run …` find the root `package.json` by themselves;
+      for other tools, give paths relative to the flow directory (e.g. `python3 -m unittest discover -s ../tests`)
 - [ ] **`TEST_CMD`** — **if your test tool caches results, add the flag that disables it** (Go `-count=1`, Gradle `--rerun-tasks`,
       Turborepo `--force`, Nx `--skip-nx-cache`, Bazel `--nocache_test_results`).
       The judges re-run the tests to verify claims, so a replayed earlier success defeats them.

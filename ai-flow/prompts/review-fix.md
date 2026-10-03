@@ -9,10 +9,12 @@ Your job is to **fix the latest review findings** for Issue #{{ISSUE}}.
    - **The latest** `<!-- AI-TAG: CRITIC_REVIEW -->` holds the findings to address
 2. Resolve the listed numbers one by one
 3. Confirm that `{{TEST_CMD}}` passes completely
-4. Apply `{{FORMAT_FIX_CMD}}` to the `{{FORMAT_GLOBS}}` files you touched, until `{{FORMAT_FILE_CMD}}`
-   reports nothing (make stops if unformatted files remain)
-5. **Do not commit.** Leave the changes in the working tree
-6. Post what you fixed
+{{#if FORMAT_FILE_CMD}}
+   - Then apply `{{FORMAT_FIX_CMD}}` to the `{{FORMAT_GLOBS}}` files you touched, until `{{FORMAT_FILE_CMD}}`
+     reports nothing (make stops if unformatted files remain)
+{{/if}}
+4. **Do not commit.** Leave the changes in the working tree
+5. Post what you fixed
 
 ## Rules
 

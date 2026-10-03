@@ -75,10 +75,22 @@ trap 'rm -f "$MERGED_SETTINGS"' EXIT
 # SLACK_WEBHOOK_URL はエージェントの環境から外す。Makefile が export しているので
 # 何もしないと継承され、echo $SLACK_WEBHOOK_URL で読めてしまう（Read(./.env) の deny が無意味になる）。
 # Slack通知は親（run-phase.sh）が送るので、エージェント側には要らない。
+# 起動のオプション（いずれも試し先のリポジトリで実際に踏んだもの）
+#   --add-dir=<ルート>   エージェントはフローのディレクトリをカレントにして動くので、何もしないと Claude Code は
+#                        そこを作業ディレクトリとみなし、外を指すパスを引数に取る Bash（git diff -- ../../README.md、
+#                        git grep -- ../x.html など）を拒否する。リポジトリのルートを作業ディレクトリに足して通す。
+#                        Read / Write / Edit はもともと外のファイルにも届いていたので、実行できる範囲は広がらない。
+#                        「=」で渡すこと。--add-dir は値を複数取るので、空白で区切ると後ろのプロンプトまで飲み込む
+#   --strict-mcp-config  利用者の claude.ai に連携したコネクタ（MCP）を読み込まない。フローは使わないうえ、
+#                        ツールの説明が毎ステップのプロンプトに乗り、返答に認証を促す一文が混ざっていた
+#   < /dev/null          標準入力を待たない（渡さないと「no stdin data received in 3s」の警告が出て3秒待つ）
+REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "Error: リポジトリのルートが分かりません。" >&2; exit 1; }
 OUT=$(env -u SLACK_WEBHOOK_URL ANTHROPIC_MODEL="$MODEL" claude -p \
   --settings "$MERGED_SETTINGS" \
+  --add-dir="$REPO_ROOT" \
+  --strict-mcp-config \
   --output-format json \
-  "$PROMPT")
+  "$PROMPT" < /dev/null)
 STATUS=$?
 
 if [ $STATUS -ne 0 ]; then

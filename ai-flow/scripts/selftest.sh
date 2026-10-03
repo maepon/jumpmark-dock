@@ -240,6 +240,38 @@ mv "${PROJ}/risk-catalog.md" "${PROJ}/risk-catalog.md.bak"
 out=$(render "${RENDER}" p.md r.md); got=$?
 expect "render-prompt（案件設定のファイルが無ければ止める）" 1 "risk-catalog.md が読めないか空です" "${out}" "${got}"
 
+# --- render-prompt.sh の条件付きの区間（{{#if 名前}} 〜 {{/if}}） ---
+# 値が空なら区間ごと消し（中のプレースホルダは空でも止めない）、空でなければ印の行だけを消す
+printf '%s\n' 'A' '{{#if FORMAT_CHECK_CMD}}' 'fmt `{{FORMAT_CHECK_CMD}}`' '{{/if}}' 'B {{ISSUE}}' > "${WORK}/c.md"
+out=$(render env FORMAT_CHECK_CMD= "${RENDER}" c.md); got=$?
+if [ "${got}" -ne 0 ] || [ "${out}" != "$(printf '%s\n' A 'B 7')" ]; then
+  ng "render-prompt（値が空なら区間ごと消す）: 期待と違います（終了コード ${got}）。
+実際:
+${out}"
+else
+  pass=$((pass + 1))
+fi
+out=$(render env FORMAT_CHECK_CMD='x --check' "${RENDER}" c.md); got=$?
+if [ "${got}" -ne 0 ] || [ "${out}" != "$(printf '%s\n' A 'fmt `x --check`' 'B 7')" ]; then
+  ng "render-prompt（値があれば印の行だけを消す）: 期待と違います（終了コード ${got}）。
+実際:
+${out}"
+else
+  pass=$((pass + 1))
+fi
+printf '%s\n' '{{#if FORMAT_CHECK_CMD}}' 'x' > "${WORK}/c1.md"
+out=$(render env FORMAT_CHECK_CMD=x "${RENDER}" c1.md); got=$?
+expect "render-prompt（閉じられていない区間は止める）" 1 "{{#if FORMAT_CHECK_CMD}} が閉じられていません" "${out}" "${got}"
+printf '%s\n' '{{#if FORMAT_CHECK_CMD}}' '{{#if TEST_CMD}}' 'x' '{{/if}}' '{{/if}}' > "${WORK}/c2.md"
+out=$(render env FORMAT_CHECK_CMD=x "${RENDER}" c2.md); got=$?
+expect "render-prompt（入れ子は止める）" 1 "入れ子にできません" "${out}" "${got}"
+printf '%s\n' '{{#if NO_SUCH_KEY}}' 'x' '{{/if}}' > "${WORK}/c3.md"
+out=$(render "${RENDER}" c3.md); got=$?
+expect "render-prompt（一覧に無い名前は止める）" 1 "値のプレースホルダの一覧にありません" "${out}" "${got}"
+printf '%s\n' 'x' '{{/if}}' > "${WORK}/c4.md"
+out=$(render "${RENDER}" c4.md); got=$?
+expect "render-prompt（対応の無い {{/if}} は止める）" 1 "対応する {{#if …}} の無い {{/if}}" "${out}" "${got}"
+
 # --- require_instruction ---
 out=$(GH_MODE=issue_tag run_case "${WORK}" 'require_instruction && echo PASSED'); got=$?
 expect "require_instruction（タグあり）" 0 "PASSED" "${out}" "${got}"
