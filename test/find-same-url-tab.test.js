@@ -79,6 +79,34 @@ test("findSameUrlTab matches same query with different hash and slash", () => {
   );
 });
 
+test("findSameUrlTab compares the hash only when the url has one", () => {
+  // hash でルーティングするページでは、別の画面を指す Jumpmark で既存タブに切り替えるだけにしない
+  assert.strictEqual(
+    matchId(
+      "https://mail.google.com/mail/u/0/#label/work",
+      "https://mail.google.com/mail/u/0/#inbox",
+    ),
+    null,
+  );
+  assert.strictEqual(
+    matchId(
+      "https://mail.google.com/mail/u/0/#label/work",
+      "https://mail.google.com/mail/u/0/",
+    ),
+    null,
+  );
+  // hash が同じなら、末尾の / や大文字小文字の違いは今までどおり同じページ
+  assert.strictEqual(
+    matchId("https://example.com/a#top", "https://EXAMPLE.com/a/#top"),
+    1,
+  );
+  // 空の hash（末尾の # だけ）は hash が無いものとして扱う
+  assert.strictEqual(
+    matchId("https://example.com/a#", "https://example.com/a#section"),
+    1,
+  );
+});
+
 test("findSameUrlTab never throws and returns null for unusable input", () => {
   const ok = [{ id: 1, url: "https://maepon.blog/" }];
   assert.doesNotThrow(() => findSameUrlTab([{ id: 1 }], "https://a.com"));

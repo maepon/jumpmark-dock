@@ -1214,28 +1214,44 @@ async function findBidirectionalPartner(targetJumpmark) {
   }
 }
 
-// タブ照合用の比較キーを作る（作れなければ null）
-// origin + 末尾の / を除いた pathname + search。hash は含めない。http(s) 以外は null
-function buildTabMatchKey(urlString) {
+// タブ照合用の URL を解釈する（http(s) 以外・解釈できないものは null）
+function parseTabMatchUrl(urlString) {
   if (typeof urlString !== "string") return null;
   try {
     const parsed = new URL(urlString);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return null;
     }
-    return parsed.origin + parsed.pathname.replace(/\/+$/, "") + parsed.search;
+    return parsed;
   } catch (error) {
     return null;
   }
 }
 
+// タブ照合用の比較キーを作る（作れなければ null）
+// origin + 末尾の / を除いた pathname + search。includeHash のときだけ hash も含める
+function buildTabMatchKey(urlString, includeHash = false) {
+  const parsed = parseTabMatchUrl(urlString);
+  if (!parsed) return null;
+  const key =
+    parsed.origin + parsed.pathname.replace(/\/+$/, "") + parsed.search;
+  return includeHash ? key + parsed.hash : key;
+}
+
 // tabs の中で url と同じページの最初のタブを返す（なければ null。例外は投げない）
+// url に # 以降があるときは # 以降まで比べる。# で画面を切り替えるページ（Gmail の
+// #inbox / #label/... など）で、別の画面を指す Jumpmark が既存タブへの切り替えだけで
+// 終わらないようにするため。url に # 以降が無いときは、タブの # 以降の違いを無視する
 function findSameUrlTab(tabs, url) {
   try {
     if (!Array.isArray(tabs)) return null;
-    const key = buildTabMatchKey(url);
-    if (key === null) return null;
-    const found = tabs.find((tab) => tab && buildTabMatchKey(tab.url) === key);
+    const parsed = parseTabMatchUrl(url);
+    if (!parsed) return null;
+    const includeHash = parsed.hash !== "";
+    const key = buildTabMatchKey(url, includeHash);
+    const found = tabs.find(
+      (tab) => tab && buildTabMatchKey(tab.url, includeHash) === key,
+    );
     return found || null;
   } catch (error) {
     return null;
