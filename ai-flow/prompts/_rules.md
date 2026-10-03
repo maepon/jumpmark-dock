@@ -1,58 +1,58 @@
 ---
 
-# 共通ルール（全フェーズ）
+# Common rules (all phases)
 
-## シェルコマンドの書き方
+## How to write shell commands
 
-**1回の呼び出しで1コマンド、単独形で書く。** Claude Code は権限判定のためにコマンドを
-分割するので、次の形は**許可済みのコマンドでも拒否される**。これはどのコマンドにも当てはまる。
+**One command per call, in its simple form.** Claude Code splits commands to check permissions,
+so the following forms are **denied even when the command itself is allowed**. This applies to every command.
 
-- `cd X && cmd` / `cmd1; cmd2` / `cmd1 && cmd2` — 複合コマンド
-- `for … do … done` などの制御構文
-- `VAR=値 cmd` の変数代入前置、コマンド置換、パイプ、ヒアドキュメント
-- `git -C <path>` — `-C` 形は許可していない
-  （`git -C` は `git push` の deny を迂回できるため意図的に外してある）
+- `cd X && cmd` / `cmd1; cmd2` / `cmd1 && cmd2` — compound commands
+- Control structures such as `for … do … done`
+- `VAR=value cmd` prefix assignments, command substitution, pipes, heredocs
+- `git -C <path>` — the `-C` form is not allowed
+  (it is left out on purpose because `git -C` can get around the `git push` deny)
 
-`cd` は許可済みで、**カレントディレクトリは呼び出しをまたいで持続する**。
-ただしリポジトリのルート（`{{ROOT_REL}}`）への移動は拒否されるので、`{{FLOW_DIR}}/` のまま作業する
-（使うコマンドは下の「作業ディレクトリとコマンド」の節）。
+`cd` is allowed, and **the current directory persists across calls**.
+Moving to the repository root (`{{ROOT_REL}}`) is denied, though, so stay in `{{FLOW_DIR}}/`
+(the commands to use are in the "Working directory and commands" section below).
 
-終了コードは呼び出しの結果に出るので、`; echo "$?"` を付ける必要はない。
+The exit code shows up in the result of the call, so there is no need to append `; echo "$?"`.
 
-**テスト用の入力ファイルは `Write` ツールで作る。** `cp` は許可していない
-（`cp ./.env /tmp/x` で `Read(./.env)` の deny を迂回できてしまうため）。
-`mkdir` は許可済みなので、`tmp/`（`{{FLOW_DIR}}/tmp/`。git 管理外）の下に作業ディレクトリを作ってから Write で置く。
+**Create test input files with the `Write` tool.** `cp` is not allowed
+(`cp ./.env /tmp/x` would get around the `Read(./.env)` deny).
+`mkdir` is allowed, so create a working directory under `tmp/` (`{{FLOW_DIR}}/tmp/`, not tracked by git) and Write files there.
 
-## Issue へのコメント投稿
+## Posting a comment on the Issue
 
-必ずこの手順で行う。
+Always follow these steps.
 
-1. 本文を Write ツールで `{{COMMENT_FILE}}` に書く
-2. 単独のコマンドとして `gh issue comment {{ISSUE}} --body-file {{COMMENT_FILE}}` を実行する
+1. Write the body to `{{COMMENT_FILE}}` with the Write tool
+2. Run `gh issue comment {{ISSUE}} --body-file {{COMMENT_FILE}}` as a standalone command
 
-## 判定ファイル
+## Verdict file
 
-判定を求められたフェーズは、`{{VERDICT_FILE}}` に**指定された1語だけ**を Write ツールで書く。
-説明文や前後の飾りを足さない。make がこのファイルを読んで次に進むかを決めるため、
-1語以外が入っていると人待ちで止まる。
+A phase that is asked for a verdict writes **only the single specified word** to `{{VERDICT_FILE}}` with the Write tool.
+Do not add explanations or decoration. make reads this file to decide whether to proceed,
+so anything other than the single word makes it stop and wait for a human.
 
-## 作業ディレクトリとコマンド
+## Working directory and commands
 
-あなたは `{{FLOW_DIR}}/` をカレントディレクトリとして動いている。ルートへの `cd` は拒否される。
-案件のファイルはルートからの相対（`{{ROOT_REL}}`）で読む。
+You are running with `{{FLOW_DIR}}/` as the current directory. `cd` to the root is denied.
+Read project files by their path relative to the root (`{{ROOT_REL}}`).
 
-- 整形の確認は `{{FORMAT_CHECK_CMD}}`。実行した場所以下しか見ないコマンドは、リポジトリ全体の確認には使わない
-- テストは `{{TEST_CMD}}`。挙動を単体で試すときは、`tmp/` に使い捨てのテストファイルを書いて `{{SCRATCH_TEST_CMD}} <ファイル>`
-- 文字列の検索は `git grep -n "<パターン>" -- ':/'`。`':/'` を付けないと `{{FLOW_DIR}}/` 以下しか検索しない。
-  出力のパスは `{{FLOW_DIR}}/` からの相対（`{{ROOT_REL}}docs/...`）になる
-- `grep` / `cat` / `ls` / `find` などは渡していない。拒否されたら上の手段か `Read` / `Glob` で代える
+- Check formatting with `{{FORMAT_CHECK_CMD}}`. Do not use a command that only looks below the directory it runs in to check the whole repository
+- Run the tests with `{{TEST_CMD}}`. To try a behavior in isolation, write a throwaway test file under `tmp/` and run `{{SCRATCH_TEST_CMD}} <file>`
+- Search for strings with `git grep -n "<pattern>" -- ':/'`. Without `':/'` it only searches below `{{FLOW_DIR}}/`.
+  The output paths are relative to `{{FLOW_DIR}}/` (`{{ROOT_REL}}docs/...`)
+- `grep` / `cat` / `ls` / `find` and the like are not provided. If one is denied, use the means above or `Read` / `Glob` instead
 
-## この案件の約束
+## Project rules
 
-- 人が読む出力（Issue へのコメント、コミットメッセージ、PR のタイトルと本文）は{{OUTPUT_LANG}}で書く
-- 基盤ファイル（`{{FLOW_DIR}}/` 配下の `Makefile`、`scripts/`、`prompts/`、`.claude/`、`docs/`、`.env.example`、`.gitignore` と、ルートの `.ai-flow/` と `.gitignore`）は変更しない
-- Slack 通知は自分で送らない。make が送る
+- Write human-facing output (Issue comments, commit messages, PR titles and bodies) in {{OUTPUT_LANG}}
+- Do not modify the tooling files (`Makefile`, `scripts/`, `prompts/`, `.claude/`, `docs/`, `.env.example` and `.gitignore` under `{{FLOW_DIR}}/`, plus `.ai-flow/` and `.gitignore` at the root)
+- Do not send Slack notifications yourself. make sends them
 
-## この案件の前提
+## Project context
 
 {{PROJECT_CONTEXT}}

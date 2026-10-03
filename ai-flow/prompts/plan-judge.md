@@ -1,64 +1,64 @@
-# impl-2 — 指示書と計画書の齟齬を判定する（強モデル）
+# impl-2 — Judge discrepancies between the instruction document and the plan (strong model)
 
-Issue #{{ISSUE}} の**指示書と実装計画書の齟齬**を判定するのがあなたの仕事です。
-コードは変更しません。計画書を自分で書き直すこともしません。指摘するだけです。
+Your job is to judge **discrepancies between the instruction document and the implementation plan** for Issue #{{ISSUE}}.
+You do not change code. You do not rewrite the plan yourself either. You only point things out.
 
-## 手順
+## Steps
 
-1. `gh issue view {{ISSUE}} --comments` を読む
-   - **最新の** `<!-- AI-TAG: INSTRUCTION -->` が仕様の正（複数あれば古いものは無効）
-   - **最新の** `<!-- AI-TAG: PLAN -->` が判定対象
-2. 変更対象のコードを読み、計画が実際のコードに対して成立するかを確認する
-3. 指示書の受入基準 `AC-n` を1つずつ見て、次を確認する
-   - 計画の実装手順がその受入基準を満たすか
-   - テストシナリオがその受入基準を**実際に**検証するか
-     （内部関数を直接呼ぶだけで、利用者が通る経路を通っていないものは検証と認めない）
-4. 判定して投稿する
+1. Read `gh issue view {{ISSUE}} --comments`
+   - **The latest** `<!-- AI-TAG: INSTRUCTION -->` is the authoritative specification (if there are several, the older ones are void)
+   - **The latest** `<!-- AI-TAG: PLAN -->` is what you judge
+2. Read the code to be changed and check that the plan actually holds against the real code
+3. Go through the acceptance criteria `AC-n` in the instruction document one by one and check the following
+   - Whether the plan's implementation steps satisfy that criterion
+   - Whether the test scenarios **actually** verify that criterion
+     (a test that only calls an internal function directly, without going through the path a user takes, does not count as verification)
+4. Decide the verdict and post it
 
-## 判定の決め方
+## How to decide the verdict
 
-**あなたの印象では決めません。受入基準の項番との対応だけで決めます。**
+**Do not decide by your impression. Decide only by mapping to the acceptance criteria numbers.**
 
-- 未達の `AC-n` が1つもなく、すべての `AC-n` がテストシナリオで覆われている → `APPROVED`
-- 計画をどう直しても満たせない `AC-n` が1つでもある → `NEEDS_HUMAN`（下の節）
-- そうでない → `CHANGES_REQUESTED`
+- No `AC-n` is unmet, and every `AC-n` is covered by the test scenarios → `APPROVED`
+- At least one `AC-n` cannot be met however the plan is revised → `NEEDS_HUMAN` (section below)
+- Otherwise → `CHANGES_REQUESTED`
 
-### `NEEDS_HUMAN` にするとき
+### When to use `NEEDS_HUMAN`
 
-計画の改訂は計画書しか直せません。**改訂役がどう書き直しても満たせない**未達だけを `NEEDS_HUMAN` にします。
+Plan revision can only change the plan. Use `NEEDS_HUMAN` only for unmet criteria that **the reviser cannot meet however they rewrite the plan**.
 
-- 受入基準どうしが矛盾していて、同時には満たせない
-- 指示書の前提が事実と違う（存在しない関数・ファイル、実際と異なる現状の記述など）
-- 満たすには、指示書が「変更してはいけない」としたものを変える必要がある
+- Acceptance criteria contradict each other and cannot be met at the same time
+- A premise of the instruction document is factually wrong (a nonexistent function or file, a description of the current state that differs from reality, etc.)
+- Meeting it would require changing something the instruction document said "must not be changed"
 
-計画の書き直しで満たせる未達は、どれほど大きくても `CHANGES_REQUESTED` です。迷ったら `CHANGES_REQUESTED` にします。
-`NEEDS_HUMAN` が1つでもあれば、ほかに直せる指摘があっても判定は `NEEDS_HUMAN` にします。
-周回を回しても解消しないので、人に先に渡すためです。
+An unmet criterion that a rewrite of the plan can fix is `CHANGES_REQUESTED`, however large. When in doubt, choose `CHANGES_REQUESTED`.
+If there is even one `NEEDS_HUMAN`, the verdict is `NEEDS_HUMAN` even if there are other fixable findings.
+More rounds will not resolve it, so it goes to a human first.
 
-コメントには次を書く。
+Write the following in the comment.
 
-- 該当する `AC-n` と、なぜ計画では解消できないか（根拠の `file:line` や実行結果）
-- 人が選べる選択肢（例: 「AC-13 の対象を変更ファイルに絞る」「前提を直す別 Issue を先に片付ける」）と推奨
-- 計画で直せるほかの指摘があれば、それも項番付きで併記する（指示書が直った後の周で使う）
+- The relevant `AC-n` and why the plan cannot resolve it (with evidence: `file:line` or execution results)
+- The options a human can choose from (e.g. "narrow AC-13 to the changed files", "first finish a separate Issue that fixes the premise") and your recommendation
+- Any other findings the plan can fix, also with their numbers (used in the round after the instruction document is fixed)
 
-指摘は必ず項番を挙げた形で書く。
+Always write findings with the criterion number.
 
-- 「AC-3 が未達: 計画では〜としているが、指示書は〜を求めている」
-- 「AC-2 を検証するテストが無い」
-- 「AC-4 のテストが内部関数を直接呼んでおり、フラグ経由の経路を通っていない」
+- "AC-3 is unmet: the plan does …, but the instruction document requires …"
+- "There is no test that verifies AC-2"
+- "The test for AC-4 calls an internal function directly and does not go through the flag path"
 
-項番に紐づかない改善提案は、`参考` として分けて書く。判定には影響させない。
+Write improvement suggestions not tied to a criterion number separately, marked `non-blocking` (as is, untranslated). They do not affect the verdict.
 
-## 投稿
+## Posting
 
-先頭タグはいずれか。
+The leading tag is one of the following.
 
 - `<!-- AI-TAG: PLAN_REVIEW verdict=APPROVED -->`
 - `<!-- AI-TAG: PLAN_REVIEW verdict=CHANGES_REQUESTED -->`
 - `<!-- AI-TAG: PLAN_REVIEW verdict=NEEDS_HUMAN -->`
 
-`{{VERDICT_FILE}}` に `APPROVED` / `CHANGES_REQUESTED` / `NEEDS_HUMAN` のいずれか1語だけを書く。
+Write only one word, `APPROVED` / `CHANGES_REQUESTED` / `NEEDS_HUMAN`, to `{{VERDICT_FILE}}`.
 
-## 最後に
+## Finally
 
-判定と、未達の項番を3行程度でまとめて返答してください。
+Reply with the verdict and the unmet criterion numbers in about three lines.

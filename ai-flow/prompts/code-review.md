@@ -1,79 +1,79 @@
-# code-review — PR のコードを純粋にレビューする（強モデル）
+# code-review — Review the PR's code as code (strong model)
 
-Issue #{{ISSUE}} の PR は**もう作られています**。あなたの仕事は、その PR の差分を
-**コードとして**読み、バグ・セキュリティ上のリスク・エラー処理の抜けを報告することです。
+The PR for Issue #{{ISSUE}} **has already been created**. Your job is to read the diff of that PR
+**as code** and report bugs, security risks, and gaps in error handling.
 
-**受入基準（AC）を満たしているかは見ません。** それは前のフェーズ（review-judge）が済ませています。
-あなたが見るのは、受入基準に書かれていなかった問題——コードとして正しくない箇所です。
+**You do not check whether the acceptance criteria (ACs) are met.** The previous phase (review-judge) has done that.
+What you look at are the problems the acceptance criteria did not mention — places where the code is not correct as code.
 
-**ここに何を書いても PR は閉じません。マージするかどうかは人が決めます。だから遠慮なく書く。**
-ただし、問題がなければそう書くのが正しい出力です。問題を作り出す必要はありません。
+**Nothing you write here closes the PR. A human decides whether to merge. So write freely.**
+But if there are no problems, saying so is the correct output. There is no need to invent problems.
 
-## 手順
+## Steps
 
-1. `git log origin/{{BASE_BRANCH}}..HEAD` と `git diff origin/{{BASE_BRANCH}}...HEAD` で差分**全体**を読む
-2. `git status --short` も見る（コミット済みなので空のはず。空でなければそれ自体を指摘する）
-3. `{{PR_BODY_FILE}}` を Read で読む（変更の意図を把握する）
-4. 下の**4つの観点**を1つずつ確認する
-5. `{{COMMENT_FILE}}` に本文を Write する。**投稿はしない**
+1. Read the **whole** diff with `git log origin/{{BASE_BRANCH}}..HEAD` and `git diff origin/{{BASE_BRANCH}}...HEAD`
+2. Also look at `git status --short` (it should be empty since everything is committed. If it is not, point that out in itself)
+3. Read `{{PR_BODY_FILE}}` with Read (to grasp the intent of the change)
+4. Check the **four aspects** below one by one
+5. Write the body to `{{COMMENT_FILE}}`. **Do not post it**
 
-## 4つの観点
+## The four aspects
 
-各観点の冒頭に「**問題あり** / **問題なし**」を書く。問題ありの場合は `file:line` と根拠を続ける。
-根拠には何で確かめたかを添える（`verified:run` / `verified:inference`。訳さずにこのまま書く）。
+Start each aspect with "**Problems found**" or "**No problems**" (written in {{OUTPUT_LANG}}). If there are problems, follow with `file:line` and the evidence.
+Attach to the evidence how you verified it (`verified:run` / `verified:inference`; write these as they are, untranslated).
 
-### 観点1: バグになりうる境界条件・型の取り違え
+### Aspect 1: Boundary conditions and type mix-ups that can become bugs
 
-- 整数オーバーフロー・スライスの範囲外・nil 参照が起きうる経路
-- 型変換の暗黙的な丸め・切り捨て
-- ループやインデックスの off-by-one
+- Paths where integer overflow, out-of-range slice or array access, or a null / nil dereference can happen
+- Implicit rounding or truncation in type conversions
+- Off-by-one errors in loops and indexes
 
-### 観点2: エラーの握りつぶし・無視
+### Aspect 2: Swallowed or ignored errors
 
-- `err` を受け取って使っていない、または `_` に捨てている
-- エラーが返せない設計で、失敗が静かに成功に見える経路
+- An error is received but not used, or discarded (e.g. assigned to `_`)
+- A design that cannot return an error, so a failure quietly looks like success
 
-### 観点3: セキュリティ上の問題
+### Aspect 3: Security problems
 
-- パス操作（パス結合の API を使わず文字列結合でパスを作るなど）
-- ファイルシステム操作での TOCTOU（確認と操作の間に割り込める窓）
-- 外部入力を無検証でコマンドや SQL に渡す
+- Path handling (building a path by string concatenation instead of the path-joining API, etc.)
+- TOCTOU in file system operations (a window between the check and the operation that can be interrupted)
+- Passing external input to a command or SQL without validation
 
-### 観点4: 正常な入力で想定外のエラーになる経路
+### Aspect 4: Paths where normal input leads to an unexpected error
 
-コードのロジックを読んで、利用者の通常操作で予期しないエラーや無限ループになる経路を探す。
-ガードを追加した変更では「**正常な使い方が新しいガードに引っかかる**」を特に疑う。
+Read the code's logic and look for paths where a user's normal operation leads to an unexpected error or an infinite loop.
+In a change that adds a guard, especially suspect "**normal usage gets caught by the new guard**".
 
-疑わしいものを実際に走らせる場合は、`tmp/`（`{{FLOW_DIR}}/tmp/`）の下に使い捨てのテストファイルを書き、
-`{{SCRATCH_TEST_CMD}} <ファイル>` で該当関数を呼ぶか、`{{TEST_CMD}}` で利用者が通る経路を通す（インタプリタを直接起動する形は拒否される）。
-`rm` は許可されていないので後片付けは不要（`tmp/` は git 管理外）。
+To actually run something suspicious, write a throwaway test file under `tmp/` (`{{FLOW_DIR}}/tmp/`),
+and call the function with `{{SCRATCH_TEST_CMD}} <file>`, or go through the path a user takes with `{{TEST_CMD}}` (direct interpreter invocations are denied).
+`rm` is not allowed, so no cleanup is needed (`tmp/` is not tracked by git).
 
 ---
 
-**コードが読みにくい・構造が気に入らない・別の書き方がある** — は書かない。
-「壊れる」「エラーになる」「セキュリティ上問題がある」と言える根拠がある指摘だけを書く。
+**The code is hard to read / I don't like the structure / there is another way to write it** — do not write these.
+Only write findings for which you have evidence to say "it breaks", "it errors", or "it is a security problem".
 
-## 本文の形
+## Shape of the body
 
-先頭行はこれ。
+The first line is this.
 
 ```
 <!-- AI-TAG: CODE_REVIEW -->
 ```
 
-続けて。
+Then:
 
-- **結論** — 問題ありの観点番号と、マージ前に人が見るべき点を3行以内で。何も問題がなければそう書く
-- 観点1〜4をこの順で1節ずつ。**問題なしのものも省略しない**
+- **Conclusion** — the numbers of the aspects with problems, and what a human should look at before merging, in three lines or fewer. If there are no problems, say so
+- Aspects 1–4, one section each, in this order. **Do not omit the ones without problems**
 
-## このフェーズでしないこと
+## What this phase does not do
 
-- **Issue にコメントしない。** 投稿先は PR で、投稿は make が行う（`gh pr` は渡していません）
-- **判定ファイルは書かない。** このフェーズに判定はありません
-- **コードを直さない。コミットしない。** 見つけた問題は報告するだけ。
-  作業ツリーを変えたまま終わると make が中断します（`{{COMMENT_FILE}}` への Write は別）
+- **Do not comment on the Issue.** The destination is the PR, and make posts it (`gh pr` is not provided to you)
+- **Do not write the verdict file.** This phase has no verdict
+- **Do not fix code. Do not commit.** Only report the problems you find.
+  If you finish with the working tree changed, make stops (Writing to `{{COMMENT_FILE}}` is the exception)
 
-## 最後に
+## Finally
 
-問題ありの観点番号と、マージ前に人が見るべき点を3行程度で返答してください。
-何も問題がなければそう書いてください。
+Reply with the numbers of the aspects with problems and what a human should look at before merging, in about three lines.
+If there are no problems, say so.

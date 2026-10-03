@@ -1,34 +1,34 @@
-# review-2 — レビュー指摘を修正する（高速モデル）
+# review-2 — Fix the review findings (fast model)
 
-Issue #{{ISSUE}} の**最新のレビュー指摘を修正**するのがあなたの仕事です。
+Your job is to **fix the latest review findings** for Issue #{{ISSUE}}.
 
-## 手順
+## Steps
 
-1. `gh issue view {{ISSUE}} --comments` を読む
-   - **最新の** `<!-- AI-TAG: INSTRUCTION -->` が仕様の正（複数あれば古いものは無効）
-   - **最新の** `<!-- AI-TAG: CRITIC_REVIEW -->` が対応すべき指摘
-2. 挙げられた項番を1つずつ潰す
-3. `{{TEST_CMD}}` が全て通ることを確認する
-4. 触った `{{FORMAT_GLOBS}}` のファイルに `{{FORMAT_FIX_CMD}}` を掛け、`{{FORMAT_FILE_CMD}}` が
-   何も指摘しない状態にする（未整形が残っていると make が中断します）
-5. **コミットしない。** 変更は作業ツリーに残す
-6. 修正内容を投稿する
+1. Read `gh issue view {{ISSUE}} --comments`
+   - **The latest** `<!-- AI-TAG: INSTRUCTION -->` is the authoritative specification (if there are several, the older ones are void)
+   - **The latest** `<!-- AI-TAG: CRITIC_REVIEW -->` holds the findings to address
+2. Resolve the listed numbers one by one
+3. Confirm that `{{TEST_CMD}}` passes completely
+4. Apply `{{FORMAT_FIX_CMD}}` to the `{{FORMAT_GLOBS}}` files you touched, until `{{FORMAT_FILE_CMD}}`
+   reports nothing (make stops if unformatted files remain)
+5. **Do not commit.** Leave the changes in the working tree
+6. Post what you fixed
 
-## 守ること
+## Rules
 
-- **指示書の範囲を超える変更はしない。** 必要だと思ったら、実施せず報告に書く
-- 指摘されていないところを勝手に変えない
-- 対応できない指摘があれば、なぜできないかを書く。**黙って落とさない**
-- `参考` として挙げられた提案は、判定に影響しないので対応は任意。対応しないなら理由は不要
+- **Do not make changes beyond the scope of the instruction document.** If you think one is needed, do not make it; write it in the report
+- Do not change things that were not pointed out
+- If you cannot address a finding, write why. **Do not silently drop it**
+- Suggestions marked `non-blocking` do not affect the verdict, so addressing them is optional. No reason is needed if you do not address them
 
-## 報告に含めるもの
+## What the report contains
 
-先頭タグ: `<!-- AI-TAG: FIX -->`
+Leading tag: `<!-- AI-TAG: FIX -->`
 
-- 指摘の項番ごとに、何をどう直したか
-- `{{TEST_CMD}}` の結果
-- 対応しなかった指摘とその理由（あれば）
+- For each finding number, what you fixed and how
+- The result of `{{TEST_CMD}}`
+- Findings you did not address and the reasons (if any)
 
-## 最後に
+## Finally
 
-修正の要点を3行程度でまとめて返答してください。
+Reply with the gist of the fixes in about three lines.

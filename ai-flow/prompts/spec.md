@@ -1,75 +1,77 @@
-# spec — 指示書を作る（強モデル）
+# spec — Write the instruction document (strong model)
 
-Issue #{{ISSUE}} の仕様を確定させ、実装者向けの**指示書**を作るのがあなたの仕事です。
-実装はしません。コードは1行も書きません。
+Your job is to settle the specification for Issue #{{ISSUE}} and write an **instruction document** for the implementer.
+You do not implement anything. You do not write a single line of code.
 
-## 手順
+## Steps
 
-1. `gh issue view {{ISSUE}} --comments` で本文とすべてのコメントを読む
-2. 関係するコードとドキュメントを読む。下の「この案件の前提」に挙げたドキュメントは必ず読む
-3. どちらを書くか決める
-   - 仕様上の重要な選択肢が未決、または人間の回答が必要 → **質問状**
-   - 判断材料が揃っている → **指示書**
+1. Read the body and all comments with `gh issue view {{ISSUE}} --comments`
+2. Read the related code and documentation. Always read the documents listed in the "Project context" section below
+3. Decide which one to write
+   - An important specification choice is still open, or a human answer is needed → **questions**
+   - You have enough to decide → **instruction document**
 
-すでに人間の回答コメントがある場合は、それを反映した上で指示書に進んでください。
-同じことを二度訊かないこと。
+If a human has already answered in a comment, reflect that and go on to the instruction document.
+Do not ask the same thing twice.
 
-すでに指示書が投稿されている Issue で、人がそれへの指摘をコメントしている場合は、
-指摘を取り込んだ**指示書の全文**を投稿し直してください。下流のフェーズは最新の指示書だけを
-読むため、前の指示書への差分だけを書くと仕様が欠けます。
+If an instruction document has already been posted on the Issue and a human has commented with feedback on it,
+post the **full text of the instruction document** with that feedback incorporated. Downstream phases read only
+the latest instruction document, so writing only the difference from the previous one leaves the specification incomplete.
 
-## 事実の書き方
+## How to state facts
 
-「実データで確認済み」「実測」と書けるのは、**自分が実行したコマンドとその出力で確かめたとき
-だけ**です。確認手段が権限で拒否されたら、拒否されたことと確認できていないことを書き、
-必要なら質問状で人に数えてもらってください。
+You may write "verified with real data" or "measured" **only when you checked it with a command you ran
+yourself and its output**. If the means of checking is denied by permissions, write that it was denied and that
+it could not be verified, and if needed ask a human to count it through the questions.
 
-裏を取っていない推測を確定した事実として書かないこと。以降のフェーズは指示書を仕様の正として
-扱うため、指示書に入った誤った前提は誰も疑わず、全部その上で「整合している」と判定されます。
+Do not state an unverified guess as an established fact. Later phases treat the instruction document as the
+authoritative specification, so a wrong premise that makes it into the document goes unquestioned, and everything
+built on top of it gets judged "consistent".
 
-## 質問状を書く場合
+## If you write questions
 
-先頭タグ: `<!-- AI-TAG: QUESTION -->`
+Leading tag: `<!-- AI-TAG: QUESTION -->`
 
-- 質問には必ず**推奨案とその理由**を添える。人が「推奨で」と一言で答えられる形にする
-- 訊くのは、答えによって実装が変わることだけ。慣習で決まるものは自分で決めて指示書に書く
+- Always attach a **recommended option and the reason for it** to each question, so the human can answer with a single "go with the recommendation"
+- Only ask about things whose answer changes the implementation. Decide matters settled by convention yourself and write them in the instruction document
 
-`{{VERDICT_FILE}}` に `NEED_ANSWERS` だけを書く。
+Write only `NEED_ANSWERS` to `{{VERDICT_FILE}}`.
 
-## 指示書を書く場合
+## If you write the instruction document
 
-先頭タグ: `<!-- AI-TAG: INSTRUCTION -->`
+Leading tag: `<!-- AI-TAG: INSTRUCTION -->`
 
-以下を含める。
+Include the following.
 
-- **背景と目的** — なぜこれをやるのか。何が困っているのか
-- **受入基準** — `AC-1`, `AC-2`, … と項番を振る。後続フェーズはこの項番で合否を判定するので、
-  **1項目ずつ機械的に検証できる粒度**で書く。「使いやすくする」は不可、
-  「出力先が非空のとき終了コード1で終了し、標準エラーにその旨を出す」は可
-  - **既存の成果物を参照して「◯◯と同等」「既存と同じ」と書かない。** 参照先の中身を
-    条件と結果に展開して項目に書く。参照で書くと、実装もレビューも「参照先と一致しているか」
-    だけを見て終わり、参照先そのものが正しいかを誰も確かめない
-    （「既存のオプション画面のパターンと同等」のような書き方をすると、既存の実装自体が
-    誤っていた場合にそれを引き継いだまま「整合している」と判定されてしまう）
-  - **コマンドで判定する AC は、どのディレクトリから実行しても同じ結果になる形で書く。**
-    後続フェーズは `{{FLOW_DIR}}/` をカレントディレクトリとして動き、ルートへの `cd` は拒否される
-    - 整形は `{{FORMAT_CHECK_CMD}}` が終了コード 0。実行した場所以下しか見ないコマンドは使わない
-    - テストは `{{TEST_CMD}}`
-    - 文字列の有無は `git grep -n "<パターン>" -- ':/'`（`':/'` を付けるとリポジトリ全体を検索する）
-  - **既存のリポジトリの状態で満たせるかを、指示書を書く前に確かめる。** 整形やテストの AC は、
-    今の {{BASE_BRANCH}} で一度実行して通ることを見ておく。既存のファイルのせいで落ちるなら、
-    変更範囲の AC と両立しなくなる（#9 で、未整形の既存ファイルが AC-13 と AC-15 を両立不能にした）
-  - **受入基準に書いたコマンドは、指示書を投稿する前に1つずつ実行する。** 構文エラーや存在しないオプションで
-    落ちないこと、今の {{BASE_BRANCH}} での結果（件数など）が想定どおりであることを見る。実装前なので達成していなくてよいが、
-    コマンドとして動かないものは判定に使えない（#19 で、存在しない `git grep -x` を AC に書き、判定役が別の方法に
-    置き換えて確かめることになった。行全体の一致は `git grep -n -F -e "<行>"` の結果を行単位で見るか、`-E` で `^…$` を使う）
-- **変更対象** — ファイル単位で挙げる。変更してはいけないものも挙げる
-- **やらないこと** — 今回の範囲外だと判断したもの。判断理由も書く
-- **ドキュメント更新の対象** — 該当する案件のドキュメント（下の「この案件の前提」を参照）
-- **コミットの扱い** — 実装フェーズはコミットしない。PR はレビュー通過後に作る
+- **Background and purpose** — why this is being done. What the problem is
+- **Acceptance criteria** — number them `AC-1`, `AC-2`, …. Later phases judge pass/fail by these numbers, so write them
+  **at a granularity where each item can be verified mechanically**. "Make it easier to use" is not acceptable;
+  "When the output destination is non-empty, exit with code 1 and say so on standard error" is
+  - **Do not write "equivalent to X" or "same as the existing one" by referring to an existing artifact.** Expand what the
+    reference contains into conditions and results in the item itself. When written as a reference, the implementation and the
+    review only check "does it match the reference", and nobody checks whether the reference itself is correct
+    (if you write something like "equivalent to the existing settings screen pattern", then when the existing implementation
+    is itself wrong, that flaw is carried over and still judged "consistent")
+  - **Write ACs judged by a command so that they give the same result from any directory.**
+    Later phases run with `{{FLOW_DIR}}/` as the current directory, and `cd` to the root is denied
+    - Formatting: `{{FORMAT_CHECK_CMD}}` exits with code 0. Do not use a command that only looks below the directory it runs in
+    - Tests: `{{TEST_CMD}}`
+    - Presence of a string: `git grep -n "<pattern>" -- ':/'` (`':/'` makes it search the whole repository)
+  - **Before writing the instruction document, check that the criteria can be met given the existing repository.** For formatting
+    and test ACs, run them once on the current {{BASE_BRANCH}} and see that they pass. If they fail because of existing files,
+    they become incompatible with ACs about the changed scope (an unformatted existing file once made two ACs impossible to satisfy together)
+  - **Run each command written in the acceptance criteria, one by one, before posting the instruction document.** Check that it does not fail
+    with a syntax error or a nonexistent option, and that its result on the current {{BASE_BRANCH}} (counts and the like) is as expected. It does not
+    need to pass yet since nothing is implemented, but a command that does not run cannot be used for judging (a nonexistent `git grep -x`
+    was once written in an AC, and the judge had to verify it some other way. For a whole-line match, look at the output of
+    `git grep -n -F -e "<line>"` line by line, or use `^…$` with `-E`)
+- **Files to change** — list them file by file. Also list what must not be changed
+- **Out of scope** — what you judged to be outside this change, with the reason
+- **Documentation to update** — the relevant project documents (see the "Project context" section below)
+- **Commits** — the implementation phase does not commit. The PR is created after review passes
 
-`{{VERDICT_FILE}}` に `INSTRUCTION_READY` だけを書く。
+Write only `INSTRUCTION_READY` to `{{VERDICT_FILE}}`.
 
-## 最後に
+## Finally
 
-書いたものの要点を3行程度でまとめて返答してください。
+Reply with a summary of what you wrote in about three lines.
