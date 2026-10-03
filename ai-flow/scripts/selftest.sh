@@ -6,11 +6,16 @@
 #   - TOOLING_PATHS / unformatted_files がルート相対のパスを ai-flow/ から見て取り違える（#10 で発覚）
 #   - require_instruction / ensure_pr_url が gh の失敗を別の意味のエラーに化けさせる（#9、#10）
 #   - 判定役の NEEDS_HUMAN が周回を待たずに止まる
+#   - 案件設定（.ai-flow/config.mk）の整形コマンド・対象パターンの扱い、render-prompt.sh のプレースホルダの埋め方
 #
 # run-phase.sh は読み込むと本体が走るので、テスト対象の関数と TOOLING_PATHS の定義だけを sed で抜き出して
 # 読み込む。関数の書き方（name() { … } の } が行頭）が変わって抜き出せなくなったら、黙って通さずに落とす。
 # gh と npx は PATH の先頭に置いたスタブで差し替えるので、ネットワークにも課金にも触れない。
 set -uo pipefail
+
+# 整形チェックの設定は jumpmark-dock と同じ形にしておく（npx はスタブ）。案件設定の値には依存させない
+export FORMAT_FILE_CMD="npx prettier --check"
+export FORMAT_GLOBS="*.js *.css *.html"
 
 SRC="$(pwd)/scripts/run-phase.sh"
 [ -f "${SRC}" ] || { echo "NG: ${SRC} がありません。ai-flow/ で実行してください。" >&2; exit 1; }
@@ -101,6 +106,8 @@ echo 'x' > "${REPO}/docs/pp.md"
 echo 'x' > "${REPO}/docs/日本語 ファイル.md"
 echo 'x' > "${REPO}/README.md"
 echo 'x' > "${REPO}/.gitignore"
+mkdir -p "${REPO}/.ai-flow"
+echo 'x' > "${REPO}/.ai-flow/permissions.json"
 echo 'const a = 1;' > "${REPO}/test/x.js"
 git -C "${REPO}" add -A
 git -C "${REPO}" -c user.name=t -c user.email=t@example.com commit -q -m init
@@ -111,6 +118,7 @@ echo 'y' >> "${REPO}/docs/日本語 ファイル.md"
 echo 'y' >> "${REPO}/README.md"
 echo 'y' >> "${REPO}/ai-flow/scripts/a.sh"
 echo 'y' >> "${REPO}/.gitignore"
+echo 'y' >> "${REPO}/.ai-flow/permissions.json"           # 案件設定（権限の追加分）も基盤
 echo 'new' > "${REPO}/ai-flow/docs/new.md"
 git -C "${REPO}" mv ai-flow/docs/g.md docs/g.md          # 基盤から出す移動も基盤の改変
 echo 'UNFORMATTED' >> "${REPO}/test/x.js"                # 既存ファイルを未整形に
@@ -120,7 +128,7 @@ echo 'UNFORMATTED' > "${REPO}/ai-flow/docs/note.md"      # 整形対象外の拡
 
 # --- tooling_state ---
 out=$(run_case "${REPO}/ai-flow" 'tooling_state'); got=$?
-expected=$(printf '%s\n' .gitignore ai-flow/docs/g.md ai-flow/docs/new.md ai-flow/docs/note.md ai-flow/scripts/a.sh)
+expected=$(printf '%s\n' .ai-flow/permissions.json .gitignore ai-flow/docs/g.md ai-flow/docs/new.md ai-flow/docs/note.md ai-flow/scripts/a.sh)
 if [ "${got}" -ne 0 ] || [ "${out}" != "${expected}" ]; then
   ng "tooling_state: 基盤ファイルの判定が期待と違います（ai-flow/ から実行）。
 期待:
@@ -143,6 +151,63 @@ ${out}"
 else
   pass=$((pass + 1))
 fi
+
+# --- 整形チェックの設定 ---
+out=$(FORMAT_FILE_CMD='' run_case "${REPO}/ai-flow" 'unformatted_files; echo END'); got=$?
+expect "unformatted_files（FORMAT_FILE_CMD が空なら整形チェックをしない）" 0 "END" "${out}" "${got}"
+[ "${out}" = "END" ] || ng "unformatted_files（FORMAT_FILE_CMD が空）: 何も出ないはずが「${out}」が出ました。"
+out=$(FORMAT_FILE_CMD='false' run_case "${REPO}/ai-flow" 'unformatted_files'); got=$?
+expected=$(printf '%s\n' test/x.js 'web/a b.js' web/ok.js)
+if [ "${got}" -ne 0 ] || [ "$(printf '%s' "${out}" | sort)" != "${expected}" ]; then
+  ng "unformatted_files（チェック自体が失敗するなら未整形扱いで止める）: 期待と違います。
+期待:
+${expected}
+実際:
+${out}"
+else
+  pass=$((pass + 1))
+fi
+# カレントに *.js に当たるファイルがあっても、パターンがそのファイル名に化けない
+echo 'x' > "${WORK}/here.js"
+out=$(run_case "${WORK}" 'format_target web/y.js && echo TARGET'); got=$?
+expect "format_target（パターンがカレントのファイル名に展開されない）" 0 "TARGET" "${out}" "${got}"
+out=$(run_case "${WORK}" 'format_target docs/y.md || echo NOT_TARGET'); got=$?
+expect "format_target（対象外の拡張子）" 0 "NOT_TARGET" "${out}" "${got}"
+out=$(FORMAT_GLOBS='' run_case "${WORK}" 'format_target web/y.js || echo NOT_TARGET'); got=$?
+expect "format_target（FORMAT_GLOBS が空なら対象なし）" 0 "NOT_TARGET" "${out}" "${got}"
+
+# --- render-prompt.sh ---
+RENDER="$(pwd)/scripts/render-prompt.sh"
+PROJ="${WORK}/proj"
+mkdir -p "${PROJ}"
+printf '## 前提\nテストは `{{TEST_CMD}}`\n' > "${PROJ}/context.md"
+printf '%s\n' '- 項目1' > "${PROJ}/risk-catalog.md"
+printf '%s\n' '使い方' > "${PROJ}/user-flows.md"
+printf '%s\n' '# P {{ISSUE}}' 'ここに {{RISK_CATALOG}} は埋めない' '{{RISK_CATALOG}}' > "${WORK}/p.md"
+printf '%s\n' '## R' '{{PROJECT_CONTEXT}}' > "${WORK}/r.md"
+render() {
+  ( cd "${WORK}" && env AI_FLOW_PROJECT_DIR="${PROJ}" ISSUE=7 TEST_CMD='a && b | c/d \e' "$@" 2>&1 )
+}
+# 行の途中の {{RISK_CATALOG}} はファイルに置き換えない（そのまま残るので埋め残しで落ちる）
+out=$(render "${RENDER}" p.md r.md); got=$?
+expect "render-prompt（埋め残しは止める）" 1 "埋まらなかったプレースホルダがあります: {{RISK_CATALOG}}" "${out}" "${got}"
+printf '%s\n' '# P {{ISSUE}}' '{{TEST_CMD}}' '{{RISK_CATALOG}}' > "${WORK}/p.md"
+out=$(render "${RENDER}" p.md r.md); got=$?
+expected=$(printf '%s\n' '# P 7' 'a && b | c/d \e' '- 項目1' '' '## R' '## 前提' 'テストは `a && b | c/d \e`')
+if [ "${got}" -ne 0 ] || [ "${out}" != "${expected}" ]; then
+  ng "render-prompt（値の & | / \\ とファイルの埋め込み、空行を挟んだ連結）: 期待と違います。
+期待:
+${expected}
+実際:
+${out}"
+else
+  pass=$((pass + 1))
+fi
+out=$(render env TEST_CMD= "${RENDER}" p.md r.md); got=$?
+expect "render-prompt（空の値は止める）" 1 "TEST_CMD が空です" "${out}" "${got}"
+mv "${PROJ}/risk-catalog.md" "${PROJ}/risk-catalog.md.bak"
+out=$(render "${RENDER}" p.md r.md); got=$?
+expect "render-prompt（案件設定のファイルが無ければ止める）" 1 "risk-catalog.md が読めないか空です" "${out}" "${got}"
 
 # --- require_instruction ---
 out=$(GH_MODE=issue_tag run_case "${WORK}" 'require_instruction && echo PASSED'); got=$?
@@ -174,6 +239,6 @@ out=$(run_case "${WORK}" 'handle_verdict "" 実装 "make review"; echo NOT_REACH
 expect "handle_verdict（空の判定は fail）" 1 "FAIL:判定ファイルの内容が想定外です" "${out}" "${got}"
 
 if [ "${status}" -eq 0 ]; then
-  echo "selftest: run-phase.sh の回帰テスト ${pass} 件すべて通過しました。"
+  echo "selftest: run-phase.sh / render-prompt.sh の回帰テスト ${pass} 件すべて通過しました。"
 fi
 exit "${status}"

@@ -24,7 +24,7 @@
 #     ただし prompts/ や scripts/ は素通りするため、run-phase.sh が作業ツリーで検査する
 #   - deny によるブロックは permission_denials に出ず、ツールのエラーとして返る
 #
-# 権限の deny は「事故の防止」であって「隔離」ではない。npm test / node --test を許可している以上、
+# 権限の deny は「事故の防止」であって「隔離」ではない。テストの実行（TEST_CMD）を許可している以上、
 # エージェントは任意のコードを実行できるので、その気になれば deny した操作にも到達する。
 # 実効的な防波堤は次の3つで、権限リストはその外側の注意書きに近い。
 #   1. .claude/ への書き込みは Claude Code 自身が塞ぐ（自分の権限を広げられない）
@@ -56,21 +56,23 @@ done
 
 mkdir -p tmp
 
-# 各プロンプトに共通ルールを連結し、プレースホルダを埋める。
-# 値にスラッシュが入るので sed の区切りは | を使う
-PROMPT=$({ cat "$PROMPT_FILE"; echo; cat "$RULES"; } \
-  | sed -e "s|{{ISSUE}}|$ISSUE|g" \
-        -e "s|{{VERDICT_FILE}}|$VERDICT_FILE|g" \
-        -e "s|{{COMMENT_FILE}}|$COMMENT_FILE|g" \
-        -e "s|{{PR_TITLE_FILE}}|$PR_TITLE_FILE|g" \
-        -e "s|{{PR_BODY_FILE}}|$PR_BODY_FILE|g" \
-        -e "s|{{BASE_BRANCH}}|$BASE_BRANCH|g")
+# 各プロンプトに共通ルールを連結し、プレースホルダを埋める（値と案件設定のファイル。詳細は render-prompt.sh）。
+# 埋まらないものがあれば、claude を起動する前に止まる
+PROMPT=$(ISSUE="$ISSUE" VERDICT_FILE="$VERDICT_FILE" COMMENT_FILE="$COMMENT_FILE" \
+  PR_TITLE_FILE="$PR_TITLE_FILE" PR_BODY_FILE="$PR_BODY_FILE" BASE_BRANCH="$BASE_BRANCH" \
+  ./scripts/render-prompt.sh "$PROMPT_FILE" "$RULES") || exit 1
+
+# 権限は base のプロファイルに案件ごとの追加分（.ai-flow/permissions.json）を足したものを、
+# 起動のたびに一時ファイルへ書き出して渡す。残さない理由は merge-permissions.sh の冒頭
+MERGED_SETTINGS=$(mktemp) || { echo "Error: 一時ファイルを作れませんでした。" >&2; exit 1; }
+trap 'rm -f "$MERGED_SETTINGS"' EXIT
+./scripts/merge-permissions.sh "$SETTINGS" > "$MERGED_SETTINGS" || exit 1
 
 # SLACK_WEBHOOK_URL はエージェントの環境から外す。Makefile が export しているので
 # 何もしないと継承され、echo $SLACK_WEBHOOK_URL で読めてしまう（Read(./.env) の deny が無意味になる）。
 # Slack通知は親（run-phase.sh）が送るので、エージェント側には要らない。
 OUT=$(env -u SLACK_WEBHOOK_URL ANTHROPIC_MODEL="$MODEL" claude -p \
-  --settings "$SETTINGS" \
+  --settings "$MERGED_SETTINGS" \
   --output-format json \
   "$PROMPT")
 STATUS=$?
@@ -99,7 +101,7 @@ if [ "$DENIALS" != "0" ]; then
   echo "警告: 許可されていないツール呼び出しが ${DENIALS} 件拒否されました。" >&2
   printf '%s' "$OUT" \
     | jq -r '.permission_denials[] | "  拒否: \(.tool_name) — \(.tool_input.command // .tool_input.file_path // "")"' >&2
-  echo "  繰り返し出るなら $SETTINGS の permissions.allow に追加してください。" >&2
+  echo "  繰り返し出るなら $SETTINGS の permissions.allow（案件に固有のコマンドなら .ai-flow/permissions.json の allow）に追加してください。" >&2
 fi
 
 if [ "$(printf '%s' "$OUT" | jq -r '.is_error')" != "false" ]; then

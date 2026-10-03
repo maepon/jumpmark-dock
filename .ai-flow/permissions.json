@@ -1,0 +1,13 @@
+{
+  "//": "案件ごとに足す権限。ai-flow/.claude/*-permissions.json（どの案件でも使う base）の allow / deny に、claude を起動するたびに scripts/merge-permissions.sh が足し込む。3つのプロファイルに同じものが入る。通してはいけないコマンドの検査（check-scripts.sh の3番）はマージした後に掛かる。",
+  "//node": "node --test:* は、使い捨てのテストファイルで挙動（new URL() の解釈など）を単体で確かめるために通す。npm test で任意の JS がすでに走るので、実行面は広がらない。node -e / -p と裸の node は、1コマンドで Read(./.env) の deny を素通りできるので通さない（check-scripts.sh が弾く）。",
+  "//format-check": "npm run format:check は、npm がルートの package.json を見つけてルートで実行するので、ai-flow/ から叩いてもリポジトリ全体を検査できる。npx prettier --check \"**/*.js\" はカレント（ai-flow/）以下しか見ない（#9、#13）。",
+  "allow": [
+    "Bash(npm test:*)",
+    "Bash(npm run format:check)",
+    "Bash(node --test:*)",
+    "Bash(npx prettier:*)",
+    "Bash(node --version)",
+    "Bash(npm --version)"
+  ]
+}

@@ -32,12 +32,19 @@ ${offenders}"
 fi
 
 # 3. 権限プロファイル。JSON が壊れているとフェーズは起動してから落ちる（課金が発生する）
-for p in .claude/*-permissions.json; do
-  jq -e . "${p}" >/dev/null 2>&1 || { ng "${p}: JSON として読めません。"; continue; }
+#    実際に claude に渡るのは、base に案件ごとの追加分（.ai-flow/permissions.json）を足したもの。
+#    追加分で通してはいけないコマンドを足しても落ちるように、マージした後を見る。
+MERGED=$(mktemp) || { echo "NG: 一時ファイルを作れませんでした。" >&2; exit 1; }
+trap 'rm -f "${MERGED}"' EXIT
+for base in .claude/*-permissions.json; do
+  jq -e . "${base}" >/dev/null 2>&1 || { ng "${base}: JSON として読めません。"; continue; }
+  ./scripts/merge-permissions.sh "${base}" > "${MERGED}" 2>/dev/null \
+    || { ng "${base}: 案件ごとの追加分とマージできません: $(./scripts/merge-permissions.sh "${base}" 2>&1 >/dev/null)"; continue; }
+  p="${base}（.ai-flow/permissions.json とマージした後）"
 
   # どのプロファイルでも塞がっていなければならない操作。deny は前置一致でベースコマンドの
   # allow にも勝つ。allow していないコマンドはそもそも拒否されるので、これは二重の防御。
-  deny=$(jq -r '.permissions.deny[]' "${p}")
+  deny=$(jq -r '.permissions.deny[]' "${MERGED}")
   while IFS= read -r rule; do
     printf '%s\n' "${deny}" | LC_ALL=C grep -qxF "${rule}" \
       || ng "${p}: deny に ${rule} がありません。"
@@ -56,7 +63,7 @@ EOF
   # deny を素通りできる。git -C / go -C は前置一致をずらして git push の deny を迂回できる。
   # シェルとインタプリタは、裸か一行実行（-c / -e / -p）か -m の後ろが空の形だと1コマンドで何でも走る。
   # python -m pytest:* のようにモジュール名まで絞った形は通す。
-  bad=$(jq -r '.permissions.allow[]' "${p}" \
+  bad=$(jq -r '.permissions.allow[]' "${MERGED}" \
     | LC_ALL=C grep -E 'Bash\((grep|cat|sed|awk|head|tail|cp|mv|chmod|curl|ln|tee|xargs|find|git -C|go -C|bash|sh|zsh|env|eval|exec)[ :)]|Bash\((python3?|node|ruby|perl|deno|bun|npx)(:|\)| -[cepE][ :)]| -m[:)])|Bash\(git:|Bash\(gh:|Bash\(\*|Bash\(:' || true)
   if [ -n "${bad}" ]; then
     ng "${p}: allow に通してはいけないコマンドがあります:
@@ -95,6 +102,19 @@ if [ -n "${offenders}" ]; then
   ng "ベースブランチが直書きされています。\${BASE_BRANCH} か {{BASE_BRANCH}} を使ってください（値は Makefile の BASE_BRANCH）:
 ${offenders}"
 fi
+
+# 5b. プロンプトの生成。claude-run.sh と同じ手順（各プロンプト ＋ _rules.md）で埋めてみて、
+#     埋まらないプレースホルダや、空の設定値・読めない案件設定のファイルが無いかを見る。
+#     ここで落とさないと、フェーズを起動してから（ステップの途中で）止まる。
+#     値は make が export した案件設定（.ai-flow/config.mk）を使う。make を通さずに叩くと設定が無くて落ちる
+for prompt in prompts/*.md; do
+  [ "${prompt}" = prompts/_rules.md ] && continue
+  err=$(ISSUE=0 VERDICT_FILE=./tmp/verdict-check.txt COMMENT_FILE=./tmp/check.md \
+    PR_TITLE_FILE=./tmp/pr-title-check.txt PR_BODY_FILE=./tmp/pr-body-check.md BASE_BRANCH="${BASE_BRANCH:-}" \
+    ./scripts/render-prompt.sh "${prompt}" prompts/_rules.md 2>&1 >/dev/null) \
+    || ng "${prompt}: プロンプトを生成できません（make check で案件設定を読み込んでいるか）:
+${err}"
+done
 
 # 6. run-phase.sh の関数の回帰テスト（静的検査では見えない、動かして初めて分かるバグ）。
 #    gh / npx はスタブに差し替えるので課金もネットワークも無い。数秒で終わる

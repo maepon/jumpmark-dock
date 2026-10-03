@@ -4,8 +4,7 @@
   "//deny": "ユーザーレベル設定に Bash(git push *) があると全形の push が通ってしまうので、ここで塞ぐ。コロン形の deny は前置一致で allow に勝つ（実測）。",
   "//write": "Write / Edit のパス指定ルールは効かない（実測。詳細は .claude/phase-permissions.json）。裸で渡し、基盤ファイルの保護は run-phase.sh 側で行う。",
   "//not-allowed": "grep / cat / sed 等の汎用の読み取りコマンドと git -C <path> ... は allow しない。理由は .claude/phase-permissions.json に書いてある（Read の deny と git push の deny をそれぞれすり抜けるため）。",
-  "//git-grep": "git grep:* は通す。git 管理下のファイルだけを検索するので .env（gitignore 対象）は既定では対象外。--no-index を付ければ読めるが、node --test / npm test ですでに任意の読み込みができるので実行面は広がらない。grep を禁じたままだと、文言の削除などを機械的に確かめられず確認が推論止まりになっていた（#10）。既定では現在のディレクトリ（ai-flow/）以下しか検索しないので、全体は -- ':/' を付けさせる（_rules.md）。",
-  "//format-check": "npm run format:check は、npm がルートの package.json を見つけてルートで実行するので、ai-flow/ から叩いてもリポジトリ全体を検査できる。npx prettier --check \"**/*.js\" はカレント（ai-flow/）以下しか見ない（#9、#13）。",
+  "//git-grep": "git grep:* は通す。git 管理下のファイルだけを検索するので .env（gitignore 対象）は既定では対象外。--no-index を付ければ読めるが、テストの実行（.ai-flow/permissions.json で足す TEST_CMD など）ですでに任意の読み込みができるので実行面は広がらない。grep を禁じたままだと、文言の削除などを機械的に確かめられず確認が推論止まりになっていた（#10）。既定では現在のディレクトリ（ai-flow/）以下しか検索しないので、全体は -- ':/' を付けさせる（_rules.md）。",
   "//date": "date は通す。読み書きをしない。最終更新日のような「実装した日」を AC にしたとき、推論でなく実行して確かめるため（#19 の AC-14）。",
   "permissions": {
     "allow": [
@@ -19,11 +18,8 @@
       "Bash(git switch:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(npm test:*)",
       "Bash(date:*)",
-      "Bash(npm run format:check)",
       "Bash(git grep:*)",
-      "Bash(npx prettier:*)",
       "Bash(echo:*)",
       "Bash(mkdir:*)",
       "Bash(cd:*)",
@@ -39,5 +35,6 @@
       "Bash(git reset --hard:*)",
       "Bash(git rebase:*)"
     ]
-  }
+  },
+  "//project": "テスト・整形など案件に固有のコマンドの allow は .ai-flow/permissions.json にある。claude-run.sh が起動のたびにこのファイルへ足し込む（scripts/merge-permissions.sh）。"
 }

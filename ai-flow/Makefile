@@ -3,9 +3,13 @@ ISSUE ?= 1
 # 判定が収束しなかったら人に投げるまでの周回数
 MAX_ROUNDS ?= 3
 
-# PR のベースにするブランチ。scripts/ と prompts/ はこの値だけを使う（直書きは make check が落とす）
-# このリポジトリの既定ブランチは master（main ではない）
-BASE_BRANCH ?= master
+# 案件ごとの設定（ベースブランチ・テストと整形のコマンド・出力の言語）。リポジトリのルートの .ai-flow/ に置く。
+# 権限の追加分とプロンプトに埋める文章も同じディレクトリにある。無ければ check-env で止まる
+AI_FLOW_PROJECT_DIR := $(shell git rev-parse --show-toplevel)/.ai-flow
+-include $(AI_FLOW_PROJECT_DIR)/config.mk
+
+# config.mk に無いときの既定値（scripts/ 側のフォールバックと揃える）
+BASE_BRANCH ?= main
 
 # フローが使うモデルは2ティア。どのフェーズにどちらを割り当てるかは run-phase.sh 側にある。
 # 製品名ではなく能力で名付けてあるのは、割り当てが名前ではなく方針だから
@@ -26,8 +30,9 @@ ISSUE_URL = $(REPO_URL)/issues/$(ISSUE)
 REVIEW_JUDGE_MODEL ?= $(FAST_MODEL)
 
 export SLACK_WEBHOOK_URL STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL
+export AI_FLOW_PROJECT_DIR TEST_CMD SCRATCH_TEST_CMD FORMAT_CHECK_CMD FORMAT_FILE_CMD FORMAT_FIX_CMD FORMAT_GLOBS OUTPUT_LANG
 
-.PHONY: help spec impl review code-review pr-review create-pr check check-env
+.PHONY: help spec impl review code-review pr-review create-pr check check-project check-env
 
 .DEFAULT_GOAL := help
 
@@ -60,11 +65,11 @@ help:
 	@echo "                        BASE_BRANCH の設定違いなど push/PR作成側の事情だけで"
 	@echo "                        review が失敗して止まったときに使う。review はやり直さない"
 	@echo
-	@echo "  make check            基盤ファイル（scripts / .claude / prompts）の静的検査だけを走らせる"
+	@echo "  make check            基盤ファイル（scripts / .claude / prompts と .ai-flow/）の静的検査だけを走らせる"
 	@echo "                        上の各フェーズの前に自動で通るので、普段は単独で呼ばなくてよい"
 	@echo
 	@echo "変数: ISSUE（対象Issue番号） MAX_ROUNDS（判定の最大周回数、既定 $(MAX_ROUNDS)）"
-	@echo "      BASE_BRANCH  PR のベースブランチ（既定 $(BASE_BRANCH)）"
+	@echo "      BASE_BRANCH  PR のベースブランチ（既定 $(BASE_BRANCH)。案件の値は .ai-flow/config.mk）"
 	@echo "      STRONG_MODEL / FAST_MODEL  強モデル・高速モデルのID（既定は環境変数から）"
 	@echo "      REVIEW_JUDGE_MODEL  実装レビューの判定モデル。strong / fast か生のモデルIDを受ける"
 	@echo "                          未設定なら強モデル"
@@ -73,8 +78,19 @@ help:
 	@echo "経緯はすべて Issue のコメントに残る（AI-TAG で種別を識別）"
 
 # 基盤ファイルの静的検査。フェーズの前に必ず通す（内容は scripts/check-scripts.sh の冒頭）
-check:
+check: check-project
 	@./scripts/check-scripts.sh
+
+# 案件ごとの設定。無いと check（プロンプトの生成と権限のマージ）が意味の分からない形で落ちるので先に止める
+check-project:
+	@if [ ! -f "$(AI_FLOW_PROJECT_DIR)/config.mk" ]; then \
+		echo "Error: $(AI_FLOW_PROJECT_DIR)/config.mk がありません。案件ごとの設定を置いてください（docs/ai-workflow-setup.md 参照）。" >&2; \
+		exit 1; \
+	fi
+	@if [ -z "$(strip $(TEST_CMD))" ]; then \
+		echo "Error: TEST_CMD が未設定です。$(AI_FLOW_PROJECT_DIR)/config.mk に書いてください。" >&2; \
+		exit 1; \
+	fi
 
 # 未設定のまま走らせて途中で落ちるのを防ぐ
 check-env:
