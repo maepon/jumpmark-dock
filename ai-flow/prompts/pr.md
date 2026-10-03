@@ -18,7 +18,7 @@ checking your commits. Your part ends at preparing the branch, the commits, and 
 
 4. Stage **only the changes for this Issue**
 
-   **Never include** the tooling files (`Makefile`, `scripts/`, `prompts/`, `.claude/`, `docs/`, `.env.example` and `.gitignore` under `{{FLOW_DIR}}/`, plus `.ai-flow/` and `.gitignore` at the root).
+   **Never include** the tooling files (everything under `{{FLOW_DIR}}/`, plus `.ai-flow/` and `.gitignore` at the root).
    The rule is that changes for the Issue and changes to the tooling go into separate commits, and humans bring in the tooling
    through separate PRs. If they are mixed in, do not stage them; say so in your reply
    (make runs the same check, so including them stops it there)

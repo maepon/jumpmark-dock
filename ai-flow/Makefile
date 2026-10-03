@@ -84,7 +84,7 @@ check: check-project
 # 案件ごとの設定。無いと check（プロンプトの生成と権限のマージ）が意味の分からない形で落ちるので先に止める
 check-project:
 	@if [ ! -f "$(AI_FLOW_PROJECT_DIR)/config.mk" ]; then \
-		echo "Error: $(AI_FLOW_PROJECT_DIR)/config.mk がありません。案件ごとの設定を置いてください（docs/ai-workflow-setup.md 参照）。" >&2; \
+		echo "Error: $(AI_FLOW_PROJECT_DIR)/config.mk がありません。案件ごとの設定を置いてください（examples/project/.ai-flow をコピーする。docs/setup.md 参照）。" >&2; \
 		exit 1; \
 	fi
 	@if [ -z "$(strip $(TEST_CMD))" ]; then \

@@ -62,12 +62,13 @@ PR_URL=""
 # git status --porcelain / git diff --name-only のパスは、フローのディレクトリで実行してもリポジトリのルートからの相対になる。
 # そのため FLOW_PREFIX を付けて書く。付けないとフローの scripts/ などの改変が素通りし、逆にルートの docs/
 # （プライバシーポリシーなど案件のドキュメント）が基盤扱いされて止まる（#10 で発覚、実測）。
-# フローの docs/ は導入ガイドの置き場所。フローの .gitignore は tmp/ と .env を無視し、権限ファイルを戻す規則を持つ。
+# フローのディレクトリは丸ごと基盤として扱う（subtree で取り込んだ別リポジトリの中身なので、README.md・examples/ なども
+# 案件の変更で書き換えてはいけない）。作業ファイルの tmp/ と各自の .env は、フローの .gitignore が無視するのでここに出ない。
 # ルートの .gitignore はフローの規則を持たないが、保護は続ける。フローのディレクトリを無視する規則を書き足されると、
 # そこに置かれた新しいファイルがこの検査から見えなくなるため。
 # ルートの .ai-flow/ は案件ごとの設定（コマンド・権限の追加分・プロンプトに埋める文章）。フローの .claude/ と違って
 # Claude Code 自身は書き込みを塞がないので、ここで捕まえる。権限の追加分を書き換えられると次のステップの権限が広がる。
-TOOLING_PATHS="^(${FLOW_PREFIX_RE}(Makefile|scripts/|prompts/|\\.claude/|docs/|\\.env\\.example|\\.gitignore)|\\.ai-flow/|\\.gitignore)"
+TOOLING_PATHS="^(${FLOW_PREFIX_RE}|\\.ai-flow/|\\.gitignore)"
 
 mkdir -p tmp
 # コストは Issue 1件あたりで積む。起動ごとに切り詰めると、1周を make impl → make review と

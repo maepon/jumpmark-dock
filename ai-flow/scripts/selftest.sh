@@ -109,7 +109,8 @@ repo_suite() {
   git -C "${REPO}" init -q
   echo 'x' > "${REPO}/${F}/scripts/a.sh"
   echo 'x' > "${REPO}/${F}/docs/g.md"
-  echo 'x' > "${REPO}/${F}/.gitignore"
+  printf 'tmp/\n.env\n' > "${REPO}/${F}/.gitignore"          # 実物のフローの .gitignore と同じく tmp/ と .env を無視する
+  echo 'x' > "${REPO}/${F}/README.md"
   echo 'x' > "${REPO}/docs/pp.md"
   echo 'x' > "${REPO}/docs/日本語 ファイル.md"
   echo 'x' > "${REPO}/README.md"
@@ -129,6 +130,10 @@ repo_suite() {
   echo 'y' >> "${REPO}/.gitignore"                          # ルートの .gitignore も保護を続ける
   echo 'y' >> "${REPO}/.ai-flow/permissions.json"           # 案件設定（権限の追加分）も基盤
   echo 'new' > "${REPO}/${F}/docs/new.md"
+  echo 'y' >> "${REPO}/${F}/README.md"                      # フローのディレクトリの中は丸ごと基盤
+  mkdir -p "${REPO}/${F}/examples/project"
+  echo 'new' > "${REPO}/${F}/examples/project/x.md"
+  mkdir -p "${REPO}/${F}/tmp" && echo 'w' > "${REPO}/${F}/tmp/work.md"   # 作業ファイルはフローの .gitignore で無視される
   git -C "${REPO}" mv "${F}/docs/g.md" docs/g.md            # 基盤から出す移動も基盤の改変
   echo 'UNFORMATTED' >> "${REPO}/test/x.js"                # 既存ファイルを未整形に
   echo 'UNFORMATTED' > "${REPO}/web/a b.js"                # スペースを含む新規の未整形ファイル
@@ -144,7 +149,7 @@ repo_suite() {
 
   # --- tooling_state ---
   out=$(run_case "${REPO}/${F}" 'tooling_state'); got=$?
-  expected=$(printf '%s\n' .ai-flow/permissions.json .gitignore "${F}/.gitignore" "${F}/docs/g.md" "${F}/docs/new.md" "${F}/docs/note.md" "${F}/scripts/a.sh" | LC_ALL=C sort)
+  expected=$(printf '%s\n' .ai-flow/permissions.json .gitignore "${F}/.gitignore" "${F}/README.md" "${F}/docs/g.md" "${F}/docs/new.md" "${F}/docs/note.md" "${F}/examples/project/x.md" "${F}/scripts/a.sh" | LC_ALL=C sort)
   if [ "${got}" -ne 0 ] || [ "$(printf '%s\n' "${out}" | LC_ALL=C sort)" != "${expected}" ]; then
     ng "tooling_state: 基盤ファイルの判定が期待と違います（${F}/ から実行）。
 期待:
