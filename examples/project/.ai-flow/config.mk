@@ -11,7 +11,11 @@
 # Branch that PRs are based on. scripts/ and prompts/ only use this value.
 BASE_BRANCH = main
 
-# Runs the whole test suite. The agents use it to decide whether tests pass. Required.
+# Tests. If your project has no automated tests, leave TEST_CMD and SCRATCH_TEST_CMD both empty:
+# the plan then maps each acceptance criterion to a verification command (or a `manual` check) instead of a test,
+# and the judges run those commands. Allow the commands you expect to use in permissions.json.
+
+# Runs the whole test suite. The agents use it to decide whether tests pass.
 # If your test tool caches results, disable the cache here (e.g. `go test -count=1 ./...`),
 # because the judge re-runs the tests to verify claims and must not see a replayed success.
 TEST_CMD = npm test

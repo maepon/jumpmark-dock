@@ -34,10 +34,15 @@ done
 cp -R "${SRC}/examples/project/.ai-flow" "${HOST}/.ai-flow"
 
 git -C "${HOST}" add -A
-git -C "${HOST}" -c user.name=ci -c user.email=ci@example.com commit -q -m "ci-check"
+git -C "${HOST}" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit -q -m "ci-check"
 
 make -C "${FLOW}" check || exit 1
 
-# A project without a formatter (all FORMAT_* empty) must also render its prompts and pass make check
+# Projects without a formatter (all FORMAT_* empty) and / or without tests (TEST_CMD and SCRATCH_TEST_CMD empty)
+# must also render their prompts and pass make check
 echo "--- running again with all FORMAT_* empty"
-make -C "${FLOW}" check FORMAT_CHECK_CMD= FORMAT_FILE_CMD= FORMAT_FIX_CMD= FORMAT_GLOBS=
+make -C "${FLOW}" check FORMAT_CHECK_CMD= FORMAT_FILE_CMD= FORMAT_FIX_CMD= FORMAT_GLOBS= || exit 1
+echo "--- running again with TEST_CMD / SCRATCH_TEST_CMD empty"
+make -C "${FLOW}" check TEST_CMD= SCRATCH_TEST_CMD= || exit 1
+echo "--- running again with no tests and no formatter"
+make -C "${FLOW}" check TEST_CMD= SCRATCH_TEST_CMD= FORMAT_CHECK_CMD= FORMAT_FILE_CMD= FORMAT_FIX_CMD= FORMAT_GLOBS=

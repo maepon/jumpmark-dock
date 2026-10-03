@@ -349,7 +349,7 @@ $RESULT"
 phase_impl() {
   PHASE=impl
   require_instruction
-  run_step "Writing the implementation plan and test scenarios" prompts/plan.md "$FAST"
+  run_step "Writing the implementation plan" prompts/plan.md "$FAST"
 
   round=1
   while : ; do

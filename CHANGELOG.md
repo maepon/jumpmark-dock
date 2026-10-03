@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-03
+
+### Added
+
+- **Projects without automated tests are supported**: leave `TEST_CMD` and `SCRATCH_TEST_CMD` both empty. The plan then maps each acceptance
+  criterion to a verification command (or a `manual` check with steps) instead of a test; implement runs the commands before and after the change;
+  the judges re-run them; Devil's Advocate's Claim 2 breaks the change and checks that the verification fails. Verdicts are still decided only
+  by acceptance criteria numbers. Allow the verification commands in `.ai-flow/permissions.json`
+- `{{#unless NAME}}` … `{{/unless}}` blocks in prompts (kept only when the value is empty), the counterpart of `{{#if}}`
+
+### Changed
+
+- `make check` no longer requires `TEST_CMD`; it now requires `TEST_CMD` and `SCRATCH_TEST_CMD` to be set together or left empty together.
+  No change is needed in `.ai-flow/` for projects that have tests: the prompts they get are byte-for-byte the same as in 0.3.0
+- `scripts/ci-check.sh` also runs `make check` without tests, and without tests and a formatter
+
+### Fixed
+
+- `make check` could fail when the user signs commits (`commit.gpgsign = true`) and the signing agent did not respond, because
+  `selftest.sh` and `ci-check.sh` made signed commits in their throwaway repositories. Those commits are now unsigned
+
 ## [0.3.0] - 2026-10-03
 
 First public release.
@@ -94,9 +115,10 @@ so its history is included; Issue / PR numbers in those commit messages refer to
 ### Known limitations
 
 - The scripts' comments and terminal / Slack messages are in Japanese (fixed in 0.3.0)
-- A project without a formatter or a test command is not supported yet: prompts that use an empty `FORMAT_*` / `TEST_CMD` value stop at render time (formatter: fixed in 0.2.0)
+- A project without a formatter or a test command is not supported yet: prompts that use an empty `FORMAT_*` / `TEST_CMD` value stop at render time (formatter: fixed in 0.2.0; tests: fixed in 0.4.0)
 
-[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/maepon/issue-to-pr-flow/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.1.0...v0.2.0

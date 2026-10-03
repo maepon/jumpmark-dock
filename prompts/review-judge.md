@@ -12,7 +12,12 @@ You do not fix code. Fixing is the next phase's job. You only point things out.
 2. Check the diff
    - Look at **both** `git status --short` and `git diff`
    - Read the contents of new untracked files with `Read` (they do not show up in `git diff`)
+{{#if TEST_CMD}}
 3. **Run the tests yourself.** `{{TEST_CMD}}`. Do not trust the report
+{{/if}}
+{{#unless TEST_CMD}}
+3. **Run the verification commands from the plan yourself.** Do not trust the report
+{{/unless}}
 4. Judge the acceptance criteria `AC-n` one by one
 5. If `APPROVED`, report residual risks in a separate comment (section below)
 
@@ -46,8 +51,14 @@ Write the following in the comment.
 
 Points to look at.
 
+{{#if TEST_CMD}}
 - Whether the tests **actually** verify the acceptance criteria. A test that only calls an internal function directly,
   without going through the path a user takes (command-line flags, real input and output), does not count as verification
+{{/if}}
+{{#unless TEST_CMD}}
+- Whether the verification commands **actually** verify the acceptance criteria. A command that only shows a change exists
+  (such as a word appearing in a file) does not count when the criterion is about behavior. Check `manual` rows yourself as far as you can
+{{/unless}}
 - Whether what the report says was done really exists in the diff
 - Whether changes outside the scope of the instruction document are mixed in. If so, point that out too
 
@@ -66,7 +77,12 @@ A later phase (writing the PR body) searches for these tokens literally, so **wr
 Format: `- **AC-4 (empty input is rejected)**: … → met (verified:run)`
 
 **Only cite as evidence commands you actually ran yourself.**
+{{#if TEST_CMD}}
 Available to you: `Read` / `Glob` / `Write`, and `{{TEST_CMD}}` / `{{SCRATCH_TEST_CMD}}` /
+{{/if}}
+{{#unless TEST_CMD}}
+Available to you: `Read` / `Glob` / `Write`, the project commands allowed for the verification table, and
+{{/unless}}
 {{#if FORMAT_CHECK_CMD}}
 `{{FORMAT_CHECK_CMD}}` / `{{FORMAT_FILE_CMD}}` /
 {{/if}}
@@ -108,8 +124,14 @@ This list is built from incidents that actually happened in this repository and 
 
 {{RISK_CATALOG}}
 
+{{#if TEST_CMD}}
 To actually run something to check it, create a throwaway test file under `tmp/` (`{{FLOW_DIR}}/tmp/`)
 (`mkdir` is available), and call the function with `{{SCRATCH_TEST_CMD}} <file>`, or go through the path a user takes with `{{TEST_CMD}}`.
+{{/if}}
+{{#unless TEST_CMD}}
+To actually try something, put throwaway input files under `tmp/` (`{{FLOW_DIR}}/tmp/`; `mkdir` is available)
+and run the project's commands on them, the same way the verification table does.
+{{/unless}}
 `rm` is not allowed, so no cleanup is needed (`tmp/` is not tracked by git).
 
 ### Posting

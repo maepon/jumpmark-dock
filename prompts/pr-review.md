@@ -44,6 +44,7 @@ If there is even one case of "the ACs are met but the Why is not", write it firs
 Where an acceptance criterion is written by referring to another artifact ("equivalent to X", "same as the existing one"),
 check **whether the reference itself is correct**. If the reference is wrong, the implementation that inherited it has the same flaw.
 
+{{#if TEST_CMD}}
 ### Claim 2: The tests only rubber-stamp the implementation rather than the specification
 
 **Actually break the implementation to check.** Do not write impressions from reading.
@@ -56,6 +57,20 @@ check **whether the reference itself is correct**. If the reference is wrong, th
 4. Restore it with `git restore <file>` and confirm that `git status --short` is empty
 
 Try it in **at least two places**. Write where you broke it, the command you ran, and the names of the tests that failed (or that none failed).
+{{/if}}
+{{#unless TEST_CMD}}
+### Claim 2: The verification only confirms the change exists rather than the specification
+
+**Actually break the change to check.** Do not write impressions from reading.
+
+1. Deliberately break one part at the core of the change with `Edit` (revert a key line, change a value, remove an entry)
+2. Run the verification commands from the plan for the affected acceptance criteria
+3. Check **whether the verifications that should fail did fail**. If they did not, that verification does not check that
+   behavior. Write which verification should have failed
+4. Restore it with `git restore <file>` and confirm that `git status --short` is empty
+
+Try it in **at least two places**. Write where you broke it, the commands you ran, and which verifications failed (or that none failed).
+{{/unless}}
 
 `git restore` is allowed only in this phase. The diff is committed, so it can be restored.
 **If you forget to restore, make stops** (it cannot finish with the working tree changed).
@@ -65,8 +80,14 @@ Try it in **at least two places**. Write where you broke it, the command you ran
 {{USER_FLOWS}}
 In a change that adds a guard, suspect "**normal usage gets caught by the new guard**".
 
+{{#if TEST_CMD}}
 Actually run anything suspicious. Create a working directory with `mkdir` under `tmp/` (`{{FLOW_DIR}}/tmp/`) and write a throwaway test file there,
 then call the function with `{{SCRATCH_TEST_CMD}} <file>`, or go through the path a user takes with `{{TEST_CMD}}` (direct interpreter invocations are denied).
+{{/if}}
+{{#unless TEST_CMD}}
+Actually run anything suspicious. Create a working directory with `mkdir` under `tmp/` (`{{FLOW_DIR}}/tmp/`) and put throwaway input files there,
+then run the project's commands on them, the same way the verification table does (direct interpreter invocations are denied).
+{{/unless}}
 `rm` is not allowed, so no cleanup is needed (`tmp/` is not tracked by git).
 
 ### Claim 4: This change would have been better left out
