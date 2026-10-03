@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Jumpmark をクリックしたとき、同じページのタブを探す判定で、末尾の `/`・`#` 以降・大文字小文字・既定ポート（`:443` / `:80`）の違いを同じページとみなすようにした（双方向リンクの戻りの Jumpmark で、すでに開いているタブがあるのに新しいタブが開く問題の修正）。クエリ・スキーム・`www.` の違いは、これまでどおり別のページとして扱う。あわせて popup と options で重複していた `navigateToUrl` を `shared.js` の1つにまとめた
+
 ## [2.4.0] - 2026-10-03
 
 ### Added
