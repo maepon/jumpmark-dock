@@ -119,19 +119,29 @@ FAST_MODEL = <高速モデルのID>
 > 引き継がれますが、Claude Code の Bash ツールや IDE のタスクなど、非対話のシェルから `make` を呼ぶと未設定扱いになります。
 > どこから呼んでも効くようにするなら、`.zshenv` に置くか `.env` に書いてください。
 
-### `.gitignore`
+### 置き場所と `.gitignore`
 
-以下が必要です。
+フローは**リポジトリのサブディレクトリ**に置きます。名前と深さは自由です（`ai-flow/`、`tools/flow/` など）。
+スクリプトとプロンプトはディレクトリ名を直書きせず、`scripts/flow-paths.sh` が `git rev-parse --show-prefix` から
+実行時に求めます。**ルートに置くことはサポートしていません**（フローの `Makefile` / `scripts/` / `docs/` が案件の同名のファイルと
+区別できなくなるため。`make check` と `run-phase.sh` が止めます）。
+
+フローに必要な無視の規則は、フローのディレクトリの `.gitignore` にあります。中身はディレクトリ名に依存しないので、
+ルートの `.gitignore` に足すものはありません。
 
 ```
 .env
+tmp/
+!.claude/
+!.claude/*-permissions.json
 .claude/settings.json
 .claude/settings.local.json
-tmp/
 ```
 
 **`tmp/` は必須です。** エージェントがコメント本文を書き出す場所で、git 管理下にあると
 `run-phase.sh` の作業ツリー検査が毎回発火してフローが止まります。
+`!.claude/` の2行は、グローバル gitignore で `.claude` を無視している環境向けに権限ファイルを戻すためのものです
+（ディレクトリごとの `.gitignore` はグローバル gitignore より優先されます）。
 
 ---
 
@@ -376,16 +386,26 @@ Bash(git reset --hard:*)
 
 ### 基盤ファイルの保護
 
-`run-phase.sh` は各ステップの後に作業ツリーを見て、**基盤ファイル**（`ai-flow/` 配下の `Makefile` / `scripts/` /
-`prompts/` / `.claude/` / `docs/` / `.env.example` と、ルートの `.ai-flow/` と `.gitignore`）が書き換わっていたら中断します。
+`run-phase.sh` は各ステップの後に作業ツリーを見て、**基盤ファイル**（フローのディレクトリの `Makefile` / `scripts/` /
+`prompts/` / `.claude/` / `docs/` / `.env.example` / `.gitignore` と、ルートの `.ai-flow/` と `.gitignore`）が書き換わっていたら中断します。
 `.ai-flow/` は `.claude/` と違って Claude Code 自身が書き込みを塞がないので、この検査だけが担保です。
-git が出すパスは `ai-flow/` で実行してもリポジトリのルートからの相対なので、`TOOLING_PATHS` は `ai-flow/` を付けて書きます。
+ルートの `.gitignore` はフローの規則を持ちませんが、保護は続けます。フローのディレクトリを無視する規則を書き足されると、
+そこに置かれた新しいファイルがこの検査から見えなくなるためです。
+git が出すパスはフローのディレクトリで実行してもリポジトリのルートからの相対なので、`TOOLING_PATHS` は `flow-paths.sh` が求めた
+`FLOW_PREFIX`（正規表現用にエスケープしたもの）を付けて組み立てます。
 `Write` / `Edit` にパスを付けられないので、これが唯一の担保です。
 
 対象は `run-phase.sh` の `TOOLING_PATHS` で決まります。エージェントに見せる同じ一覧が
-`prompts/_rules.md` と `prompts/pr.md` にあるので、変えるときは3箇所をそろえます。**`docs/` が入っているのはこのガイドの置き場所だから**なので、
-案件のドキュメントを `docs/` に置くリポジトリでは、ここから外してガイドを別の場所に移してください。
-そのままだと、ドキュメントを更新した PR が作れません。
+`prompts/_rules.md` と `prompts/pr.md` にあるので、変えるときは3箇所をそろえます。対象の `docs/` はフローのディレクトリの中の
+`docs/`（このガイドの置き場所）だけなので、ルートの `docs/` に案件のドキュメントを置いても基盤扱いにはなりません。
+
+### 共通部分に案件の言葉を入れない
+
+`make check` は、`.ai-flow/project-words.txt` に書いた単語が `prompts/*.md` と `.claude/*-permissions.json` に
+入っていないかを探します（単語単位・大文字小文字を区別しない）。共通部分はほかの案件にも取り込まれるので、
+ある案件のコマンドや事情を書くと、ほかの案件ではエージェントに誤った指示を出すことになるためです。
+単語リストは案件側に持つので、どの案件に取り込んでも、その案件の言葉で検査が働きます。
+見つかったら、その記述は `.ai-flow/` のファイル（`context.md` など）に移すか、プレースホルダにします。
 
 同じ検査で、作業ツリーに出ているソースがフォーマッタに通っているかも見ます（未整形なら中断）。
 **整形はシェルではせず、エージェントに掛けさせます。** シェルが差分を書き換えると、
@@ -408,15 +428,18 @@ git が出すパスは `ai-flow/` で実行してもリポジトリのルート�
 
 ```
 Makefile                             入口（make help）。ルートの .ai-flow/config.mk を include する
+.gitignore                           フロー用の無視の規則（tmp/ / .env / 権限ファイルを戻す）
 .env.example                         各自の設定のひな形（→ .env にコピー）
 
 scripts/
   run-phase.sh                       フローの筋書き。フェーズの進行、検査、push、PR 作成、通知
   claude-run.sh                      Claude Code を1回ヘッドレス実行する。冒頭に権限の実測メモ
   render-prompt.sh                   プロンプトのプレースホルダを埋める（claude-run.sh から呼ぶ）
+  flow-paths.sh                      フローのディレクトリの場所を求める（各スクリプトが source する）
   merge-permissions.sh               権限プロファイルに案件の追加分を足し込む（claude-run.sh から呼ぶ）
   check-scripts.sh                   基盤ファイルの静的検査（各フェーズの前に走る）
-  selftest.sh                        run-phase.sh の関数と render-prompt.sh の回帰テスト（check-scripts.sh から呼ぶ。gh / npx はスタブ）
+  selftest.sh                        run-phase.sh の関数と render-prompt.sh の回帰テスト（check-scripts.sh から呼ぶ。gh / npx はスタブ。
+                                     使い捨てのリポジトリを ai-flow/ と tools/ai.flow/ の2通りに置いて回す）
   notify-slack.sh                    Slack 通知
 
 prompts/
@@ -446,6 +469,7 @@ docs/
   context.md                         案件の前提（_rules.md の末尾に埋め込む）
   risk-catalog.md                    事故カタログ（review-judge.md に埋め込む）
   user-flows.md                      普段の使い方（pr-review.md の主張3に埋め込む）
+  project-words.txt                  共通部分に入ってはいけない案件の言葉（make check が探す）
 
 tmp/                                 作業ファイル（git 管理外。消しても Issue から再開できる）
   verdict-issue<N>.txt               判定の1語
@@ -467,6 +491,7 @@ tmp/                                 作業ファイル（git 管理外。消し
 | `{{PR_TITLE_FILE}}` / `{{PR_BODY_FILE}}` | PR のタイトルと本文 |
 | `{{BASE_BRANCH}}` | PR のベースブランチ（`.ai-flow/config.mk` の `BASE_BRANCH`）。差分を読むときの `origin/{{BASE_BRANCH}}..HEAD` など |
 | `{{TEST_CMD}}` / `{{SCRATCH_TEST_CMD}}` / `{{FORMAT_CHECK_CMD}}` / `{{FORMAT_FILE_CMD}}` / `{{FORMAT_FIX_CMD}}` / `{{FORMAT_GLOBS}}` / `{{OUTPUT_LANG}}` | `.ai-flow/config.mk` の同名の値 |
+| `{{FLOW_DIR}}` / `{{ROOT_REL}}` | フローのディレクトリ（例 `ai-flow`）と、そこからルートへの相対パス（例 `../`）。`flow-paths.sh` が求める。プロンプトにディレクトリ名を直書きすると `make check` が落ちる |
 | `{{PROJECT_CONTEXT}}` / `{{RISK_CATALOG}}` / `{{USER_FLOWS}}` | 行全体がこれだけの行を、`.ai-flow/` の `context.md` / `risk-catalog.md` / `user-flows.md` の中身に置き換える |
 
 埋めるのは `scripts/render-prompt.sh` です。値が空のプレースホルダや埋まらずに残ったものがあれば、
@@ -588,6 +613,8 @@ Slack の通知に出る「累計コスト」はこのファイルの合計で�
       成果物を動かして確かめる経路。パス結合API名も言語に合わせる
 - [ ] **`.ai-flow/context.md`** — 読むべきドキュメント（規約ファイル、README 等）、更新対象のドキュメント、
       案件のコマンドに固有の落とし穴。全フェーズのプロンプト（`_rules.md` の末尾）に入る
+- [ ] **`.ai-flow/project-words.txt`** — 共通部分に入ってはいけない、自分の案件の言葉（使っている言語やツールのコマンド名、
+      製品名、主要なファイル名）。無くても動くが、共通部分を直したときに案件の事情が混ざっても気づけない
 - [ ] **`.ai-flow/user-flows.md`** — `pr-review` の主張3で「前と違う結果になるもの」を探すときの普段の使い方
 
 ### 埋めていくもの

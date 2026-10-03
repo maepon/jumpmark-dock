@@ -144,6 +144,9 @@ ai-flow/tmp/
 
 ### ルートに置く場合
 
+> **サポートしなくなりました**（#38 の Step 2）。フローはサブディレクトリに置いてください。名前と深さは自由です。
+> `make check` と `run-phase.sh` は、ルートに置かれていると止まります。以下は経緯として残しています。
+
 移植元の Go のリポジトリはこの形でした。`TOOLING_PATHS` から `ai-flow/` を外し
 （例: `'^(Makefile|scripts/|prompts/|\.claude/|docs/|\.gitignore|\.env\.example)'`）、
 `selftest.sh` の使い捨てリポジトリもルート配置の形に直します。
