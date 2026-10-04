@@ -28,9 +28,15 @@ case "$KIND" in
 esac
 
 # The agents reply in GitHub markdown, but Slack mrkdwn uses *x* for bold,
-# so ** would be shown literally. Collapse it to a single asterisk here
+# so ** would be shown literally. Turn **x** into *x* here.
+# Slack only takes *x* as bold when the character just outside each * is a space or ASCII punctuation, so in text without
+# spaces between words (Japanese: **太字**（…）) it stayed literal (#24). A zero-width space (U+200B) on both sides satisfies that.
+# Only a pair whose inner edges are not spaces, on one line, counts as bold (as in GitHub markdown), so a stray "a ** b" is not paired up.
+# Any ** left over is still collapsed to a single asterisk, as before.
 PAYLOAD=$(jq -n --arg emoji "$EMOJI" --arg title "$TITLE" --arg url "$ISSUE_URL" --arg body "$BODY" \
-  '($body | gsub("\\*\\*"; "*")) as $b
+  '($body
+    | gsub("\\*\\*(?<t>[^*\\s](?:[^*\n]*[^*\\s])?)\\*\\*"; "​*\(.t)*​")
+    | gsub("\\*\\*"; "*")) as $b
    | {text: ($emoji + " *" + $title + "*\n*Issue:* " + $url + "\n\n" + $b)}')
 
 # Always check the result, so that a failure is never silently swallowed.

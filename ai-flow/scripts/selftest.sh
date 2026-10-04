@@ -11,11 +11,12 @@
 #     and how render-prompt.sh fills placeholders
 #   - The notification contract (what NOTIFY_CMD receives, and that a failing one does not stop the flow), and that
 #     claude-run.sh keeps the notification secrets (NOTIFY_SECRET_VARS) out of the agent's environment
+#   - notify-slack.sh's conversion of **bold**, which did not show as bold in Japanese text
 #
 # Sourcing run-phase.sh would run its body, so only the functions under test and the TOOLING_PATHS definition are extracted
 # with sed and sourced. If the way functions are written changes (name() { ... } with the } at the start of a line) and extraction
 # fails, the tests fail rather than passing silently.
-# gh, npx and claude are replaced by stubs placed first in PATH, so neither the network nor any cost is involved.
+# gh, npx, claude and curl are replaced by stubs placed first in PATH, so neither the network nor any cost is involved.
 set -uo pipefail
 
 # Use the same formatting settings as a Node.js project (npx is a stub). Do not depend on the project settings' values
@@ -381,6 +382,34 @@ out=$(NOTIFY_CMD='true' run_case "${WORK}" 'ISSUE_URL=u; notify done t "$(head -
 expect "notify (a command that does not read stdin is not a failure)" 0 "END" "${out}" "${got}"
 [ "${out}" = "END" ] || ng "notify (command ignoring stdin): expected no output but got \"${out}\"."
 
+# --- notify-slack.sh (the payload, with curl stubbed: the stub saves what would be posted and answers HTTP 200) ---
+cat > "${BIN}/curl" <<'EOF'
+#!/bin/sh
+while [ $# -gt 0 ]; do
+  [ "$1" = "--data" ] && printf '%s' "$2" > "${CURL_OUT}"
+  shift
+done
+printf '200'
+EOF
+chmod +x "${BIN}/curl"
+CURL_OUT="${WORK}/curl-out.json"
+out=$(printf '%s\n' '**PR #1 の確認**（x）、**AC-1** ok' '**a' 'b** and a ** b' \
+  | PATH="${BIN}:${PATH}" CURL_OUT="${CURL_OUT}" SLACK_WEBHOOK_URL=http://example.test \
+    AI_FLOW_NOTIFY_KIND=done AI_FLOW_NOTIFY_TITLE=t AI_FLOW_NOTIFY_ISSUE_URL=u ./scripts/notify-slack.sh 2>&1); got=$?
+Z=$(printf '\342\200\213')   # U+200B (zero-width space) in UTF-8
+expected=$(printf '%s\n' ":white_check_mark: *t*" "*Issue:* u" "" "${Z}*PR #1 の確認*${Z}（x）、${Z}*AC-1*${Z} ok" "*a" "b* and a * b")
+actual=$(jq -r .text "${CURL_OUT}" 2>/dev/null)
+if [ "${got}" -ne 0 ] || [ "${actual}" != "${expected}" ]; then
+  ng "notify-slack.sh (**bold** becomes *bold* with zero-width spaces outside; stray ** collapse to *): differs from what was expected (exit code ${got}).
+Expected:
+${expected}
+Actual:
+${actual}
+${out}"
+else
+  pass=$((pass + 1))
+fi
+
 # --- claude-run.sh keeps the notification secrets out of the agent's environment ---
 # Run it for real with the claude stub, in a throwaway host repository with the flow at ai-flow/ (flow-paths.sh needs that layout)
 AE="${WORK}/agentenv"
@@ -454,6 +483,6 @@ else
 fi
 
 if [ "${status}" -eq 0 ]; then
-  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh / claude-run.sh / resign-subtree-merge.sh passed."
+  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh / claude-run.sh / notify-slack.sh / resign-subtree-merge.sh passed."
 fi
 exit "${status}"
