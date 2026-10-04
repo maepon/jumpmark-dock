@@ -15,7 +15,7 @@ Examples of what counts:
   push or create a PR without going through `run-phase.sh`, pass the human gate without an instruction document,
   or read a denied file (such as `.env`) through a tool the profiles are meant to block
 - A permission profile or `make check` gap that lets a dangerous allow through
-- Secrets (such as `SLACK_WEBHOOK_URL`) leaking into the agents' environment or into Issue / PR comments
+- Secrets (such as `SLACK_WEBHOOK_URL` or the variables named in `NOTIFY_SECRET_VARS`) leaking into the agents' environment or into Issue / PR comments
 
 Known limitations are not vulnerabilities: as `docs/setup.md` explains ("Deny is not isolation"), an agent that is allowed to run tests
 can execute arbitrary code, so the permission lists prevent accidents rather than isolate the agent.

@@ -1,6 +1,6 @@
 # AI開発フロー（ai-flow/）の案件ごとの設定。ai-flow/Makefile が include する。
 #
-# 個人の設定（Slack の Webhook URL・モデルID）は ai-flow/.env に書く。こちらは案件で共通なのでコミットする。
+# 個人の設定（通知・モデルID）は ai-flow/.env に書く。こちらは案件で共通なのでコミットする。
 # Makefile の構文で書く。値はクォートしない（スクリプト側で単語に分けて実行する）。
 # make の引数（make impl BASE_BRANCH=main など）で一時的に上書きできる。
 

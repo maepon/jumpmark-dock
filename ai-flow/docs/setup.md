@@ -32,7 +32,7 @@ Three design principles:
    More gates dilute the point of automation; fewer let implementation start before the specification is settled.
 2. **Verdicts are decided only by acceptance criteria numbers.** Pass/fail comes only from mapping to `AC-1`, `AC-2`, ….
    Verdicts based on impressions never converge.
-3. **If it does not converge, stop and hand it to a human.** After at most 3 rounds it notifies Slack and stops.
+3. **If it does not converge, stop and hand it to a human.** After at most 3 rounds it stops and sends a notification.
    Carrying on automatically turns review into a formality. When a judge concludes that an unmet criterion cannot be fixed
    by revision at all (contradictory criteria, a wrong premise in the instruction document), it returns `NEEDS_HUMAN` and stops without waiting for more rounds.
 
@@ -49,7 +49,7 @@ Three design principles:
 | `claude` | Claude Code CLI, used headlessly (`claude -p`) | `claude --version` |
 | `gh` | GitHub CLI: reading/writing Issues, creating PRs | `gh auth status` |
 | `jq` | Reading Claude's JSON output | `jq --version` |
-| `curl` | Slack notifications | `curl --version` |
+| `curl` | Slack notifications (only if you use them) | `curl --version` |
 | `make` | Entry point | `make --version` |
 | `bash` | Running the scripts | `bash --version` |
 
@@ -77,12 +77,76 @@ fail "ブランチ名が不正です（${branch}）" # ✓
 - **You work with Issues.** The flow keeps its state in Issue comments
 - The default branch (the PR base) matches `BASE_BRANCH` in `.ai-flow/config.mk`
 
-### Slack
+### Notifications
 
-An Incoming Webhook URL is required. **If it is not set, `make` stops first** (on purpose: phases run for a long time, and a human must not miss the result).
+Phases run for a long time, so the flow sends a notification at each ending (done / waiting for a human / aborted) and when
+implementation is done. **Notifications are optional, and the command that sends them is yours to choose** (`NOTIFY_CMD`).
 
-If you do not use Slack, replace `scripts/notify-slack.sh` with something that does nothing and exits 0,
-and remove the `SLACK_WEBHOOK_URL` check from `check-env` in the `Makefile`.
+| Setting in `.env` | What happens |
+|---|---|
+| Nothing | No notifications. `make` says `Notifications are off` at the start of each phase, so a missing setting does not go unnoticed |
+| Only `SLACK_WEBHOOK_URL` | Slack, through `scripts/notify-slack.sh` (the behavior before `NOTIFY_CMD` existed) |
+| `NOTIFY_CMD = <command>` | Your command. It wins over `SLACK_WEBHOOK_URL` |
+| `NOTIFY_CMD =` (empty) | No notifications, even if `SLACK_WEBHOOK_URL` is set |
+
+`NOTIFY_CMD` usually goes in `.env` (where notifications go is personal). Putting it in `.ai-flow/config.mk` works too, for a team that shares one
+destination; a value in `.env` wins. `check-env` stops if the command is not executable, or if it is `notify-slack.sh` without `SLACK_WEBHOOK_URL`.
+
+#### The contract with `NOTIFY_CMD`
+
+The value is split into words (no quoting, no `~`), like the other commands; paths are relative to the flow directory.
+For a script of your own, an absolute path or `$(AI_FLOW_PROJECT_DIR)/notify.sh` is the easiest
+(`.ai-flow/` is protected from the agents by the tooling check, and the flow directory is a subtree you should not edit).
+
+| Input | Content |
+|---|---|
+| stdin | The body: GitHub markdown as the agents wrote it, followed by the cumulative cost. Convert it to your service's dialect if needed |
+| `AI_FLOW_NOTIFY_KIND` | `done` (a phase finished: PR created, review posted) / `waiting` (a human has to act: the instruction document is ready, questions, not converged, `NEEDS_HUMAN`) / `aborted` (`fail`) / `progress` (implementation done, going on to review) |
+| `AI_FLOW_NOTIFY_TITLE` | One line of plain text, such as `impl aborted`. No emoji or markup |
+| `AI_FLOW_NOTIFY_PHASE` | `spec` / `impl` / `review` / `code-review` / `pr-review` / `create-pr` |
+| `AI_FLOW_NOTIFY_ISSUE_URL` | The Issue URL |
+
+Exit with 0 on success. **A failure only prints a warning; the flow carries on** (a lost notification must not lose the work).
+The flow does not time the command out, so give network calls a limit of their own (`curl --max-time 30`): a command that hangs holds the phase.
+Fields may be added to `AI_FLOW_NOTIFY_*` later; ignore the ones you do not use.
+
+#### Secrets
+
+The agents must not be able to read the notification secret (see "Deny is not isolation" in §6). Name the environment variables that hold secrets in
+`NOTIFY_SECRET_VARS` (default `SLACK_WEBHOOK_URL`). The `Makefile` exports exactly those for `NOTIFY_CMD`, and `claude-run.sh` removes the same
+names from the agents' environment. Variables you define in `.env` are not exported otherwise, so **a name you forget to list means the command
+does not get its secret, never that the agents can read it.** `SLACK_WEBHOOK_URL` is always removed.
+
+Keep the secret in `.env` (every `.env` is denied to the `Read` tool) rather than in a file of its own, which the agents could read.
+
+#### Examples
+
+None of these except Slack has been verified with the flow yet.
+
+Discord (its webhooks accept a Slack-compatible payload at `<webhook URL>/slack`, so the Slack script can be reused):
+
+```make
+SLACK_WEBHOOK_URL = https://discord.com/api/webhooks/<id>/<token>/slack
+```
+
+A script of your own, with its secret listed so the agents never see it (`.env`):
+
+```make
+NOTIFY_CMD = $(AI_FLOW_PROJECT_DIR)/notify.sh
+NOTIFY_SECRET_VARS = MY_WEBHOOK_URL
+MY_WEBHOOK_URL = https://...
+```
+
+The macOS notification center (no secret, so nothing to list). Save it as an executable script and point `NOTIFY_CMD` at it:
+
+```bash
+#!/bin/bash
+# The body on stdin is not used: notification banners are short
+osascript -e 'on run argv' -e 'display notification (item 2 of argv) with title (item 1 of argv)' -e 'end run' \
+  "issue-to-pr-flow" "${AI_FLOW_NOTIFY_KIND}: ${AI_FLOW_NOTIFY_TITLE}"
+```
+
+Google Chat is tracked in [#17](https://github.com/maepon/issue-to-pr-flow/issues/17).
 
 ### Models
 
@@ -190,7 +254,7 @@ and after `pull` it only works when git happens to guess the subtree shift.
 ```sh
 cd ai-flow
 cp .env.example .env
-# write the Incoming Webhook URL to SLACK_WEBHOOK_URL in .env (Makefile syntax; make includes it)
+# optional: notifications (SLACK_WEBHOOK_URL or NOTIFY_CMD; see Notifications in §2). Makefile syntax; make includes it
 
 make check                   # project settings present, static checks, regression tests (selftest.sh). No cost
 make check-env               # environment variable checks. No cost
@@ -203,7 +267,7 @@ Settings live in two places:
 
 | Location | Contents | Committed |
 |---|---|---|
-| `<flow dir>/.env` | Personal settings (Slack webhook URL, model IDs) | No |
+| `<flow dir>/.env` | Personal settings (notifications, model IDs) | No |
 | `.ai-flow/` at the root | Project settings: `config.mk` (base branch, test and format commands, output language), `permissions.json` (extra permissions), text embedded in prompts (`context.md` / `risk-catalog.md` / `user-flows.md`), `project-words.txt` | Yes |
 
 The flow directory only contains what is the same for every project. What you adapt to your project is `.ai-flow/` only.
@@ -212,8 +276,8 @@ The flow directory only contains what is the same for every project. What you ad
 
 | Check | Command |
 |---|---|
-| Slack arrives | `./scripts/notify-slack.sh "http://example.test" "test"` |
-| Slack fires on abort | `./scripts/run-phase.sh bogus-phase 99999 "http://example.test"` |
+| A notification arrives | `printf 'test\n' \| AI_FLOW_NOTIFY_KIND=done AI_FLOW_NOTIFY_TITLE=test AI_FLOW_NOTIFY_ISSUE_URL=http://example.test <your NOTIFY_CMD>` (for Slack, prefix `SLACK_WEBHOOK_URL=<URL>`) |
+| A notification fires on abort | `NOTIFY_CMD=<command> ./scripts/run-phase.sh bogus-phase 99999 "http://example.test"` (plus the variables your command needs, such as `SLACK_WEBHOOK_URL`) |
 | The human gate works | `make impl ISSUE=n` on an Issue without an instruction document (stops with `Issue #n has no instruction document`) |
 
 Running `run-phase.sh` directly appends a header line to `tmp/cost-issue<N>.txt`. Use an unused Issue number when trying it,
@@ -426,8 +490,8 @@ The effective safeguards are these three. **Do not remove any of them.**
    Blocking dangerous push forms by enumerating permission rules leaks, so they are simply not granted
 
 Therefore **do not leave secrets in the environment variables passed to the agents.**
-The `Makefile` exports `SLACK_WEBHOOK_URL`, so `claude-run.sh` removes it with `env -u`
-(otherwise `echo` could read it and the `Read(./.env)` deny would be pointless).
+The `Makefile` exports the notification secrets named in `NOTIFY_SECRET_VARS` for `NOTIFY_CMD`, so `claude-run.sh` removes the same names
+(and always `SLACK_WEBHOOK_URL`) with `env -u` (otherwise `echo` could read them and the `Read(./.env)` deny would be pointless).
 
 ### Protecting the tooling files
 
@@ -486,10 +550,10 @@ scripts/
   merge-permissions.sh               Adds the project's extra permissions to a profile (called by claude-run.sh)
   check-scripts.sh                   Static checks of the tooling files (run before each phase)
   selftest.sh                        Regression tests for run-phase.sh functions and render-prompt.sh (called by check-scripts.sh;
-                                     gh / npx are stubbed; runs throwaway repositories with the flow at ai-flow/ and tools/ai.flow/)
+                                     gh / npx / claude are stubbed; runs throwaway repositories with the flow at ai-flow/ and tools/ai.flow/)
   ci-check.sh                        Runs make check in this repository by laying files out like a host repository (local and CI)
   resign-subtree-merge.sh            Signs the commits git subtree add / pull --squash created, keeping their trees (§3)
-  notify-slack.sh                    Slack notification
+  notify-slack.sh                    Slack notification (the default NOTIFY_CMD when SLACK_WEBHOOK_URL is set)
 
 prompts/
   _rules.md                          Common rules appended to every phase
@@ -582,11 +646,11 @@ If explanations or decoration get mixed in, `make` cannot proceed and stops wait
 
 There are three ways it ends.
 
-| Ending | Exit code | Slack | Meaning |
+| Ending | Exit code | Notification (`AI_FLOW_NOTIFY_KIND`) | Meaning |
 |---|---|---|---|
-| Ran to completion | 0 | Result notification | On to the next step |
-| `halt` (waiting for a human) | **0** | `:raising_hand:` | Not a failure. A human reads and decides |
-| `fail` (aborted) | 1 | `:x: *<phase> aborted*` | Unexpected. The message says how to resume |
+| Ran to completion | 0 | `done` | On to the next step |
+| `halt` (waiting for a human) | **0** | `waiting` | Not a failure. A human reads and decides |
+| `fail` (aborted) | 1 | `aborted` (title `<phase> aborted`) | Unexpected. The message says how to resume |
 
 `halt` exits with 0 because **waiting for a human is not a failure.** Keep this in mind if you wire it into CI.
 
@@ -623,7 +687,7 @@ Costs are **appended** to `tmp/cost-issue<N>.txt`. The `# <date time> <phase>` h
 ...
 ```
 
-The "cumulative cost" in Slack notifications is the sum of this file. **It is appended
+The "cumulative cost" in notifications is the sum of this file. **It is appended
 so that splitting one cycle into `make impl` → `make review` does not erase the first half's record.**
 
 ### When you cannot tell why a phase failed
@@ -652,7 +716,7 @@ What to check and adapt for your repository.
 
 ### Must do
 
-- [ ] **`.env`** in the flow directory with `SLACK_WEBHOOK_URL`
+- [ ] **`.env`** in the flow directory: notifications if you want them (`SLACK_WEBHOOK_URL`, or `NOTIFY_CMD` and `NOTIFY_SECRET_VARS`; §2)
 - [ ] **Environment variables** for the strong and fast model IDs (defaults read `CLAUDE_CODE_OPUS_MODEL` /
       `CLAUDE_CODE_SONNET_MODEL`; put them in `.zshenv` or `.env`, not `.zshrc`)
 - [ ] **`.ai-flow/config.mk`** — `BASE_BRANCH`, tests (`TEST_CMD` / `SCRATCH_TEST_CMD`),
@@ -715,10 +779,11 @@ Things that tend to get cut because "it looks easy", and that **silently** stop 
 | **`push` and `gh pr` are not given to the agents** | Blocking dangerous push forms by enumerating permission rules leaks |
 | **The working tree is checked after each step** | `Write` / `Edit` cannot be restricted by path, so this is the only safeguard |
 | **git output paths are read with `-z`** (`worktree_paths` and `create_pr` in `run-phase.sh`) | Plain `--porcelain` / `--name-only` quote paths containing non-ASCII characters or spaces as `"…"`, so they do not match `^` in `TOOLING_PATHS`. Modified tooling files and tooling mixed into project commits **pass silently** |
+| **A failing notification only warns** (`notify()` in `run-phase.sh`) | If it stopped the flow, a flaky webhook would throw away a finished implementation or review |
 | **Agents format; the shell only checks** | If the shell rewrote the diff, what the reviewer read and the actual diff would differ |
 | **A failing formatting check stops the flow** (`format_ok()` is false on failure) | Judging only by empty output makes a missing formatter or a syntax error that prints nothing count as "formatted", and **everything passes silently** |
 | **The cost log is appended** | Truncating on each start erases the first half of `make impl` → `make review`, and the notified total comes out lower than reality |
-| **`SLACK_WEBHOOK_URL` is removed with `env -u`** | The `Makefile` exports it, so otherwise `echo` could read it and the `Read(./.env)` deny would be pointless |
+| **The notification secrets (`NOTIFY_SECRET_VARS`) are removed with `env -u`, and one list drives both export and removal** | The `Makefile` exports them for `NOTIFY_CMD`, so otherwise `echo` could read them and the `Read(./.env)` deny would be pointless. Two separate lists would drift: a secret exported but not removed reaches the agents silently |
 | **Variables in error messages are written `${x}`** | bash 3.2 takes the first byte of a non-ASCII character into the variable name. **It happens inside error messages, so it only breaks when something fails** (`check-scripts.sh` checks statically) |
 | **Permission files are not named `settings.json`** | When the workspace is not trusted, `permissions.allow` is silently ignored, and `deny` binds the human's interactive sessions too |
 | **`grep` / `cat` / `sed` / `cp` / `git -C` are not allowed** | `grep` / `cat` / `sed` / `cp` can read files and get around the `Read(./.env)` deny; `git -C` shifts the prefix match and gets around the `git push` deny |

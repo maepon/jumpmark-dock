@@ -57,9 +57,9 @@ Read project files by their path relative to the root (`{{ROOT_REL}}`).
 
 ## Project rules
 
-- Write human-facing output (Issue comments, commit messages, PR titles and bodies, and your final reply, which make shows in the terminal and on Slack) in {{OUTPUT_LANG}}
+- Write human-facing output (Issue comments, commit messages, PR titles and bodies, and your final reply, which make shows in the terminal and in notifications) in {{OUTPUT_LANG}}
 - Do not modify the tooling files (everything under `{{FLOW_DIR}}/` except your own working files in `{{FLOW_DIR}}/tmp/`, plus `.ai-flow/` and `.gitignore` at the root)
-- Do not send Slack notifications yourself. make sends them
+- Do not send notifications yourself. make sends them
 
 ## Project context
 
