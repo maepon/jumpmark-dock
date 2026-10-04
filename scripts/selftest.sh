@@ -9,11 +9,13 @@
 #   - The judges' NEEDS_HUMAN stopping without waiting for more rounds
 #   - Handling of the formatting commands and target patterns from the project settings (.ai-flow/config.mk),
 #     and how render-prompt.sh fills placeholders
+#   - The notification contract (what NOTIFY_CMD receives, and that a failing one does not stop the flow), and that
+#     claude-run.sh keeps the notification secrets (NOTIFY_SECRET_VARS) out of the agent's environment
 #
 # Sourcing run-phase.sh would run its body, so only the functions under test and the TOOLING_PATHS definition are extracted
 # with sed and sourced. If the way functions are written changes (name() { ... } with the } at the start of a line) and extraction
 # fails, the tests fail rather than passing silently.
-# gh and npx are replaced by stubs placed first in PATH, so neither the network nor any cost is involved.
+# gh, npx and claude are replaced by stubs placed first in PATH, so neither the network nor any cost is involved.
 set -uo pipefail
 
 # Use the same formatting settings as a Node.js project (npx is a stub). Do not depend on the project settings' values
@@ -35,7 +37,7 @@ trap 'rm -rf "${WORK}"' EXIT
 LIB="${WORK}/lib.sh"
 grep '^TOOLING_PATHS=' "${SRC}" > "${LIB}"
 [ -s "${LIB}" ] || ng "Could not extract the TOOLING_PATHS definition from run-phase.sh."
-FUNCS="worktree_paths tooling_state format_target format_ok unformatted_files require_instruction ensure_pr_url handle_verdict"
+FUNCS="worktree_paths tooling_state format_target format_ok unformatted_files require_instruction ensure_pr_url handle_verdict notify"
 for fn in ${FUNCS}; do
   body=$(sed -n "/^${fn}() {/,/^}/p" "${SRC}")
   if [ -z "${body}" ]; then
@@ -72,7 +74,31 @@ for a in "$@"; do f="$a"; done
 grep -q UNFORMATTED "$f" && exit 1
 exit 0
 EOF
-chmod +x "${BIN}/gh" "${BIN}/npx"
+# notify-stub: a NOTIFY_CMD that records its arguments, the AI_FLOW_NOTIFY_* variables and stdin in NOTIFY_OUT
+cat > "${BIN}/notify-stub" <<'EOF'
+#!/bin/sh
+{
+  echo "ARGS=$*"
+  echo "KIND=${AI_FLOW_NOTIFY_KIND}"
+  echo "TITLE=${AI_FLOW_NOTIFY_TITLE}"
+  echo "PHASE=${AI_FLOW_NOTIFY_PHASE}"
+  echo "URL=${AI_FLOW_NOTIFY_ISSUE_URL}"
+  echo "BODY:"
+  cat
+} > "${NOTIFY_OUT}"
+EOF
+
+# claude: reports which of the listed variables it can see, as claude -p --output-format json would reply
+cat > "${BIN}/claude" <<'EOF'
+#!/bin/sh
+seen=""
+for v in SLACK_WEBHOOK_URL DISCORD_WEBHOOK_URL OTHER_SECRET KEEP_ME; do
+  eval "x=\${$v+set}"
+  [ -n "$x" ] && seen="$seen $v"
+done
+printf '{"total_cost_usd":0,"num_turns":1,"permission_denials":[],"is_error":false,"result":"SEEN:%s"}\n' "$seen"
+EOF
+chmod +x "${BIN}/gh" "${BIN}/npx" "${BIN}/notify-stub" "${BIN}/claude"
 
 # Runs one case in a separate process and returns its output (stdout+stderr) and exit code.
 # fail / halt are not run-phase.sh's definitions but stubs that print a recognizable marker and end.
@@ -326,6 +352,54 @@ if printf '%s' "${out}" | grep -qF NOT_REACHED; then ng "handle_verdict (NEEDS_H
 out=$(run_case "${WORK}" 'handle_verdict "" implementation "make review"; echo NOT_REACHED'); got=$?
 expect "handle_verdict (an empty verdict fails)" 1 "FAIL:Unexpected verdict file contents" "${out}" "${got}"
 
+# --- notify (the contract every NOTIFY_CMD gets) ---
+NOTIFY_OUT="${WORK}/notify-out.txt"
+export NOTIFY_OUT
+out=$(NOTIFY_CMD='notify-stub --opt' run_case "${WORK}" 'ISSUE_URL=https://example.com/issues/9
+  notify waiting "spec - waiting for answers" "line 1
+\"quoted\" \\ \$HOME **bold**"; echo AFTER'); got=$?
+expect "notify (returns on success)" 0 "AFTER" "${out}" "${got}"
+expected=$(printf '%s\n' 'ARGS=--opt' 'KIND=waiting' 'TITLE=spec - waiting for answers' 'PHASE=selftest' \
+  'URL=https://example.com/issues/9' 'BODY:' 'line 1' '"quoted" \ $HOME **bold**')
+if [ "$(cat "${NOTIFY_OUT}" 2>/dev/null)" != "${expected}" ]; then
+  ng "notify (arguments, AI_FLOW_NOTIFY_* and the body on stdin): differs from what was expected.
+Expected:
+${expected}
+Actual:
+$(cat "${NOTIFY_OUT}" 2>/dev/null)"
+else
+  pass=$((pass + 1))
+fi
+out=$(NOTIFY_CMD='' run_case "${WORK}" 'ISSUE_URL=u; notify done t b; echo END'); got=$?
+expect "notify (nothing happens when NOTIFY_CMD is empty)" 0 "END" "${out}" "${got}"
+[ "${out}" = "END" ] || ng "notify (NOTIFY_CMD empty): expected no output but got \"${out}\"."
+out=$(NOTIFY_CMD='false' run_case "${WORK}" 'ISSUE_URL=u; notify aborted t b; echo AFTER'); got=$?
+expect "notify (a failing command only warns)" 0 "sending the notification failed" "${out}" "${got}"
+expect "notify (a failing command does not stop the flow)" 0 "AFTER" "${out}" "${got}"
+# A command that ignores stdin, with a body larger than a pipe buffer, is not a failure (it would be with a pipe under pipefail)
+out=$(NOTIFY_CMD='true' run_case "${WORK}" 'ISSUE_URL=u; notify done t "$(head -c 300000 /dev/zero | tr "\0" x)"; echo END'); got=$?
+expect "notify (a command that does not read stdin is not a failure)" 0 "END" "${out}" "${got}"
+[ "${out}" = "END" ] || ng "notify (command ignoring stdin): expected no output but got \"${out}\"."
+
+# --- claude-run.sh keeps the notification secrets out of the agent's environment ---
+# Run it for real with the claude stub, in a throwaway host repository with the flow at ai-flow/ (flow-paths.sh needs that layout)
+AE="${WORK}/agentenv"
+mkdir -p "${AE}/ai-flow/scripts" "${AE}/ai-flow/prompts" "${AE}/ai-flow/.claude" "${AE}/.ai-flow"
+git -C "${AE}" init -q
+for f in claude-run.sh render-prompt.sh merge-permissions.sh flow-paths.sh; do cp -p "scripts/${f}" "${AE}/ai-flow/scripts/"; done
+echo 'rules' > "${AE}/ai-flow/prompts/_rules.md"
+echo 'prompt' > "${AE}/ai-flow/prompts/p.md"
+echo '{"permissions":{"allow":[],"deny":[]}}' > "${AE}/ai-flow/.claude/p-permissions.json"
+echo '{}' > "${AE}/.ai-flow/permissions.json"
+agent_env() {
+  ( cd "${AE}/ai-flow" && env PATH="${BIN}:${PATH}" AI_FLOW_PROJECT_DIR="${AE}/.ai-flow" "$@" \
+      ./scripts/claude-run.sh prompts/p.md model 9 .claude/p-permissions.json 2>&1 )
+}
+out=$(agent_env SLACK_WEBHOOK_URL=s DISCORD_WEBHOOK_URL=d OTHER_SECRET=o KEEP_ME=k NOTIFY_SECRET_VARS='DISCORD_WEBHOOK_URL OTHER_SECRET'); got=$?
+expect "claude-run.sh (NOTIFY_SECRET_VARS and SLACK_WEBHOOK_URL are removed, the rest is kept)" 0 "SEEN: KEEP_ME" "${out}" "${got}"
+out=$(agent_env SLACK_WEBHOOK_URL=s KEEP_ME=k NOTIFY_SECRET_VARS=); got=$?
+expect "claude-run.sh (SLACK_WEBHOOK_URL is removed even with NOTIFY_SECRET_VARS empty)" 0 "SEEN: KEEP_ME" "${out}" "${got}"
+
 # --- resign-subtree-merge.sh (sign what git subtree --squash creates, without changing content) ---
 # Offline: the upstream is a local throwaway repository and signing uses a throwaway SSH key, so neither the network
 # nor the user's own signing setup (e.g. a 1Password agent) is involved.
@@ -380,6 +454,6 @@ else
 fi
 
 if [ "${status}" -eq 0 ]; then
-  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh / resign-subtree-merge.sh passed."
+  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh / claude-run.sh / resign-subtree-merge.sh passed."
 fi
 exit "${status}"

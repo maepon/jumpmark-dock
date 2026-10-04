@@ -1,6 +1,6 @@
 # Ignore rules for the flow directory. They do not depend on the directory name, so they travel with the flow.
 
-# Personal settings (Slack webhook URL, model IDs). Created by copying .env.example
+# Personal settings (notifications, model IDs). Created by copying .env.example
 .env
 
 # The agents' scratch files. The flow can resume from the Issue if they are lost

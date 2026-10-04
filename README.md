@@ -11,7 +11,7 @@ make impl ISSUE=n   →  plan → judge → revise → implement → review → 
 ```
 
 - **Verdicts come only from acceptance criteria.** The judges map findings to `AC-n`; impressions are not grounds to send work back, so rounds converge
-- **Stops instead of guessing.** If judging does not converge in 3 rounds, or a criterion cannot be met as written, it stops and notifies Slack
+- **Stops instead of guessing.** If judging does not converge in 3 rounds, or a criterion cannot be met as written, it stops and sends a notification (Slack, a command of your own, or none)
 - **The history lives in the Issue.** Every step posts a tagged comment (`<!-- AI-TAG: … -->`), so humans read the whole story in one place
 - **Guard rails around the agents.** Tooling files are checked after every step, `git push` / `gh pr` are run by the shell after checks rather than by the agents, and permission profiles are statically checked for dangerous allows
 - **Prompts in English, output in your language.** Set `OUTPUT_LANG` and Issue comments, commits, and PRs are written in it
@@ -27,7 +27,7 @@ git subtree add --prefix=ai-flow https://github.com/maepon/issue-to-pr-flow.git 
 cp -R ai-flow/examples/project/.ai-flow .ai-flow     # then edit .ai-flow/config.mk and friends
 
 cd ai-flow
-cp .env.example .env                                  # Slack webhook URL, model IDs
+cp .env.example .env                                  # notifications (optional), model IDs
 make check                                            # static checks and regression tests, no cost
 make help
 ```
@@ -37,7 +37,8 @@ If your default branch requires signed commits, run `ai-flow/scripts/resign-subt
 (the commits `git subtree` creates are unsigned; see [docs/setup.md](docs/setup.md) §3).
 See [CHANGELOG.md](CHANGELOG.md) for what changed.
 
-Requirements: `claude`, `gh` (authenticated), `jq`, `curl`, `make`, `bash` (3.2 or later), a GitHub repository that uses Issues, and a Slack Incoming Webhook.
+Requirements: `claude`, `gh` (authenticated), `jq`, `make`, `bash` (3.2 or later), and a GitHub repository that uses Issues.
+Notifications are optional: a Slack Incoming Webhook (with `curl`) or any command you like (`NOTIFY_CMD`).
 
 ## Documentation
 
