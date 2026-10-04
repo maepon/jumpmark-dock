@@ -72,9 +72,10 @@ MERGED_SETTINGS=$(mktemp) || { echo "Error: could not create a temporary file." 
 trap 'rm -f "$MERGED_SETTINGS"' EXIT
 ./scripts/merge-permissions.sh "$SETTINGS" > "$MERGED_SETTINGS" || exit 1
 
-# SLACK_WEBHOOK_URL is removed from the agent's environment. The Makefile exports it, so otherwise
-# it would be inherited and readable with echo $SLACK_WEBHOOK_URL (making the Read(./.env) deny pointless).
-# The parent (run-phase.sh) sends the Slack notifications, so the agent does not need it.
+# The notification command's secrets (NOTIFY_SECRET_VARS; SLACK_WEBHOOK_URL always) are removed from the agent's environment.
+# The Makefile exports them for NOTIFY_CMD, and a secret kept in the shell profile is inherited anyway, so otherwise
+# they would be readable with echo (making the Read(./.env) deny pointless).
+# The parent (run-phase.sh) sends the notifications, so the agent does not need them.
 # Launch options (each one was actually hit in a trial repository)
 #   --add-dir=<root>     The agent runs with the flow directory as the current directory, so by default Claude Code
 #                        treats that as the working directory and denies Bash commands whose arguments point outside it
@@ -86,7 +87,11 @@ trap 'rm -f "$MERGED_SETTINGS"' EXIT
 #                        their tool descriptions were added to every step's prompt, and replies mentioned authorizing them
 #   < /dev/null          Do not wait for standard input (otherwise "no stdin data received in 3s" is printed after a 3 s wait)
 REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "Error: cannot find the repository root." >&2; exit 1; }
-OUT=$(env -u SLACK_WEBHOOK_URL ANTHROPIC_MODEL="$MODEL" claude -p \
+UNSET_ARGS=()
+for v in SLACK_WEBHOOK_URL ${NOTIFY_SECRET_VARS:-}; do
+  UNSET_ARGS+=(-u "$v")
+done
+OUT=$(env "${UNSET_ARGS[@]}" ANTHROPIC_MODEL="$MODEL" claude -p \
   --settings "$MERGED_SETTINGS" \
   --add-dir="$REPO_ROOT" \
   --strict-mcp-config \

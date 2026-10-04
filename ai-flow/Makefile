@@ -29,7 +29,22 @@ ISSUE_URL = $(REPO_URL)/issues/$(ISSUE)
 # If unset, run-phase.sh uses the strong model
 REVIEW_JUDGE_MODEL ?= $(FAST_MODEL)
 
-export SLACK_WEBHOOK_URL STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL
+# Notifications. run-phase.sh runs NOTIFY_CMD at each ending (done / waiting for a human / aborted) and progress point,
+# passing the body on stdin and the rest in AI_FLOW_NOTIFY_* environment variables (contract: docs/setup.md).
+# Empty means no notifications. When it is not defined at all, Slack is used if SLACK_WEBHOOK_URL is set, otherwise nothing,
+# so a .env with only SLACK_WEBHOOK_URL keeps working and trying the flow needs no chat service.
+# origin tells "not defined" apart from "defined as empty" (NOTIFY_CMD = in .env turns notifications off on purpose).
+ifeq ($(origin NOTIFY_CMD),undefined)
+NOTIFY_CMD := $(if $(strip $(SLACK_WEBHOOK_URL)),./scripts/notify-slack.sh)
+endif
+
+# Environment variables holding the notification command's secrets (space-separated names). They are exported for NOTIFY_CMD,
+# and claude-run.sh removes the same names from the agents' environment. One list drives both, so forgetting a name
+# means the notification does not get its secret (make does not export it), never that the agents can read it.
+NOTIFY_SECRET_VARS ?= SLACK_WEBHOOK_URL
+
+export NOTIFY_CMD NOTIFY_SECRET_VARS $(NOTIFY_SECRET_VARS)
+export STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL
 export AI_FLOW_PROJECT_DIR TEST_CMD SCRATCH_TEST_CMD FORMAT_CHECK_CMD FORMAT_FILE_CMD FORMAT_FIX_CMD FORMAT_GLOBS OUTPUT_LANG
 
 .PHONY: help spec impl review code-review pr-review create-pr check check-project check-env
@@ -72,6 +87,7 @@ help:
 	@echo "      STRONG_MODEL / FAST_MODEL  strong / fast model IDs (default from environment variables)"
 	@echo "      REVIEW_JUDGE_MODEL  model for judging the plan and the implementation. Accepts strong / fast or a raw model ID"
 	@echo "                          Default: the fast model. To use the strong model: make impl ISSUE=n REVIEW_JUDGE_MODEL=strong"
+	@echo "      NOTIFY_CMD  notification command (default: Slack if SLACK_WEBHOOK_URL is set, otherwise none; empty turns them off)"
 	@echo "The whole history stays in the Issue comments (the AI-TAG identifies each type)"
 
 # Static checks of the tooling files. Always run before a phase (contents described at the top of scripts/check-scripts.sh)
@@ -91,9 +107,23 @@ check-project:
 
 # Prevents a run from failing halfway because something is not set
 check-env:
-	@if [ -z "$(strip $(SLACK_WEBHOOK_URL))" ]; then \
-		echo "Error: SLACK_WEBHOOK_URL is not set. Copy .env.example to .env and set it." >&2; \
-		exit 1; \
+	@case "$(firstword $(NOTIFY_CMD))" in \
+		"") echo "Notifications are off (NOTIFY_CMD is empty). To get them, set SLACK_WEBHOOK_URL or NOTIFY_CMD in .env (see docs/setup.md)." >&2 ;; \
+		*notify-slack.sh) if [ -z "$(strip $(SLACK_WEBHOOK_URL))" ]; then \
+			echo "Error: NOTIFY_CMD uses notify-slack.sh but SLACK_WEBHOOK_URL is not set. Set it in .env, or set NOTIFY_CMD to something else (empty for no notifications)." >&2; \
+			exit 1; \
+		fi ;; \
+	esac
+	@# A path is checked with -x: dash's command -v (/bin/sh on Debian / Ubuntu) returns a path without checking that it is executable
+	@c="$(firstword $(NOTIFY_CMD))"; \
+	if [ -n "$$c" ]; then \
+		case "$$c" in \
+			*/*) [ -f "$$c" ] && [ -x "$$c" ] ;; \
+			*) command -v "$$c" >/dev/null 2>&1 ;; \
+		esac || { \
+			echo "Error: NOTIFY_CMD ($$c) is not an executable command. Paths are relative to the flow directory; check the path and that it is executable." >&2; \
+			exit 1; \
+		}; \
 	fi
 	@if [ -z "$(strip $(STRONG_MODEL))" ] || [ -z "$(strip $(FAST_MODEL))" ]; then \
 		echo "Error: the strong / fast model IDs are not set. Set CLAUDE_CODE_OPUS_MODEL / CLAUDE_CODE_SONNET_MODEL, or write STRONG_MODEL / FAST_MODEL in .env." >&2; \

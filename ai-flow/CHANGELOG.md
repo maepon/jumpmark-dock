@@ -8,6 +8,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-04
+
+### Changed
+
+- **Notifications are pluggable, and Slack is no longer required** ([#18](https://github.com/maepon/issue-to-pr-flow/issues/18)).
+  `NOTIFY_CMD` (in `.env`, or `.ai-flow/config.mk` for a shared destination) is the command run at each ending and progress point.
+  It gets the body on stdin and `AI_FLOW_NOTIFY_KIND` (`done` / `waiting` / `aborted` / `progress`), `AI_FLOW_NOTIFY_TITLE`,
+  `AI_FLOW_NOTIFY_PHASE`, and `AI_FLOW_NOTIFY_ISSUE_URL` in the environment; a failure still only warns.
+  When `NOTIFY_CMD` is not defined, Slack is used if `SLACK_WEBHOOK_URL` is set and nothing otherwise, so **a `.env` with only
+  `SLACK_WEBHOOK_URL` keeps working unchanged**. `NOTIFY_CMD =` (empty) turns notifications off. `check-env` no longer requires
+  `SLACK_WEBHOOK_URL`; it says `Notifications are off` when there are none, and stops if `NOTIFY_CMD` is not executable
+- The Slack message format changed: the emoji now follows the kind (`:white_check_mark:` / `:raising_hand:` / `:x:` / `:hammer:`),
+  and the title line replaces the old `Claude Code notification` header
+- **If you replaced `scripts/notify-slack.sh` to turn notifications off** (as `docs/setup.md` used to suggest), drop that change and set `NOTIFY_CMD =` in `.env`.
+  `notify-slack.sh` now reads the `AI_FLOW_NOTIFY_*` variables and stdin instead of two arguments
+
+### Security
+
+- `NOTIFY_SECRET_VARS` (default `SLACK_WEBHOOK_URL`) names the environment variables holding notification secrets. The `Makefile` exports them
+  for `NOTIFY_CMD`, and `claude-run.sh` removes the same names (and always `SLACK_WEBHOOK_URL`) from the agents' environment.
+  One list drives both, so a forgotten name means the notification lacks its secret, never that the agents can read it.
+  A secret kept in the shell profile instead of `.env` is removed too. Covered by `selftest.sh` with a `claude` stub
+- `notify-slack.sh` gives `curl` a time limit (`--connect-timeout 10 --max-time 30`), so an unresponsive webhook no longer holds the phase
+
+### Added
+
+- `selftest.sh` checks the notification contract (arguments, environment, body on stdin, a failing or stdin-ignoring command not stopping the flow);
+  `ci-check.sh` checks how `check-env` decides on notifications, from the command line and from `.env`
+
 ## [0.6.0] - 2026-10-04
 
 ### Added
@@ -145,7 +174,8 @@ so its history is included; Issue / PR numbers in those commit messages refer to
 - The scripts' comments and terminal / Slack messages are in Japanese (fixed in 0.3.0)
 - A project without a formatter or a test command is not supported yet: prompts that use an empty `FORMAT_*` / `TEST_CMD` value stop at render time (formatter: fixed in 0.2.0; tests: fixed in 0.4.0)
 
-[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.3.0...v0.4.0

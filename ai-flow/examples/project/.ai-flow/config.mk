@@ -1,7 +1,7 @@
 # Project settings for issue-to-pr-flow. The flow's Makefile includes this file.
 #
 # Copy this directory (.ai-flow/) to the root of your repository and edit the values.
-# Personal settings (Slack webhook URL, model IDs) go in <flow dir>/.env instead; this file is shared and committed.
+# Personal settings (notifications, model IDs) go in <flow dir>/.env instead; this file is shared and committed.
 # Makefile syntax. Do not quote values (the scripts split them into words).
 # The agents run every command with the FLOW DIRECTORY as the current directory (e.g. ai-flow/), not the repository root.
 # Write the commands so they work from there: `npm test` / `npm run …` find the root package.json by themselves,

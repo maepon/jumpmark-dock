@@ -75,9 +75,23 @@ mkdir -p tmp
 # Append instead, with one header line so you can read where runs switched.
 printf '# %s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$PHASE" >> "$COST_LOG"
 
+# Sends a notification through NOTIFY_CMD (decided in the Makefile; empty = no notifications). Usage: notify <kind> <title> <body>
+#   kind  : done (a phase finished) / waiting (halt: a human has to act) / aborted (fail) / progress (finished a stage, carrying on)
+#   title : one line of plain text. Emoji and markup are the command's business, since every service writes them differently
+#   body  : GitHub markdown as the agents wrote it, passed on stdin. Converting it is the command's business too
+# The rest goes in AI_FLOW_NOTIFY_* environment variables rather than arguments, so fields can be added without breaking
+# anyone's command. The flow only looks at the exit code, and a failure never stops it (a lost notification must not lose the work).
+# The body goes through a here-string, not a pipe: with pipefail, a command that does not read stdin would make the
+# writer die of SIGPIPE and a successful notification would be reported as failed.
+# The command's stdout goes to stderr, because run-phase.sh's stdout carries the agents' replies.
 notify() {
-  ./scripts/notify-slack.sh "$ISSUE_URL" "$1" \
-    || echo "Warning: [$PHASE] sending the Slack notification failed." >&2
+  local kind="$1" title="$2" body="$3"
+  local -a cmd
+  [ -n "${NOTIFY_CMD:-}" ] || return 0
+  read -r -a cmd <<< "${NOTIFY_CMD}"
+  AI_FLOW_NOTIFY_KIND="$kind" AI_FLOW_NOTIFY_TITLE="$title" AI_FLOW_NOTIFY_PHASE="$PHASE" AI_FLOW_NOTIFY_ISSUE_URL="$ISSUE_URL" \
+    "${cmd[@]}" <<< "$body" >&2 \
+    || echo "Warning: [$PHASE] sending the notification failed (NOTIFY_CMD: ${NOTIFY_CMD})." >&2
 }
 
 # The total spent on this Issue, skipping header lines (starting with #)
@@ -85,17 +99,16 @@ total_cost() { awk '/^[0-9]/ {s+=$1} END {printf "%.2f", s+0}' "$COST_LOG"; }
 
 fail() {
   echo "Error: [$PHASE] $1" >&2
-  notify ":x: *$PHASE aborted*
-$1
+  notify aborted "$PHASE aborted" "$1
 
 Cumulative cost: \$$(total_cost)"
   exit 1
 }
 
-# Stops to wait for a human. Not a failure, so the exit code is 0
+# Stops to wait for a human. Not a failure, so the exit code is 0. Usage: halt <log line> <notification title> <notification body>
 halt() {
   echo "[$PHASE] $1" >&2
-  notify "$2
+  notify waiting "$2" "$3
 
 Cumulative cost: \$$(total_cost)"
   exit 0
@@ -210,8 +223,8 @@ handle_verdict() {
     APPROVED) return 0 ;;
     CHANGES_REQUESTED) return 1 ;;
     NEEDS_HUMAN)
-      halt "The ${stage} verdict asks for a human decision (NEEDS_HUMAN)." ":raising_hand: *${PHASE} - the ${stage} needs a human decision*
-The judge reported unmet criteria that cannot be resolved within the instruction document, such as contradictory acceptance criteria or a wrong premise. Read the latest verdict comment on the Issue, fix the instruction document and post a new INSTRUCTION, then resume with ${resume}.
+      halt "The ${stage} verdict asks for a human decision (NEEDS_HUMAN)." "${PHASE} - the ${stage} needs a human decision" \
+"The judge reported unmet criteria that cannot be resolved within the instruction document, such as contradictory acceptance criteria or a wrong premise. Read the latest verdict comment on the Issue, fix the instruction document and post a new INSTRUCTION, then resume with ${resume}.
 
 $RESULT" ;;
     *)
@@ -292,7 +305,7 @@ $mixed"
     || fail "gh pr create failed. The branch is already pushed, so you can create the PR by hand."
 
   echo "$PR_URL" >&2
-  notify ":white_check_mark: *review done - PR created* (review approved in round ${round})
+  notify done "review done - PR created" "Review approved in round ${round}.
 $PR_URL
 
 A human should check it before merging.
@@ -329,14 +342,14 @@ phase_spec() {
   run_step "Writing the instruction document" prompts/spec.md "$STRONG"
   case "$(read_verdict)" in
     INSTRUCTION_READY)
-      halt "The instruction document is ready. Waiting for a human to check it." ":memo: *spec done - the instruction document is ready*
-Check it, and if it looks right, go on with \`make impl ISSUE=$ISSUE\`. To change something, comment on the Issue and re-run \`make spec ISSUE=$ISSUE\`.
+      halt "The instruction document is ready. Waiting for a human to check it." "spec done - the instruction document is ready" \
+"Check it, and if it looks right, go on with \`make impl ISSUE=$ISSUE\`. To change something, comment on the Issue and re-run \`make spec ISSUE=$ISSUE\`.
 
 $RESULT"
       ;;
     NEED_ANSWERS)
-      halt "Questions posted. Waiting for answers." ":raising_hand: *spec - waiting for answers*
-Questions were posted. Answer them in an Issue comment, then re-run \`make spec ISSUE=$ISSUE\`.
+      halt "Questions posted. Waiting for answers." "spec - waiting for answers" \
+"Questions were posted. Answer them in an Issue comment, then re-run \`make spec ISSUE=$ISSUE\`.
 
 $RESULT"
       ;;
@@ -358,8 +371,8 @@ phase_impl() {
     verdict=$(read_verdict)
     handle_verdict "$verdict" "plan" "make impl ISSUE=${ISSUE}" && break
     if [ "$round" -ge "$MAX_ROUNDS" ]; then
-      halt "The plan was not approved after ${MAX_ROUNDS} rounds." ":raising_hand: *impl - the plan did not converge*
-After ${MAX_ROUNDS} rounds the discrepancies with the instruction document remain. Read the exchange on the Issue and revisit the acceptance criteria in the instruction document. This happens when they are vague.
+      halt "The plan was not approved after ${MAX_ROUNDS} rounds." "impl - the plan did not converge" \
+"After ${MAX_ROUNDS} rounds the discrepancies with the instruction document remain. Read the exchange on the Issue and revisit the acceptance criteria in the instruction document. This happens when they are vague.
 
 $RESULT"
     fi
@@ -368,8 +381,7 @@ $RESULT"
   done
 
   run_step "Implementing" prompts/implement.md "$FAST"
-  notify ":hammer: *Implementation done* (plan approved in round ${round})
-Going on to review.
+  notify progress "Implementation done" "Plan approved in round ${round}. Going on to review.
 
 $RESULT
 
@@ -387,8 +399,8 @@ phase_review() {
     verdict=$(read_verdict)
     handle_verdict "$verdict" "implementation" "make review ISSUE=${ISSUE}" && break
     if [ "$round" -ge "$MAX_ROUNDS" ]; then
-      halt "The implementation was not approved after ${MAX_ROUNDS} rounds." ":raising_hand: *review - the review did not converge*
-After ${MAX_ROUNDS} rounds some acceptance criteria are still unmet. Check the diff in the working tree and the exchange on the Issue.
+      halt "The implementation was not approved after ${MAX_ROUNDS} rounds." "review - the review did not converge" \
+"After ${MAX_ROUNDS} rounds some acceptance criteria are still unmet. Check the diff in the working tree and the exchange on the Issue.
 
 $RESULT"
     fi
@@ -474,8 +486,7 @@ $after"
   gh pr comment "$url" --body-file "${CODE_REVIEW_FILE}" >&2 \
     || fail "Posting the comment to the PR failed. The body remains in ${CODE_REVIEW_FILE}."
 
-  notify ":mag: *Code review posted on the PR*
-${url}
+  notify done "Code review posted on the PR" "${url}
 
 This is not a verdict. A human decides whether to merge.
 
@@ -514,8 +525,7 @@ $after"
   gh pr comment "$url" --body-file "$PR_REVIEW_FILE" >&2 \
     || fail "Posting the comment to the PR failed. The body remains in $PR_REVIEW_FILE."
 
-  notify ":smiling_imp: *Devil's Advocate review posted on the PR*
-$url
+  notify done "Devil's Advocate review posted on the PR" "$url
 
 This is not a verdict. A human decides whether to merge.
 
