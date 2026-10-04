@@ -104,7 +104,12 @@ Current status: Phase 3 completed. Full-featured import/export system implemente
 `ai-flow/` holds a separate, Claude-Code-headless automation pipeline (spec → plan → implement → review → PR) driven by GitHub Issues (`make spec ISSUE=n`, `make impl ISSUE=n` from inside `ai-flow/`). It is tooling for *this repo's own development process*, not part of the extension.
 
 - **Source**: `ai-flow/` is [maepon/issue-to-pr-flow](https://github.com/maepon/issue-to-pr-flow) (public, MIT) brought in with `git subtree` (squashed). **Do not edit files under `ai-flow/` in this repository** — not even for urgent fixes. Make changes in issue-to-pr-flow through a PR, tag a release there, then pull the tag here.
-- **Updating**: `git subtree pull --prefix=ai-flow https://github.com/maepon/issue-to-pr-flow.git <tag> --squash` on a branch, then open a PR and merge it with **"Create a merge commit"** (not squash), so the subtree metadata (`git-subtree-dir` / `git-subtree-split`) stays findable for the next pull. Read `ai-flow/CHANGELOG.md` before pulling. `ai-flow/tmp/` and `ai-flow/.env` are ignored and survive a pull.
+- **Updating**: on a branch from an up-to-date `master`:
+  1. `git subtree pull --prefix=ai-flow https://github.com/maepon/issue-to-pr-flow.git <tag> --squash`
+  2. `git rebase --rebase-merges --force-rebase --gpg-sign origin/master` — **required**: `master` requires signed commits, and the "Squashed 'ai-flow/' …" commit that `git subtree` creates is unsigned (`git subtree` has no signing option). This re-signs both the squash commit and the merge commit while keeping their shape, and the next `subtree pull` still finds the previous position (verified)
+  3. Push, open a PR, and merge it with **"Create a merge commit"** (not squash), so the subtree metadata (`git-subtree-dir` / `git-subtree-split`) stays findable for the next pull
+
+  Read `ai-flow/CHANGELOG.md` before pulling. `ai-flow/tmp/` and `ai-flow/.env` are ignored and survive a pull.
 - **Docs**: `ai-flow/docs/setup.md` for setup and day-to-day operation; `ai-flow/README.md` for an overview.
 - **Project settings**: base branch, test/format commands, output language, extra permissions, and project text embedded into prompts (such as the risk catalog) live in the root `.ai-flow/` directory. This is the only part adapted to this project.
 - **Tooling files**: everything under `ai-flow/`, plus the root `.ai-flow/` and `.gitignore`. They are maintained by humans through their own PRs (never mixed into issue work); the automated flow refuses to let agent-driven issue work modify them.
