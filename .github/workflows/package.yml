@@ -14,6 +14,10 @@ on:
         required: false
         type: string
 
+# リリースの作成に必要な権限だけを明示する（リポジトリの既定のトークンは読み取りのみにしている）
+permissions:
+  contents: write
+
 jobs:
   package:
     runs-on: ubuntu-latest
