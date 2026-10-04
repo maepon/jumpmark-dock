@@ -167,6 +167,24 @@ git subtree pull --prefix=ai-flow https://github.com/maepon/issue-to-pr-flow.git
 Read `CHANGELOG.md` for what changed before pulling a new tag. Do not edit files under the flow directory in your repository;
 send changes upstream instead (the flow treats its whole directory as tooling, §6).
 
+### If your default branch requires signed commits
+
+`git subtree` creates the "Squashed '<prefix>/' …" commit — and, for `add`, the merge commit too — unsigned
+(it has no signing option). The subtree PR has to be merged with a merge commit, so those unsigned commits would land on
+the default branch and a "require signed commits" rule blocks the merge. Right after `git subtree add` or `git subtree pull`, run:
+
+```sh
+ai-flow/scripts/resign-subtree-merge.sh
+```
+
+It recreates the two commits signed, with the same tree, parents, message, and author, checks that the tree did not change,
+and only then moves `HEAD` (nothing else in the working tree changes). If they are already signed it does nothing.
+It uses your usual signing setup, like `git commit -S`.
+
+Do **not** use `git rebase --rebase-merges --gpg-sign` for this: rebase re-runs the merge instead of reusing its tree.
+After `git subtree add` that put the subtree's files at the repository root instead of under the prefix (verified),
+and after `pull` it only works when git happens to guess the subtree shift.
+
 ### Configure
 
 ```sh
@@ -470,6 +488,7 @@ scripts/
   selftest.sh                        Regression tests for run-phase.sh functions and render-prompt.sh (called by check-scripts.sh;
                                      gh / npx are stubbed; runs throwaway repositories with the flow at ai-flow/ and tools/ai.flow/)
   ci-check.sh                        Runs make check in this repository by laying files out like a host repository (local and CI)
+  resign-subtree-merge.sh            Signs the commits git subtree add / pull --squash created, keeping their trees (§3)
   notify-slack.sh                    Slack notification
 
 prompts/
@@ -704,3 +723,4 @@ Things that tend to get cut because "it looks easy", and that **silently** stop 
 | **Permission files are not named `settings.json`** | When the workspace is not trusted, `permissions.allow` is silently ignored, and `deny` binds the human's interactive sessions too |
 | **`grep` / `cat` / `sed` / `cp` / `git -C` are not allowed** | `grep` / `cat` / `sed` / `cp` can read files and get around the `Read(./.env)` deny; `git -C` shifts the prefix match and gets around the `git push` deny |
 | **The flow lives in a subdirectory, and its whole directory is tooling** | At the root, the flow's files and the project's files of the same name cannot be told apart. Listing tooling files by name leaks whatever is added to the flow later (README, examples) |
+| **Phase prompts are rendered by the shell and passed to `claude -p`; they are not Claude Code skills** | The flow is deterministic on purpose: the same settings always produce the same prompt text, unfilled placeholders and conditional blocks fail before any cost, and the human gate, the tooling check, and push / PR creation are enforced by the shell. Skills are loaded at the model's discretion from static Markdown, so moving the phases into skills would give up render-time validation and guaranteed loading, and a skill invoked from an interactive session would bypass every check in `run-phase.sh`. Helpers for the human steps outside the pipeline (drafting an Issue, reading why a phase stopped) could be skills; the phases themselves should not |
