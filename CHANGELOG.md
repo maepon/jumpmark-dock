@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-04
+
+### Added
+
+- `scripts/resign-subtree-merge.sh`: signs the commits that `git subtree add` / `git subtree pull --squash` create (they are unsigned,
+  so a host repository that requires signed commits could not merge the subtree PR). It recreates the commits with the same tree,
+  parents, message, and author, checks the tree is unchanged, then moves `HEAD`. Covered by offline tests in `selftest.sh`.
+  `git rebase --rebase-merges --gpg-sign` is not a substitute: it re-runs the merge and, after `subtree add`, put the files at the repository root
+
+### Documentation
+
+- `SECURITY.md`: how to report vulnerabilities privately, and that release tags are never moved or deleted
+- `docs/setup.md` §3 and `README.md`: how to bring the flow into a repository that requires signed commits
+- `docs/setup.md` §10 records why the phase prompts are not turned into Claude Code skills (to keep the flow deterministic)
+
 ## [0.5.0] - 2026-10-03
 
 ### Security
@@ -130,7 +145,8 @@ so its history is included; Issue / PR numbers in those commit messages refer to
 - The scripts' comments and terminal / Slack messages are in Japanese (fixed in 0.3.0)
 - A project without a formatter or a test command is not supported yet: prompts that use an empty `FORMAT_*` / `TEST_CMD` value stop at render time (formatter: fixed in 0.2.0; tests: fixed in 0.4.0)
 
-[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.2.1...v0.3.0

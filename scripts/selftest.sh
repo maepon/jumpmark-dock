@@ -326,7 +326,60 @@ if printf '%s' "${out}" | grep -qF NOT_REACHED; then ng "handle_verdict (NEEDS_H
 out=$(run_case "${WORK}" 'handle_verdict "" implementation "make review"; echo NOT_REACHED'); got=$?
 expect "handle_verdict (an empty verdict fails)" 1 "FAIL:Unexpected verdict file contents" "${out}" "${got}"
 
+# --- resign-subtree-merge.sh (sign what git subtree --squash creates, without changing content) ---
+# Offline: the upstream is a local throwaway repository and signing uses a throwaway SSH key, so neither the network
+# nor the user's own signing setup (e.g. a 1Password agent) is involved.
+RESIGN="$(pwd)/scripts/resign-subtree-merge.sh"
+git subtree -h >/dev/null 2>&1; subtree_rc=$?   # prints usage and exits 129 when available
+if [ "${subtree_rc}" -ne 0 ] && [ "${subtree_rc}" -ne 129 ]; then
+  echo "selftest: note: git subtree is not available; skipping the resign-subtree-merge.sh tests." >&2
+elif ! command -v ssh-keygen >/dev/null 2>&1; then
+  echo "selftest: note: ssh-keygen is not available; skipping the resign-subtree-merge.sh tests." >&2
+else
+  RS="${WORK}/resign"
+  mkdir -p "${RS}/up" "${RS}/host"
+  ssh-keygen -q -t ed25519 -N '' -f "${RS}/key"
+  printf 't@example.com %s\n' "$(cat "${RS}/key.pub")" > "${RS}/allowed"
+  upc() { git -C "${RS}/up" -c user.name=u -c user.email=u@example.com -c commit.gpgsign=false "$@"; }
+  git -C "${RS}/up" init -q
+  echo 'one' > "${RS}/up/a.txt"; mkdir -p "${RS}/up/dir"; echo 'b' > "${RS}/up/dir/b.txt"
+  upc add -A; upc commit -q -m "upstream 1"; upc tag t1
+  echo 'two' >> "${RS}/up/a.txt"; upc commit -q -am "upstream 2"; upc tag t2
+  H="${RS}/host"
+  git -C "${H}" init -q
+  git -C "${H}" config user.name t; git -C "${H}" config user.email t@example.com
+  git -C "${H}" config gpg.format ssh; git -C "${H}" config user.signingkey "${RS}/key"
+  git -C "${H}" config gpg.ssh.program ssh-keygen; git -C "${H}" config gpg.ssh.allowedSignersFile "${RS}/allowed"
+  git -C "${H}" config commit.gpgsign true
+  echo 'host' > "${H}/README"; git -C "${H}" add -A; git -C "${H}" commit -q -m init
+  sig() { git -C "${H}" log -1 --format=%G? "$1"; }
+  both_signed() { [ "$(sig HEAD)" = "G" ] && [ "$(sig HEAD^2)" = "G" ]; }
+  tree_is() { [ "$(git -C "${H}" rev-parse HEAD:ext)" = "$(git -C "${RS}/up" rev-parse "$1^{tree}")" ]; }
+
+  (cd "${H}" && git subtree add -q --prefix=ext "${RS}/up" t1 --squash) >/dev/null 2>&1
+  [ "$(sig HEAD^2)" = "N" ] || ng "resign-subtree-merge (precondition): git subtree add was expected to leave the squash commit unsigned."
+  out=$(cd "${H}" && "${RESIGN}" 2>&1); got=$?
+  if [ "${got}" -eq 0 ] && both_signed && tree_is t1; then pass=$((pass + 1)); else
+    ng "resign-subtree-merge (after add): expected both commits signed and ext/ = t1 (exit ${got}). Output: ${out}"; fi
+  before=$(git -C "${H}" rev-parse HEAD)
+  out=$(cd "${H}" && "${RESIGN}" 2>&1); got=$?
+  expect "resign-subtree-merge (already signed: nothing to do)" 0 "already signed" "${out}" "${got}"
+  [ "$(git -C "${H}" rev-parse HEAD)" = "${before}" ] || ng "resign-subtree-merge (already signed): HEAD changed."
+
+  (cd "${H}" && git subtree pull -q --prefix=ext "${RS}/up" t2 --squash -m "pull t2") >/dev/null 2>&1
+  out=$(cd "${H}" && "${RESIGN}" 2>&1); got=$?
+  if [ "${got}" -eq 0 ] && both_signed && tree_is t2; then pass=$((pass + 1)); else
+    ng "resign-subtree-merge (after pull): expected both commits signed and ext/ = t2 (exit ${got}). Output: ${out}"; fi
+  out=$(cd "${H}" && git subtree pull --prefix=ext "${RS}/up" t2 --squash 2>&1); got=$?
+  expect "resign-subtree-merge (the next subtree pull still finds the previous position)" 0 "already at commit" "${out}" "${got}"
+  [ -z "$(git -C "${H}" log --format='%h %G?' | grep -v ' G$')" ] || ng "resign-subtree-merge: unsigned commits remain in the host history."
+
+  git -C "${H}" commit -q --allow-empty -m plain
+  out=$(cd "${H}" && "${RESIGN}" 2>&1); got=$?
+  expect "resign-subtree-merge (refuses a HEAD that is not a merge)" 1 "HEAD is not a merge commit" "${out}" "${got}"
+fi
+
 if [ "${status}" -eq 0 ]; then
-  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh passed."
+  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh / resign-subtree-merge.sh passed."
 fi
 exit "${status}"
