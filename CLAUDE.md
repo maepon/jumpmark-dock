@@ -82,7 +82,7 @@ In `chrome.storage.sync` this is split by FNV-1a hash of the source URL into 64 
 - **Phase 2**: ✅ **COMPLETED** - Options page with advanced management, bidirectional system refactor (URL-match based), editing/deletion bug fixes, UI improvements
 - **Phase 3**: ✅ **COMPLETED** - Import/export functionality (JSON/CSV/HTML), drag & drop support, duplicate detection, data validation
 
-Current status: Phase 3 completed. Full-featured import/export system implemented. Ready for Chrome Web Store submission (v1.1.0).
+Current status: v2.4.0 is published on the Chrome Web Store. See `docs/work-session-handoff.md` for unreleased changes and open work.
 
 ## Code Conventions
 
