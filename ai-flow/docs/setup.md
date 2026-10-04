@@ -550,7 +550,7 @@ scripts/
   merge-permissions.sh               Adds the project's extra permissions to a profile (called by claude-run.sh)
   check-scripts.sh                   Static checks of the tooling files (run before each phase)
   selftest.sh                        Regression tests for run-phase.sh functions and render-prompt.sh (called by check-scripts.sh;
-                                     gh / npx / claude are stubbed; runs throwaway repositories with the flow at ai-flow/ and tools/ai.flow/)
+                                     gh / npx / claude / curl are stubbed; runs throwaway repositories with the flow at ai-flow/ and tools/ai.flow/)
   ci-check.sh                        Runs make check in this repository by laying files out like a host repository (local and CI)
   resign-subtree-merge.sh            Signs the commits git subtree add / pull --squash created, keeping their trees (§3)
   notify-slack.sh                    Slack notification (the default NOTIFY_CMD when SLACK_WEBHOOK_URL is set)
