@@ -23,7 +23,7 @@ So changes to this repository are written and reviewed by humans and come in thr
 
 ## Releases
 
-Host repositories pull tags with `git subtree pull`, so each release is a tag (`vX.Y.Z`) with a matching section in `CHANGELOG.md`.
+Host repositories bring tags in with `git subtree add` / `git subtree merge` (README, docs/setup.md §3), so each release is a tag (`vX.Y.Z`) with a matching section in `CHANGELOG.md`.
 
 ## Design
 

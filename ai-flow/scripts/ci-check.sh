@@ -53,7 +53,7 @@ make -C "${FLOW}" check TEST_CMD= SCRATCH_TEST_CMD= FORMAT_CHECK_CMD= FORMAT_FIL
 env_case() {
   local name="$1" code="$2" needle="$3" absent="$4" out got
   shift 4
-  out=$(env -u SLACK_WEBHOOK_URL -u NOTIFY_CMD -u NOTIFY_SECRET_VARS \
+  out=$(env -u SLACK_WEBHOOK_URL -u GOOGLE_CHAT_WEBHOOK_URL -u NOTIFY_CMD -u NOTIFY_SECRET_VARS \
     make -s -C "${FLOW}" check-env STRONG_MODEL=s FAST_MODEL=f "$@" 2>&1); got=$?
   if [ "${got}" -ne "${code}" ] \
     || { [ -n "${needle}" ] && ! printf '%s' "${out}" | grep -qF -- "${needle}"; } \
@@ -68,6 +68,8 @@ env_case "nothing set: notifications off, not an error" 0 "${OFF}" "" || exit 1
 env_case "only SLACK_WEBHOOK_URL: Slack, as before" 0 "" "${OFF}" SLACK_WEBHOOK_URL=http://example.test || exit 1
 env_case "NOTIFY_CMD empty wins over SLACK_WEBHOOK_URL" 0 "${OFF}" "" SLACK_WEBHOOK_URL=http://example.test NOTIFY_CMD= || exit 1
 env_case "notify-slack.sh chosen without SLACK_WEBHOOK_URL" 2 "SLACK_WEBHOOK_URL is not set" "" NOTIFY_CMD=./scripts/notify-slack.sh || exit 1
+env_case "only GOOGLE_CHAT_WEBHOOK_URL: Google Chat" 0 "" "${OFF}" GOOGLE_CHAT_WEBHOOK_URL=http://example.test || exit 1
+env_case "notify-google-chat.sh chosen without GOOGLE_CHAT_WEBHOOK_URL" 2 "GOOGLE_CHAT_WEBHOOK_URL is not set" "" NOTIFY_CMD=./scripts/notify-google-chat.sh || exit 1
 env_case "a command on PATH with arguments" 0 "" "${OFF}" "NOTIFY_CMD=true --flag" || exit 1
 env_case "a command that does not exist" 2 "is not an executable command" "" NOTIFY_CMD=./scripts/no-such-notify.sh || exit 1
 env_case "a file that is not executable" 2 "is not an executable command" "" NOTIFY_CMD=./README.md || exit 1

@@ -13,9 +13,8 @@ so the following forms are **denied even when the command itself is allowed**. T
 - `git -C <path>` — the `-C` form is not allowed
   (it is left out on purpose because `git -C` can get around the `git push` deny)
 
-`cd` is allowed, and **the current directory persists across calls**.
-Moving to the repository root (`{{ROOT_REL}}`) is denied, though, so stay in `{{FLOW_DIR}}/`
-(the commands to use are in the "Working directory and commands" section below).
+`cd` is allowed, and **the current directory persists across calls**, but stay in `{{FLOW_DIR}}/`
+(see "Working directory and commands" below).
 
 The exit code shows up in the result of the call, so there is no need to append `; echo "$?"`.
 
@@ -38,7 +37,10 @@ so anything other than the single word makes it stop and wait for a human.
 
 ## Working directory and commands
 
-You are running with `{{FLOW_DIR}}/` as the current directory. `cd` to the root is denied.
+You are running with `{{FLOW_DIR}}/` as the current directory. The commands and file paths in these instructions
+(`./tmp/...`, `{{ROOT_REL}}...`, and the commands below) are written relative to it, so **stay there**.
+`cd` to the root or to another directory in the repository is not blocked, but after it those paths and commands no longer work;
+if you do move, `cd` back to `{{FLOW_DIR}}/` (from the root, `cd {{FLOW_DIR}}`) before running anything else.
 Read project files by their path relative to the root (`{{ROOT_REL}}`).
 
 {{#if FORMAT_CHECK_CMD}}

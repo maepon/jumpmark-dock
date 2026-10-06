@@ -72,7 +72,7 @@ MERGED_SETTINGS=$(mktemp) || { echo "Error: could not create a temporary file." 
 trap 'rm -f "$MERGED_SETTINGS"' EXIT
 ./scripts/merge-permissions.sh "$SETTINGS" > "$MERGED_SETTINGS" || exit 1
 
-# The notification command's secrets (NOTIFY_SECRET_VARS; SLACK_WEBHOOK_URL always) are removed from the agent's environment.
+# The notification command's secrets (NOTIFY_SECRET_VARS; SLACK_WEBHOOK_URL and GOOGLE_CHAT_WEBHOOK_URL always) are removed from the agent's environment.
 # The Makefile exports them for NOTIFY_CMD, and a secret kept in the shell profile is inherited anyway, so otherwise
 # they would be readable with echo (making the Read(./.env) deny pointless).
 # The parent (run-phase.sh) sends the notifications, so the agent does not need them.
@@ -82,13 +82,15 @@ trap 'rm -f "$MERGED_SETTINGS"' EXIT
 #                        (git diff -- ../../README.md, git grep -- ../x.html, ...). Adding the repository root as a working
 #                        directory lets them through. Read / Write / Edit already reached files outside, so this does not
 #                        widen what the agent can do. Pass it with "=": --add-dir takes several values and, separated by a
-#                        space, would swallow the prompt that follows
+#                        space, would swallow the prompt that follows. It also lets `cd` move to the root (and the move
+#                        persists; outside the repository is still denied; measured on 2.1.285). _rules.md asks the agents to
+#                        stay in the flow directory, since the prompts' commands and paths are relative to it
 #   --strict-mcp-config  Do not load the MCP connectors linked to the user's claude.ai account. The flow does not use them,
 #                        their tool descriptions were added to every step's prompt, and replies mentioned authorizing them
 #   < /dev/null          Do not wait for standard input (otherwise "no stdin data received in 3s" is printed after a 3 s wait)
 REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "Error: cannot find the repository root." >&2; exit 1; }
 UNSET_ARGS=()
-for v in SLACK_WEBHOOK_URL ${NOTIFY_SECRET_VARS:-}; do
+for v in SLACK_WEBHOOK_URL GOOGLE_CHAT_WEBHOOK_URL ${NOTIFY_SECRET_VARS:-}; do
   UNSET_ARGS+=(-u "$v")
 done
 OUT=$(env "${UNSET_ARGS[@]}" ANTHROPIC_MODEL="$MODEL" claude -p \

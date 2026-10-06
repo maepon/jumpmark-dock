@@ -1,12 +1,73 @@
 # Changelog
 
 All notable changes to this flow are recorded here, per tag.
-Host repositories bring a tag in with `git subtree pull`; read the entries since your current tag before pulling,
+Host repositories bring a tag in with `git subtree merge` (docs/setup.md §3); read the entries since your current tag before updating,
 especially **Changed** items that require edits to your `.ai-flow/`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## [0.9.0] - 2026-10-06
+
+### Added
+
+- **`PLAN_JUDGE_MODEL`** ([#30](https://github.com/maepon/issue-to-pr-flow/issues/30)): the model for plan-judge, separate from `REVIEW_JUDGE_MODEL`
+  (same values: `strong` / `fast` / a raw model ID). Unset, it follows `REVIEW_JUDGE_MODEL`, also when that is given on the `make` command line,
+  so nothing changes for existing settings. With one variable for both, A/B-ing review-judge moved plan-judge too and a difference could not be
+  traced to either judge; now e.g. `PLAN_JUDGE_MODEL = strong` with `REVIEW_JUDGE_MODEL = fast` tries only review-judge. `make help` and the
+  Roles table in `docs/setup.md` list the two separately. Covered by `selftest.sh` (the value mapping, the plan-judge step's model, the Makefile defaults)
+- **Wrappers for a repository that one command from the flow directory cannot cover** ([#28](https://github.com/maepon/issue-to-pr-flow/issues/28)):
+  `examples/go/.ai-flow/go-test.sh` runs `go test -count=1 ./...` in every module (or the ones given) for Go without `go.work`, and
+  `gofmt-check.sh` / `gofmt-file.sh` turn `gofmt -l`'s output into the exit code. Covered by `selftest.sh` (skipped when `go` is missing).
+  `docs/setup.md` §9 has a new checklist item: put such wrappers in `.ai-flow/` (tooling, so the agents cannot rewrite the command the
+  judges re-run), call them by a path relative to the flow directory, allow exactly that form, and how this relates to `cd`.
+  The `config.mk` template mentions them
+- **The tooling mixing check also runs at the start of `impl` and `review`** ([#31](https://github.com/maepon/issue-to-pr-flow/issues/31)),
+  before the instruction document is fetched, so it stops before anything is charged. Tooling commits on the local `BASE_BRANCH` that are not
+  pushed yet (a `git subtree` update, an `.ai-flow/` edit), carried along by the project branch, used to stop the flow only in `create_pr`, after
+  planning, judging, implementing, reviewing and committing were paid for. A wrong `BASE_BRANCH` (`origin/… not found`) is caught there too.
+  Covered by `selftest.sh`, which runs `phase_impl` / `phase_review` with `run_step` stubbed
+
+### Changed
+
+- The mixing check (at the start and in `create_pr`) looks at the diff from where the branch forked off `origin/<BASE_BRANCH>` (three dots, what the
+  PR shows) rather than at `origin/<BASE_BRANCH>`'s current tree. Tooling updates that landed on `BASE_BRANCH` after the fork no longer show up
+  reversed and stop the flow, so not having pulled a tooling update does not stop `impl`. **Host repositories** do not need to change anything
+
+### Fixed
+
+- `prompts/_rules.md` and `prompts/spec.md` no longer tell the agents that `cd` to the repository root is denied ([#29](https://github.com/maepon/issue-to-pr-flow/issues/29)).
+  With `--add-dir=<root>` (since 0.2.1) it is not: on Claude Code 2.1.285, `cd` to the root or a subdirectory went through and the current
+  directory persisted, and only `cd` outside the repository was denied. The rules now ask the agents to stay in the flow directory, because
+  the commands and paths in the prompts are relative to it, and to `cd` back if they move. The measurement is in the table of `docs/setup.md` §6
+
+## [0.8.1] - 2026-10-06
+
+### Changed
+
+- **Install and update steps fetch the tag first and pass its commit to `git subtree`** ([#27](https://github.com/maepon/issue-to-pr-flow/issues/27)):
+  `git fetch <url> refs/tags/<tag>`, then `git subtree add` / `git subtree merge` with `FETCH_HEAD^{commit}`, then
+  `git diff --stat <commit> HEAD:ai-flow` to confirm the content. Given a URL, `git subtree add/pull` reads `FETCH_HEAD` back after its own
+  fetch, and an IDE's automatic fetch in between made it bring in the host repository's own `HEAD` as `ai-flow/` without any error.
+  Updates now use `git subtree merge` because `pull` does not take a commit. The examples no longer show `v0.1.0`.
+  **Host repositories** do not need to change anything; use the new steps for the next update
+- `resign-subtree-merge.sh` mentions `git subtree merge` in its messages; it works the same after `add`, `merge` and `pull`
+
+## [0.8.0] - 2026-10-05
+
+### Added
+
+- **Google Chat notifications** ([#17](https://github.com/maepon/issue-to-pr-flow/issues/17)): `scripts/notify-google-chat.sh`, posting to the
+  Incoming Webhook of a space in `GOOGLE_CHAT_WEBHOOK_URL`. When `NOTIFY_CMD` is not defined it is used if `GOOGLE_CHAT_WEBHOOK_URL` is set and
+  `SLACK_WEBHOOK_URL` is not (Slack still comes first, so an existing `.env` behaves as before). Compared with `notify-slack.sh`, emoji are sent as
+  Unicode rather than Slack's shortcodes such as `:x:`, `Content-Type` carries `charset=UTF-8`, and a body over 8000 characters is cut with a
+  note pointing to the Issue (Google Chat refuses a message that is too large: 11000 Japanese characters and 32000 ASCII characters got HTTP 400,
+  8000 Japanese characters went through). `check-env` stops when it is chosen without the URL. Checked against a real space; covered by
+  `selftest.sh` with the `curl` stub and by `ci-check.sh`
+- `GOOGLE_CHAT_WEBHOOK_URL` is in the default `NOTIFY_SECRET_VARS` and, like `SLACK_WEBHOOK_URL`, is always removed from the agents' environment
+  by `claude-run.sh`. **Host repositories that set `NOTIFY_SECRET_VARS` themselves** do not need to change anything for the removal, but must list
+  `GOOGLE_CHAT_WEBHOOK_URL` there for it to reach `notify-google-chat.sh`
 
 ## [0.7.1] - 2026-10-04
 
@@ -184,7 +245,10 @@ so its history is included; Issue / PR numbers in those commit messages refer to
 - The scripts' comments and terminal / Slack messages are in Japanese (fixed in 0.3.0)
 - A project without a formatter or a test command is not supported yet: prompts that use an empty `FORMAT_*` / `TEST_CMD` value stop at render time (formatter: fixed in 0.2.0; tests: fixed in 0.4.0)
 
-[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/maepon/issue-to-pr-flow/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/maepon/issue-to-pr-flow/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.5.0...v0.6.0

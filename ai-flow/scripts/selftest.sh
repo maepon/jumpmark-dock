@@ -6,12 +6,15 @@
 #   - TOOLING_PATHS / unformatted_files misreading root-relative paths from the flow directory
 #   - Dependence on the flow directory's name and depth (renaming it let modifications to tooling files through)
 #   - require_instruction / ensure_pr_url turning a gh failure into an error that means something else
+#   - Tooling commits already on the local BASE_BRANCH being noticed only in create_pr, after every step was paid for
 #   - The judges' NEEDS_HUMAN stopping without waiting for more rounds
 #   - Handling of the formatting commands and target patterns from the project settings (.ai-flow/config.mk),
 #     and how render-prompt.sh fills placeholders
 #   - The notification contract (what NOTIFY_CMD receives, and that a failing one does not stop the flow), and that
 #     claude-run.sh keeps the notification secrets (NOTIFY_SECRET_VARS) out of the agent's environment
 #   - notify-slack.sh's conversion of **bold**, which did not show as bold in Japanese text
+#   - notify-google-chat.sh's payload: Unicode emoji, the same **bold** conversion, and cutting a body that is too large
+#   - The Go wrappers in examples/go/.ai-flow (several modules without go.work; gofmt -l answering through its output)
 #
 # Sourcing run-phase.sh would run its body, so only the functions under test and the TOOLING_PATHS definition are extracted
 # with sed and sourced. If the way functions are written changes (name() { ... } with the } at the start of a line) and extraction
@@ -38,7 +41,8 @@ trap 'rm -rf "${WORK}"' EXIT
 LIB="${WORK}/lib.sh"
 grep '^TOOLING_PATHS=' "${SRC}" > "${LIB}"
 [ -s "${LIB}" ] || ng "Could not extract the TOOLING_PATHS definition from run-phase.sh."
-FUNCS="worktree_paths tooling_state format_target format_ok unformatted_files require_instruction ensure_pr_url handle_verdict notify"
+FUNCS="worktree_paths tooling_state format_target format_ok unformatted_files require_instruction ensure_pr_url handle_verdict notify
+  require_base mixed_tooling require_no_mixed_tooling phase_impl phase_review judge_model"
 for fn in ${FUNCS}; do
   body=$(sed -n "/^${fn}() {/,/^}/p" "${SRC}")
   if [ -z "${body}" ]; then
@@ -93,7 +97,7 @@ EOF
 cat > "${BIN}/claude" <<'EOF'
 #!/bin/sh
 seen=""
-for v in SLACK_WEBHOOK_URL DISCORD_WEBHOOK_URL OTHER_SECRET KEEP_ME; do
+for v in SLACK_WEBHOOK_URL GOOGLE_CHAT_WEBHOOK_URL DISCORD_WEBHOOK_URL OTHER_SECRET KEEP_ME; do
   eval "x=\${$v+set}"
   [ -n "$x" ] && seen="$seen $v"
 done
@@ -410,6 +414,38 @@ else
   pass=$((pass + 1))
 fi
 
+# --- notify-google-chat.sh (the same curl stub) ---
+out=$(printf '%s\n' '**PR #1 の確認**（x）、**AC-1** ok' \
+  | PATH="${BIN}:${PATH}" CURL_OUT="${CURL_OUT}" GOOGLE_CHAT_WEBHOOK_URL=http://example.test \
+    AI_FLOW_NOTIFY_KIND=aborted AI_FLOW_NOTIFY_TITLE=t AI_FLOW_NOTIFY_ISSUE_URL=u ./scripts/notify-google-chat.sh 2>&1); got=$?
+expected=$(printf '%s\n' "❌ *t*" "*Issue:* u" "" "${Z}*PR #1 の確認*${Z}（x）、${Z}*AC-1*${Z} ok")
+actual=$(jq -r .text "${CURL_OUT}" 2>/dev/null)
+if [ "${got}" -ne 0 ] || [ "${actual}" != "${expected}" ]; then
+  ng "notify-google-chat.sh (Unicode emoji, **bold** becomes *bold*): differs from what was expected (exit code ${got}).
+Expected:
+${expected}
+Actual:
+${actual}
+${out}"
+else
+  pass=$((pass + 1))
+fi
+# A body that is too large is cut so that the whole text stays within 8000 characters and ends with the note
+out=$(head -c 30000 /dev/zero | tr '\0' x \
+  | PATH="${BIN}:${PATH}" CURL_OUT="${CURL_OUT}" GOOGLE_CHAT_WEBHOOK_URL=http://example.test \
+    AI_FLOW_NOTIFY_KIND=done AI_FLOW_NOTIFY_TITLE=t AI_FLOW_NOTIFY_ISSUE_URL=u ./scripts/notify-google-chat.sh 2>&1); got=$?
+len=$(jq -r '.text | length' "${CURL_OUT}" 2>/dev/null)
+tail_ok=$(jq -r '.text | endswith("read the rest on the Issue)")' "${CURL_OUT}" 2>/dev/null)
+if [ "${got}" -ne 0 ] || [ "${len}" != "8000" ] || [ "${tail_ok}" != "true" ]; then
+  ng "notify-google-chat.sh (a large body is cut to 8000 characters with the note at the end): exit code ${got}, length ${len}, ends with the note: ${tail_ok}.
+${out}"
+else
+  pass=$((pass + 1))
+fi
+out=$(printf 'b\n' | env -u GOOGLE_CHAT_WEBHOOK_URL PATH="${BIN}:${PATH}" \
+  AI_FLOW_NOTIFY_KIND=done AI_FLOW_NOTIFY_TITLE=t AI_FLOW_NOTIFY_ISSUE_URL=u ./scripts/notify-google-chat.sh 2>&1); got=$?
+expect "notify-google-chat.sh (stops without GOOGLE_CHAT_WEBHOOK_URL)" 1 "GOOGLE_CHAT_WEBHOOK_URL environment variable is not set" "${out}" "${got}"
+
 # --- claude-run.sh keeps the notification secrets out of the agent's environment ---
 # Run it for real with the claude stub, in a throwaway host repository with the flow at ai-flow/ (flow-paths.sh needs that layout)
 AE="${WORK}/agentenv"
@@ -426,8 +462,121 @@ agent_env() {
 }
 out=$(agent_env SLACK_WEBHOOK_URL=s DISCORD_WEBHOOK_URL=d OTHER_SECRET=o KEEP_ME=k NOTIFY_SECRET_VARS='DISCORD_WEBHOOK_URL OTHER_SECRET'); got=$?
 expect "claude-run.sh (NOTIFY_SECRET_VARS and SLACK_WEBHOOK_URL are removed, the rest is kept)" 0 "SEEN: KEEP_ME" "${out}" "${got}"
-out=$(agent_env SLACK_WEBHOOK_URL=s KEEP_ME=k NOTIFY_SECRET_VARS=); got=$?
-expect "claude-run.sh (SLACK_WEBHOOK_URL is removed even with NOTIFY_SECRET_VARS empty)" 0 "SEEN: KEEP_ME" "${out}" "${got}"
+out=$(agent_env SLACK_WEBHOOK_URL=s GOOGLE_CHAT_WEBHOOK_URL=g KEEP_ME=k NOTIFY_SECRET_VARS=); got=$?
+expect "claude-run.sh (SLACK_WEBHOOK_URL and GOOGLE_CHAT_WEBHOOK_URL are removed even with NOTIFY_SECRET_VARS empty)" 0 "SEEN: KEEP_ME" "${out}" "${got}"
+
+# --- require_no_mixed_tooling (impl / review stop on tooling commits before anything is charged) ---
+# run_step is stubbed to print CHARGED, so a case that gets past the entry checks shows it. The instruction check is the real one (gh stub).
+MT="${WORK}/mixed"
+git init -q --bare "${MT}/origin.git"
+git clone -q "${MT}/origin.git" "${MT}/repo" 2>/dev/null
+mtc() { git -C "${MT}/repo" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false "$@"; }
+mkdir -p "${MT}/repo/ai-flow/scripts" "${MT}/repo/src"
+echo 'x' > "${MT}/repo/ai-flow/scripts/a.sh"; echo 'x' > "${MT}/repo/src/app.txt"
+mtc add -A; mtc commit -q -m init; mtc branch -M main; mtc push -q -u origin main 2>/dev/null
+MT_VARS='FAST=f; STRONG=s; REVIEW_JUDGE=j; PLAN_JUDGE=j; MAX_ROUNDS=1; VERDICT_FILE=v; PR_TITLE_FILE=t; PR_BODY_FILE=b; COMMIT_PROFILE=c; run_step() { echo CHARGED; exit 3; }'
+mt_run() {   # mt_run <phase function>: runs it from the flow directory with BASE_BRANCH=main
+  GH_MODE=issue_tag run_case "${MT}/repo/ai-flow" "BASE_BRANCH=main; ${MT_VARS}; $1"
+}
+mt_stopped() {   # mt_stopped <name> <phase function> <needle>: stopped by fail, before run_step
+  out=$(mt_run "$2"); got=$?
+  expect "$1" 1 "$3" "${out}" "${got}"
+  case "${out}" in *CHARGED*) ng "$1: run_step ran before the check stopped it. Output: ${out}" ;; esac
+}
+mt_charged() {   # mt_charged <name> <phase function>: got past the entry checks
+  out=$(mt_run "$2"); got=$?
+  expect "$1" 3 "CHARGED" "${out}" "${got}"
+}
+
+mt_charged "require_no_mixed_tooling (nothing ahead of origin: impl goes on)" phase_impl
+echo 'y' >> "${MT}/repo/src/app.txt"; mtc commit -q -am "project change"
+mt_charged "require_no_mixed_tooling (project commits ahead of origin, as when review is resumed)" phase_review
+echo 'y' >> "${MT}/repo/ai-flow/scripts/a.sh"; mtc commit -q -am "tooling update, not pushed"
+mt_stopped "require_no_mixed_tooling (a tooling commit on the local main stops impl before it is charged)" phase_impl \
+  "FAIL:Tooling files are in commits that are not on origin/"
+mt_stopped "require_no_mixed_tooling (the message names the file)" phase_impl "ai-flow/scripts/a.sh"
+mtc switch -q -c feature/9-x; echo 'z' >> "${MT}/repo/src/app.txt"; mtc commit -q -am "agent commit"
+mt_stopped "require_no_mixed_tooling (a project branch cut from it stops review before it is charged)" phase_review \
+  "FAIL:Tooling files are in commits that are not on origin/"
+out=$(GH_MODE=issue_notag run_case "${MT}/repo/ai-flow" "BASE_BRANCH=main; ${MT_VARS}; phase_impl"); got=$?
+expect "require_no_mixed_tooling (checked before the instruction document, so any Issue number can try it)" 1 "FAIL:Tooling files" "${out}" "${got}"
+
+# Once the tooling commit is on origin, the branch carries only project commits
+mtc push -q origin "main" 2>/dev/null; mtc fetch -q
+mt_charged "require_no_mixed_tooling (after pushing the tooling commit and fetching)" phase_review
+# Tooling updates that landed on origin after the fork are not the branch's (two dots showed them reversed)
+mtc switch -q main; echo 'w' >> "${MT}/repo/ai-flow/scripts/a.sh"; mtc commit -q -am "tooling update 2"; mtc push -q origin main 2>/dev/null
+mtc switch -q feature/9-x
+out=$(run_case "${MT}/repo/ai-flow" 'BASE_BRANCH=main; mixed_tooling HEAD; echo END'); got=$?
+expect "mixed_tooling (tooling updates on origin after the fork are not counted)" 0 "END" "${out}" "${got}"
+[ "${out}" = "END" ] || ng "mixed_tooling (origin moved on after the fork): expected nothing but got \"${out}\"."
+mt_charged "require_no_mixed_tooling (a branch behind origin's tooling updates goes on)" phase_review
+
+mt_stopped "require_base (a wrong BASE_BRANCH stops impl before it is charged)" "BASE_BRANCH=nope; phase_impl" \
+  "nope not found. Check that BASE_BRANCH"
+
+# --- Judge models (PLAN_JUDGE_MODEL / REVIEW_JUDGE_MODEL) ---
+out=$(run_case "${WORK}" 'STRONG=S; FAST=F; echo "[$(judge_model "")|$(judge_model strong)|$(judge_model fast)|$(judge_model raw-id)]"'); got=$?
+expect "judge_model (empty = strong / strong / fast / a raw model ID)" 0 "[S|S|F|raw-id]" "${out}" "${got}"
+out=$(GH_MODE=issue_tag run_case "${MT}/repo/ai-flow" "BASE_BRANCH=main; ${MT_VARS}; PLAN_JUDGE=pj; REVIEW_JUDGE=rj
+  run_step() { case \"\$2\" in prompts/plan-judge.md) echo \"PLAN_JUDGE_RAN_WITH=\$3\"; exit 3 ;; esac; }; phase_impl"); got=$?
+expect "phase_impl (plan-judge runs with PLAN_JUDGE, not REVIEW_JUDGE)" 3 "PLAN_JUDGE_RAN_WITH=pj" "${out}" "${got}"
+# The Makefile's defaults: unset, PLAN_JUDGE_MODEL follows REVIEW_JUDGE_MODEL, also when that is given on the command line.
+# Run in an empty directory with a missing project directory, so the host's .env / .ai-flow/config.mk (which may set them) do not count
+MKF="$(pwd)/Makefile"
+mkdir -p "${WORK}/mkjudge"
+printf 'show:\n\t@echo "R=$(REVIEW_JUDGE_MODEL) P=$(PLAN_JUDGE_MODEL)"\n' > "${WORK}/mkjudge/show.mk"
+mk_judges() {
+  ( cd "${WORK}/mkjudge" && env -u REVIEW_JUDGE_MODEL -u PLAN_JUDGE_MODEL make -s --no-print-directory -f "${MKF}" -f show.mk show \
+      AI_FLOW_PROJECT_DIR="${WORK}/mkjudge/none" STRONG_MODEL=S FAST_MODEL=F "$@" 2>/dev/null | tail -n 1 )
+}
+out=$(mk_judges); got=$?
+expect "Makefile (both unset: the fast model for both)" 0 "R=F P=F" "${out}" "${got}"
+out=$(mk_judges REVIEW_JUDGE_MODEL=strong); got=$?
+expect "Makefile (PLAN_JUDGE_MODEL follows REVIEW_JUDGE_MODEL from the command line)" 0 "R=strong P=strong" "${out}" "${got}"
+out=$(mk_judges REVIEW_JUDGE_MODEL=fast PLAN_JUDGE_MODEL=strong); got=$?
+expect "Makefile (PLAN_JUDGE_MODEL set on its own)" 0 "R=fast P=strong" "${out}" "${got}"
+
+# --- examples/go/.ai-flow wrappers (multi-module Go: TEST_CMD / FORMAT_CHECK_CMD / FORMAT_FILE_CMD) ---
+# Run from the flow directory of a throwaway repository with two modules and no go.work, as the agents would.
+GOW="$(pwd)/examples/go/.ai-flow"
+if ! command -v go >/dev/null 2>&1 || ! command -v gofmt >/dev/null 2>&1; then
+  echo "selftest: note: go is not available; skipping the examples/go wrapper tests." >&2
+elif [ -d "${GOW}" ]; then
+  GR="${WORK}/gomods"
+  mkdir -p "${GR}/ai-flow" "${GR}/alpha" "${GR}/beta"
+  git -C "${GR}" init -q
+  printf 'module example.com/alpha\n\ngo 1.21\n' > "${GR}/alpha/go.mod"
+  printf 'package alpha\n\nfunc One() int { return 1 }\n' > "${GR}/alpha/a.go"
+  printf 'package alpha\n\nimport "testing"\n\nfunc TestOne(t *testing.T) {\n\tif One() != 1 {\n\t\tt.Fatal("x")\n\t}\n}\n' > "${GR}/alpha/a_test.go"
+  printf 'module example.com/beta\n\ngo 1.21\n' > "${GR}/beta/go.mod"
+  printf 'package beta\n\nfunc Two() int { return 2 }\n' > "${GR}/beta/b.go"
+  gor() { ( cd "${GR}/ai-flow" && GOCACHE="${WORK}/gocache" "$@" 2>&1 ); }
+
+  out=$(gor "${GOW}/go-test.sh"); got=$?
+  expect "go-test.sh (every module passes, run from the flow directory; new go.mod files count)" 0 "--- go test beta" "${out}" "${got}"
+  printf 'package beta\n\nimport "testing"\n\nfunc TestTwo(t *testing.T) { t.Fatal("broken") }\n' > "${GR}/beta/b_test.go"
+  out=$(gor "${GOW}/go-test.sh"); got=$?
+  expect "go-test.sh (fails when one module fails, and names it)" 1 "failed in: beta" "${out}" "${got}"
+  out=$(gor "${GOW}/go-test.sh" alpha); got=$?
+  expect "go-test.sh (only the modules given)" 0 "--- go test alpha" "${out}" "${got}"
+  out=$(gor "${GOW}/go-test.sh" nope); got=$?
+  expect "go-test.sh (a directory without go.mod fails)" 1 "nope/go.mod not found" "${out}" "${got}"
+
+  out=$(gor "${GOW}/gofmt-check.sh"); got=$?
+  expect "gofmt-check.sh (all formatted)" 0 "" "${out}" "${got}"
+  printf 'package beta\nfunc   Three() int { return 3 }\n' > "${GR}/beta/c.go"
+  out=$(gor "${GOW}/gofmt-check.sh"); got=$?
+  expect "gofmt-check.sh (lists the unformatted file and exits 1)" 1 "beta/c.go" "${out}" "${got}"
+
+  out=$(gor "${GOW}/gofmt-file.sh" "${GR}/alpha/a.go"); got=$?
+  expect "gofmt-file.sh (formatted)" 0 "" "${out}" "${got}"
+  out=$(gor "${GOW}/gofmt-file.sh" "${GR}/beta/c.go"); got=$?
+  expect "gofmt-file.sh (unformatted)" 1 "" "${out}" "${got}"
+  printf 'package beta\nfunc {\n' > "${GR}/beta/d.go"
+  out=$(gor "${GOW}/gofmt-file.sh" "${GR}/beta/d.go"); got=$?
+  expect "gofmt-file.sh (a syntax error is not taken as formatted)" 2 "" "${out}" "${got}"
+fi
 
 # --- resign-subtree-merge.sh (sign what git subtree --squash creates, without changing content) ---
 # Offline: the upstream is a local throwaway repository and signing uses a throwaway SSH key, so neither the network
@@ -459,7 +608,11 @@ else
   both_signed() { [ "$(sig HEAD)" = "G" ] && [ "$(sig HEAD^2)" = "G" ]; }
   tree_is() { [ "$(git -C "${H}" rev-parse HEAD:ext)" = "$(git -C "${RS}/up" rev-parse "$1^{tree}")" ]; }
 
-  (cd "${H}" && git subtree add -q --prefix=ext "${RS}/up" t1 --squash) >/dev/null 2>&1
+  # The documented steps (docs/setup.md §3): fetch the tag, then pass its commit to git subtree add / merge.
+  tag_commit() { git -C "${H}" fetch -q "${RS}/up" "refs/tags/$1" && git -C "${H}" rev-parse 'FETCH_HEAD^{commit}'; }
+  c=$(tag_commit t1)
+  (cd "${H}" && git subtree add -q --prefix=ext "${c}" --squash) >/dev/null 2>&1
+  git -C "${H}" diff --quiet "${c}" HEAD:ext || ng "resign-subtree-merge (precondition): subtree add of a commit did not put t1 under ext/."
   [ "$(sig HEAD^2)" = "N" ] || ng "resign-subtree-merge (precondition): git subtree add was expected to leave the squash commit unsigned."
   out=$(cd "${H}" && "${RESIGN}" 2>&1); got=$?
   if [ "${got}" -eq 0 ] && both_signed && tree_is t1; then pass=$((pass + 1)); else
@@ -469,11 +622,20 @@ else
   expect "resign-subtree-merge (already signed: nothing to do)" 0 "already signed" "${out}" "${got}"
   [ "$(git -C "${H}" rev-parse HEAD)" = "${before}" ] || ng "resign-subtree-merge (already signed): HEAD changed."
 
-  (cd "${H}" && git subtree pull -q --prefix=ext "${RS}/up" t2 --squash -m "pull t2") >/dev/null 2>&1
+  c=$(tag_commit t2)
+  (cd "${H}" && git subtree merge -q --prefix=ext "${c}" --squash -m "merge t2") >/dev/null 2>&1
   out=$(cd "${H}" && "${RESIGN}" 2>&1); got=$?
   if [ "${got}" -eq 0 ] && both_signed && tree_is t2; then pass=$((pass + 1)); else
-    ng "resign-subtree-merge (after pull): expected both commits signed and ext/ = t2 (exit ${got}). Output: ${out}"; fi
-  out=$(cd "${H}" && git subtree pull --prefix=ext "${RS}/up" t2 --squash 2>&1); got=$?
+    ng "resign-subtree-merge (after merge): expected both commits signed and ext/ = t2 (exit ${got}). Output: ${out}"; fi
+  git -C "${H}" log -1 --format=%B HEAD^2 | grep -q "^git-subtree-split: ${c}\$" \
+    || ng "resign-subtree-merge (after merge): the squash commit does not record git-subtree-split: t2."
+
+  echo 'three' >> "${RS}/up/a.txt"; upc commit -q -am "upstream 3"; upc tag t3
+  (cd "${H}" && git subtree pull -q --prefix=ext "${RS}/up" t3 --squash -m "pull t3") >/dev/null 2>&1
+  out=$(cd "${H}" && "${RESIGN}" 2>&1); got=$?
+  if [ "${got}" -eq 0 ] && both_signed && tree_is t3; then pass=$((pass + 1)); else
+    ng "resign-subtree-merge (after pull, the older way to update): expected both commits signed and ext/ = t3 (exit ${got}). Output: ${out}"; fi
+  out=$(cd "${H}" && git subtree pull --prefix=ext "${RS}/up" t3 --squash 2>&1); got=$?
   expect "resign-subtree-merge (the next subtree pull still finds the previous position)" 0 "already at commit" "${out}" "${got}"
   [ -z "$(git -C "${H}" log --format='%h %G?' | grep -v ' G$')" ] || ng "resign-subtree-merge: unsigned commits remain in the host history."
 
@@ -483,6 +645,6 @@ else
 fi
 
 if [ "${status}" -eq 0 ]; then
-  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh / claude-run.sh / notify-slack.sh / resign-subtree-merge.sh passed."
+  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh / claude-run.sh / notify-slack.sh / notify-google-chat.sh / resign-subtree-merge.sh passed."
 fi
 exit "${status}"

@@ -53,7 +53,7 @@ Include the following.
     (if you write something like "equivalent to the existing settings screen pattern", then when the existing implementation
     is itself wrong, that flaw is carried over and still judged "consistent")
   - **Write ACs judged by a command so that they give the same result from any directory.**
-    Later phases run with `{{FLOW_DIR}}/` as the current directory, and `cd` to the root is denied
+    Later phases run with `{{FLOW_DIR}}/` as the current directory and stay there
 {{#if FORMAT_CHECK_CMD}}
     - Formatting: `{{FORMAT_CHECK_CMD}}` exits with code 0. Do not use a command that only looks below the directory it runs in
 {{/if}}

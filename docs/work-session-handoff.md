@@ -29,7 +29,7 @@
 ## 開発の進め方
 
 - **確認**: `npm test`（`shared.js` のロジックの smoke test）と `npm run format:check`。CI（`.github/workflows/ci.yml`）でも同じものが動く
-- **AI による自動化（`ai-flow/`）**: Issue から指示書・実装・レビュー・PR までを Claude Code で進める仕組み（`make spec ISSUE=n` → `make impl ISSUE=n`）。いまは maepon/issue-to-pr-flow v0.7.1 を取り込んでいる
-  - `ai-flow/` の中は編集しない。直すときは issue-to-pr-flow で PR を出してタグを付け、`git subtree pull` で取り込む（手順は `CLAUDE.md` の「AI-Assisted Development Flow」）
+- **AI による自動化（`ai-flow/`）**: Issue から指示書・実装・レビュー・PR までを Claude Code で進める仕組み（`make spec ISSUE=n` → `make impl ISSUE=n`）。いまは maepon/issue-to-pr-flow v0.9.0 を取り込んでいる
+  - `ai-flow/` の中は編集しない。直すときは issue-to-pr-flow で PR を出してタグを付け、そのタグを `git subtree merge` で取り込む（手順は `CLAUDE.md` の「AI-Assisted Development Flow」）
   - 案件ごとの設定はルートの `.ai-flow/`。通知などの個人の設定は `ai-flow/.env`（git の管理外）
 - `master` は署名付きコミットが必須で、変更は PR を通して入れる

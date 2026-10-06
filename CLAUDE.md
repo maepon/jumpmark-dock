@@ -105,13 +105,21 @@ Current status: v2.4.0 is published on the Chrome Web Store. See `docs/work-sess
 
 `ai-flow/` holds a separate, Claude-Code-headless automation pipeline (spec → plan → implement → review → PR) driven by GitHub Issues (`make spec ISSUE=n`, `make impl ISSUE=n` from inside `ai-flow/`). It is tooling for *this repo's own development process*, not part of the extension.
 
-- **Source**: `ai-flow/` is [maepon/issue-to-pr-flow](https://github.com/maepon/issue-to-pr-flow) (public, MIT) brought in with `git subtree` (squashed). **Do not edit files under `ai-flow/` in this repository** — not even for urgent fixes. Make changes in issue-to-pr-flow through a PR, tag a release there, then pull the tag here.
+- **Source**: `ai-flow/` is [maepon/issue-to-pr-flow](https://github.com/maepon/issue-to-pr-flow) (public, MIT) brought in with `git subtree` (squashed). **Do not edit files under `ai-flow/` in this repository** — not even for urgent fixes. Make changes in issue-to-pr-flow through a PR, tag a release there, then bring the tag in here.
 - **Updating**: on a branch from an up-to-date `master`:
-  1. `git subtree pull --prefix=ai-flow https://github.com/maepon/issue-to-pr-flow.git <tag> --squash`
+  1. Fetch the tag, merge its commit, and check the content:
+     ```sh
+     tag=vX.Y.Z
+     git fetch https://github.com/maepon/issue-to-pr-flow.git "refs/tags/$tag"
+     c=$(git rev-parse 'FETCH_HEAD^{commit}')
+     git subtree merge --prefix=ai-flow "$c" --squash -m "ai-flow を maepon/issue-to-pr-flow $tag に更新する"
+     git diff --stat "$c" HEAD:ai-flow   # must print nothing
+     ```
+     **Do not use `git subtree pull <url> <tag>`**: it fetches and then reads `FETCH_HEAD` back separately, and if an IDE's automatic fetch runs in between, it brings in this repository's own content as `ai-flow/` without any error (issue-to-pr-flow v0.8.1 changed the steps for this reason)
   2. `ai-flow/scripts/resign-subtree-merge.sh` — **required**: `master` requires signed commits, and the "Squashed 'ai-flow/' …" commit that `git subtree` creates is unsigned (`git subtree` has no signing option). The script recreates the squash commit and the merge commit signed, with the same tree, parents, message, and author, and checks the tree is unchanged before moving `HEAD`. **Do not use `git rebase --rebase-merges --gpg-sign` instead**: it re-runs the merge, and after `git subtree add` it put the files at the repository root
-  3. Push, open a PR, and merge it with **"Create a merge commit"** (not squash), so the subtree metadata (`git-subtree-dir` / `git-subtree-split`) stays findable for the next pull
+  3. Push, open a PR, and merge it with **"Create a merge commit"** (not squash), so the subtree metadata (`git-subtree-dir` / `git-subtree-split`) stays findable for the next update
 
-  Read `ai-flow/CHANGELOG.md` before pulling. `ai-flow/tmp/` and `ai-flow/.env` are ignored and survive a pull.
+  Read the new tag's `CHANGELOG.md` before updating. `ai-flow/tmp/` and `ai-flow/.env` are ignored and survive an update.
 - **Docs**: `ai-flow/docs/setup.md` for setup and day-to-day operation; `ai-flow/README.md` for an overview.
 - **Project settings**: base branch, test/format commands, output language, extra permissions, and project text embedded into prompts (such as the risk catalog) live in the root `.ai-flow/` directory. This is the only part adapted to this project.
 - **Tooling files**: everything under `ai-flow/`, plus the root `.ai-flow/` and `.gitignore`. They are maintained by humans through their own PRs (never mixed into issue work); the automated flow refuses to let agent-driven issue work modify them.
