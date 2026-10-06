@@ -13,7 +13,7 @@ BASE_BRANCH ?= main
 
 # The flow uses two model tiers. Which phase gets which tier is decided in run-phase.sh.
 # They are named by capability rather than product name because the assignment is a policy, not a name
-# (it is actually swapped to experiment, via REVIEW_JUDGE_MODEL).
+# (it is actually swapped to experiment, via REVIEW_JUDGE_MODEL / PLAN_JUDGE_MODEL).
 # These two lines are the only place to touch when changing models.
 STRONG_MODEL ?= $(CLAUDE_CODE_OPUS_MODEL)
 FAST_MODEL ?= $(CLAUDE_CODE_SONNET_MODEL)
@@ -25,26 +25,29 @@ ISSUE_URL = $(REPO_URL)/issues/$(ISSUE)
 # Personal settings. .env is not tracked by git (see .env.example)
 -include .env
 
-# Only the judges' model (plan-judge / review-judge) can be swapped. Accepts fast / strong or a raw model ID.
-# If unset, run-phase.sh uses the strong model
+# Only the judges' models can be swapped. Each accepts fast / strong or a raw model ID.
+# REVIEW_JUDGE_MODEL is for review-judge, PLAN_JUDGE_MODEL for plan-judge; unset, PLAN_JUDGE_MODEL follows REVIEW_JUDGE_MODEL
+# (also when REVIEW_JUDGE_MODEL is given on the command line). If both are unset, run-phase.sh uses the strong model
 REVIEW_JUDGE_MODEL ?= $(FAST_MODEL)
+PLAN_JUDGE_MODEL ?= $(REVIEW_JUDGE_MODEL)
 
 # Notifications. run-phase.sh runs NOTIFY_CMD at each ending (done / waiting for a human / aborted) and progress point,
 # passing the body on stdin and the rest in AI_FLOW_NOTIFY_* environment variables (contract: docs/setup.md).
-# Empty means no notifications. When it is not defined at all, Slack is used if SLACK_WEBHOOK_URL is set, otherwise nothing,
-# so a .env with only SLACK_WEBHOOK_URL keeps working and trying the flow needs no chat service.
+# Empty means no notifications. When it is not defined at all, Slack is used if SLACK_WEBHOOK_URL is set, otherwise Google Chat
+# if GOOGLE_CHAT_WEBHOOK_URL is set, otherwise nothing, so a .env with only the webhook URL works and trying the flow needs no
+# chat service. Slack comes first so that a .env written before Google Chat was supported keeps doing what it did.
 # origin tells "not defined" apart from "defined as empty" (NOTIFY_CMD = in .env turns notifications off on purpose).
 ifeq ($(origin NOTIFY_CMD),undefined)
-NOTIFY_CMD := $(if $(strip $(SLACK_WEBHOOK_URL)),./scripts/notify-slack.sh)
+NOTIFY_CMD := $(if $(strip $(SLACK_WEBHOOK_URL)),./scripts/notify-slack.sh,$(if $(strip $(GOOGLE_CHAT_WEBHOOK_URL)),./scripts/notify-google-chat.sh))
 endif
 
 # Environment variables holding the notification command's secrets (space-separated names). They are exported for NOTIFY_CMD,
 # and claude-run.sh removes the same names from the agents' environment. One list drives both, so forgetting a name
 # means the notification does not get its secret (make does not export it), never that the agents can read it.
-NOTIFY_SECRET_VARS ?= SLACK_WEBHOOK_URL
+NOTIFY_SECRET_VARS ?= SLACK_WEBHOOK_URL GOOGLE_CHAT_WEBHOOK_URL
 
 export NOTIFY_CMD NOTIFY_SECRET_VARS $(NOTIFY_SECRET_VARS)
-export STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL
+export STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL PLAN_JUDGE_MODEL
 export AI_FLOW_PROJECT_DIR TEST_CMD SCRATCH_TEST_CMD FORMAT_CHECK_CMD FORMAT_FILE_CMD FORMAT_FIX_CMD FORMAT_GLOBS OUTPUT_LANG
 
 .PHONY: help spec impl review code-review pr-review create-pr check check-project check-env
@@ -85,9 +88,10 @@ help:
 	@echo "Variables: ISSUE (target Issue number)  MAX_ROUNDS (maximum judging rounds, default $(MAX_ROUNDS))"
 	@echo "      BASE_BRANCH  PR base branch (default $(BASE_BRANCH); the project's value is in .ai-flow/config.mk)"
 	@echo "      STRONG_MODEL / FAST_MODEL  strong / fast model IDs (default from environment variables)"
-	@echo "      REVIEW_JUDGE_MODEL  model for judging the plan and the implementation. Accepts strong / fast or a raw model ID"
-	@echo "                          Default: the fast model. To use the strong model: make impl ISSUE=n REVIEW_JUDGE_MODEL=strong"
-	@echo "      NOTIFY_CMD  notification command (default: Slack if SLACK_WEBHOOK_URL is set, otherwise none; empty turns them off)"
+	@echo "      REVIEW_JUDGE_MODEL  model for judging the implementation (and the plan, unless PLAN_JUDGE_MODEL is set)."
+	@echo "                          Accepts strong / fast or a raw model ID. Default: the fast model. E.g. make impl ISSUE=n REVIEW_JUDGE_MODEL=strong"
+	@echo "      PLAN_JUDGE_MODEL    model for judging the plan. Same values. Default: follows REVIEW_JUDGE_MODEL"
+	@echo "      NOTIFY_CMD  notification command (default: Slack if SLACK_WEBHOOK_URL is set, else Google Chat if GOOGLE_CHAT_WEBHOOK_URL is set, else none; empty turns them off)"
 	@echo "The whole history stays in the Issue comments (the AI-TAG identifies each type)"
 
 # Static checks of the tooling files. Always run before a phase (contents described at the top of scripts/check-scripts.sh)
@@ -108,9 +112,13 @@ check-project:
 # Prevents a run from failing halfway because something is not set
 check-env:
 	@case "$(firstword $(NOTIFY_CMD))" in \
-		"") echo "Notifications are off (NOTIFY_CMD is empty). To get them, set SLACK_WEBHOOK_URL or NOTIFY_CMD in .env (see docs/setup.md)." >&2 ;; \
+		"") echo "Notifications are off (NOTIFY_CMD is empty). To get them, set SLACK_WEBHOOK_URL, GOOGLE_CHAT_WEBHOOK_URL or NOTIFY_CMD in .env (see docs/setup.md)." >&2 ;; \
 		*notify-slack.sh) if [ -z "$(strip $(SLACK_WEBHOOK_URL))" ]; then \
 			echo "Error: NOTIFY_CMD uses notify-slack.sh but SLACK_WEBHOOK_URL is not set. Set it in .env, or set NOTIFY_CMD to something else (empty for no notifications)." >&2; \
+			exit 1; \
+		fi ;; \
+		*notify-google-chat.sh) if [ -z "$(strip $(GOOGLE_CHAT_WEBHOOK_URL))" ]; then \
+			echo "Error: NOTIFY_CMD uses notify-google-chat.sh but GOOGLE_CHAT_WEBHOOK_URL is not set. Set it in .env, or set NOTIFY_CMD to something else (empty for no notifications)." >&2; \
 			exit 1; \
 		fi ;; \
 	esac

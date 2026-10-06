@@ -49,7 +49,7 @@ Three design principles:
 | `claude` | Claude Code CLI, used headlessly (`claude -p`) | `claude --version` |
 | `gh` | GitHub CLI: reading/writing Issues, creating PRs | `gh auth status` |
 | `jq` | Reading Claude's JSON output | `jq --version` |
-| `curl` | Slack notifications (only if you use them) | `curl --version` |
+| `curl` | Slack / Google Chat notifications (only if you use them) | `curl --version` |
 | `make` | Entry point | `make --version` |
 | `bash` | Running the scripts | `bash --version` |
 
@@ -86,11 +86,12 @@ implementation is done. **Notifications are optional, and the command that sends
 |---|---|
 | Nothing | No notifications. `make` says `Notifications are off` at the start of each phase, so a missing setting does not go unnoticed |
 | Only `SLACK_WEBHOOK_URL` | Slack, through `scripts/notify-slack.sh` (the behavior before `NOTIFY_CMD` existed) |
-| `NOTIFY_CMD = <command>` | Your command. It wins over `SLACK_WEBHOOK_URL` |
-| `NOTIFY_CMD =` (empty) | No notifications, even if `SLACK_WEBHOOK_URL` is set |
+| Only `GOOGLE_CHAT_WEBHOOK_URL` | Google Chat, through `scripts/notify-google-chat.sh`. With both URLs set, Slack is used (pick one with `NOTIFY_CMD`) |
+| `NOTIFY_CMD = <command>` | Your command. It wins over the webhook URLs |
+| `NOTIFY_CMD =` (empty) | No notifications, even if a webhook URL is set |
 
 `NOTIFY_CMD` usually goes in `.env` (where notifications go is personal). Putting it in `.ai-flow/config.mk` works too, for a team that shares one
-destination; a value in `.env` wins. `check-env` stops if the command is not executable, or if it is `notify-slack.sh` without `SLACK_WEBHOOK_URL`.
+destination; a value in `.env` wins. `check-env` stops if the command is not executable, or if it is `notify-slack.sh` / `notify-google-chat.sh` without its webhook URL.
 
 #### The contract with `NOTIFY_CMD`
 
@@ -113,15 +114,18 @@ Fields may be added to `AI_FLOW_NOTIFY_*` later; ignore the ones you do not use.
 #### Secrets
 
 The agents must not be able to read the notification secret (see "Deny is not isolation" in §6). Name the environment variables that hold secrets in
-`NOTIFY_SECRET_VARS` (default `SLACK_WEBHOOK_URL`). The `Makefile` exports exactly those for `NOTIFY_CMD`, and `claude-run.sh` removes the same
+`NOTIFY_SECRET_VARS` (default `SLACK_WEBHOOK_URL GOOGLE_CHAT_WEBHOOK_URL`). The `Makefile` exports exactly those for `NOTIFY_CMD`, and `claude-run.sh` removes the same
 names from the agents' environment. Variables you define in `.env` are not exported otherwise, so **a name you forget to list means the command
-does not get its secret, never that the agents can read it.** `SLACK_WEBHOOK_URL` is always removed.
+does not get its secret, never that the agents can read it.** `SLACK_WEBHOOK_URL` and `GOOGLE_CHAT_WEBHOOK_URL` are always removed.
+
+If `.env` refers to a shell variable for the URL (`GOOGLE_CHAT_WEBHOOK_URL = $(MY_CHAT_URL)` with `MY_CHAT_URL` set in the shell profile),
+the agents inherit that variable from the shell too, so list it as well: `NOTIFY_SECRET_VARS = GOOGLE_CHAT_WEBHOOK_URL MY_CHAT_URL`.
 
 Keep the secret in `.env` (every `.env` is denied to the `Read` tool) rather than in a file of its own, which the agents could read.
 
 #### Examples
 
-None of these except Slack has been verified with the flow yet.
+None of these except Slack and Google Chat has been verified with the flow yet.
 
 Discord (its webhooks accept a Slack-compatible payload at `<webhook URL>/slack`, so the Slack script can be reused):
 
@@ -146,7 +150,13 @@ osascript -e 'on run argv' -e 'display notification (item 2 of argv) with title 
   "issue-to-pr-flow" "${AI_FLOW_NOTIFY_KIND}: ${AI_FLOW_NOTIFY_TITLE}"
 ```
 
-Google Chat is tracked in [#17](https://github.com/maepon/issue-to-pr-flow/issues/17).
+Google Chat (an Incoming Webhook of a space; [#17](https://github.com/maepon/issue-to-pr-flow/issues/17)). Emoji are sent as Unicode rather than as
+Slack's shortcodes such as `:x:`. A message that is too large is refused, so a body over 8000 characters is cut and
+ends with a note pointing to the Issue:
+
+```make
+GOOGLE_CHAT_WEBHOOK_URL = https://chat.googleapis.com/v1/spaces/<space>/messages?key=<key>&token=<token>
+```
 
 ### Models
 
@@ -174,10 +184,11 @@ Roles:
 |---|---|---|
 | Writing the instruction document, the commit and PR body, code review, Devil's Advocate | Strong | The job is judgment and cross-checking |
 | Writing the plan, revising the plan, implementing, fixing findings | Fast | Lots of work, with concrete instructions |
-| Judging the plan and the implementation | `REVIEW_JUDGE_MODEL` (fast by default) | The judges verify by running tests and reading diffs, which turned out to be enough for the fast model; switch with `REVIEW_JUDGE_MODEL=strong` |
+| Judging the implementation (review-judge) | `REVIEW_JUDGE_MODEL` (fast by default) | It verifies by running tests and reading diffs, which turned out to be enough for the fast model; switch with `REVIEW_JUDGE_MODEL=strong` |
+| Judging the plan (plan-judge) | `PLAN_JUDGE_MODEL` (follows `REVIEW_JUDGE_MODEL` by default) | It compares documents (instruction vs plan) and cannot verify by running anything, so inferences the prompt does not ask for are the first thing a weaker model loses. To keep it on the strong model while trying review-judge on the fast one: `PLAN_JUDGE_MODEL=strong` |
 
 **The variables are named by capability rather than product name because which phase gets which tier is a policy in `scripts/run-phase.sh`,
-and it is something you actually swap to experiment with** (`REVIEW_JUDGE_MODEL`, §4). The model ID used is printed to stderr for each step,
+and it is something you actually swap to experiment with** (`REVIEW_JUDGE_MODEL` / `PLAN_JUDGE_MODEL`, §4). The model ID used is printed to stderr for each step,
 so the logs show which one ran.
 
 > **Environment variables set in `.zshrc` are not read by non-interactive shells.** Running `make` from a terminal inherits them,
@@ -216,26 +227,44 @@ The two `!.claude/` lines bring the permission files back in environments whose 
 
 ```sh
 # at the root of your repository
-git subtree add --prefix=ai-flow https://github.com/maepon/issue-to-pr-flow.git v0.1.0 --squash
+tag=vX.Y.Z                                   # a release tag; the latest is at the top of CHANGELOG.md
+git fetch https://github.com/maepon/issue-to-pr-flow.git "refs/tags/$tag"
+c=$(git rev-parse 'FETCH_HEAD^{commit}')     # the tag's commit, read right after your own fetch
+git subtree add --prefix=ai-flow "$c" --squash
+git diff --stat "$c" HEAD:ai-flow            # prints nothing when ai-flow/ is the tag's content
 
 # project settings: copy the template to the root and edit it
 cp -R ai-flow/examples/project/.ai-flow .ai-flow
 ```
 
-To update later:
+To update later, fetch the new tag the same way and merge its commit:
 
 ```sh
-git subtree pull --prefix=ai-flow https://github.com/maepon/issue-to-pr-flow.git <tag> --squash
+tag=vX.Y.Z
+git fetch https://github.com/maepon/issue-to-pr-flow.git "refs/tags/$tag"
+c=$(git rev-parse 'FETCH_HEAD^{commit}')
+git subtree merge --prefix=ai-flow "$c" --squash -m "Update ai-flow to $tag"
+git diff --stat "$c" HEAD:ai-flow            # prints nothing when ai-flow/ is the tag's content
 ```
 
-Read `CHANGELOG.md` for what changed before pulling a new tag. Do not edit files under the flow directory in your repository;
+Read `CHANGELOG.md` for what changed before bringing in a new tag. Do not edit files under the flow directory in your repository;
 send changes upstream instead (the flow treats its whole directory as tooling, §6).
+
+**Why not `git subtree add/pull <url> <tag>`.** Given a URL, `git subtree` runs `git fetch <url> <tag>` and then reads
+`FETCH_HEAD` back in a separate command. If another process fetches in between — an IDE with automatic fetch enabled
+(VS Code's `git.autofetch`, for example) while the repository is open — `FETCH_HEAD` points to your own `origin` branch,
+and `git subtree` brings in your own repository's content as the flow, ending with `Added dir 'ai-flow'` and no error
+(seen once on git 2.54.0 with VS Code open; the race itself was inferred, not caught). If your root has a `Makefile`,
+`ai-flow/` gets one too, so `make` does not tell you either. The steps above read `FETCH_HEAD` once, right after your own fetch,
+and the `git diff` check catches the remaining window. `git subtree pull` only accepts a URL and a ref, so updates use
+`git subtree merge`, which takes the commit; the squash commit still carries `git-subtree-split:`, so later updates
+find the previous position as before.
 
 ### If your default branch requires signed commits
 
 `git subtree` creates the "Squashed '<prefix>/' …" commit — and, for `add`, the merge commit too — unsigned
 (it has no signing option). The subtree PR has to be merged with a merge commit, so those unsigned commits would land on
-the default branch and a "require signed commits" rule blocks the merge. Right after `git subtree add` or `git subtree pull`, run:
+the default branch and a "require signed commits" rule blocks the merge. Right after `git subtree add` or `git subtree merge`, run:
 
 ```sh
 ai-flow/scripts/resign-subtree-merge.sh
@@ -247,14 +276,14 @@ It uses your usual signing setup, like `git commit -S`.
 
 Do **not** use `git rebase --rebase-merges --gpg-sign` for this: rebase re-runs the merge instead of reusing its tree.
 After `git subtree add` that put the subtree's files at the repository root instead of under the prefix (verified),
-and after `pull` it only works when git happens to guess the subtree shift.
+and after `merge` / `pull` it only works when git happens to guess the subtree shift.
 
 ### Configure
 
 ```sh
 cd ai-flow
 cp .env.example .env
-# optional: notifications (SLACK_WEBHOOK_URL or NOTIFY_CMD; see Notifications in §2). Makefile syntax; make includes it
+# optional: notifications (SLACK_WEBHOOK_URL, GOOGLE_CHAT_WEBHOOK_URL or NOTIFY_CMD; see Notifications in §2). Makefile syntax; make includes it
 
 make check                   # project settings present, static checks, regression tests (selftest.sh). No cost
 make check-env               # environment variable checks. No cost
@@ -276,8 +305,8 @@ The flow directory only contains what is the same for every project. What you ad
 
 | Check | Command |
 |---|---|
-| A notification arrives | `printf 'test\n' \| AI_FLOW_NOTIFY_KIND=done AI_FLOW_NOTIFY_TITLE=test AI_FLOW_NOTIFY_ISSUE_URL=http://example.test <your NOTIFY_CMD>` (for Slack, prefix `SLACK_WEBHOOK_URL=<URL>`) |
-| A notification fires on abort | `NOTIFY_CMD=<command> ./scripts/run-phase.sh bogus-phase 99999 "http://example.test"` (plus the variables your command needs, such as `SLACK_WEBHOOK_URL`) |
+| A notification arrives | `printf 'test\n' \| AI_FLOW_NOTIFY_KIND=done AI_FLOW_NOTIFY_TITLE=test AI_FLOW_NOTIFY_ISSUE_URL=http://example.test <your NOTIFY_CMD>` (for Slack, prefix `SLACK_WEBHOOK_URL=<URL>`; for Google Chat, `GOOGLE_CHAT_WEBHOOK_URL=<URL>`) |
+| A notification fires on abort | `NOTIFY_CMD=<command> ./scripts/run-phase.sh bogus-phase 99999 "http://example.test"` (plus the variables your command needs, such as `SLACK_WEBHOOK_URL` or `GOOGLE_CHAT_WEBHOOK_URL`) |
 | The human gate works | `make impl ISSUE=n` on an Issue without an instruction document (stops with `Issue #n has no instruction document`) |
 
 Running `run-phase.sh` directly appends a header line to `tmp/cost-issue<N>.txt`. Use an unused Issue number when trying it,
@@ -304,10 +333,13 @@ but the end of `review` failed only because of `create_pr` itself (e.g. `origin/
 Redoing it from `review-judge` would duplicate the review comments on the Issue, so that part is not redone.
 
 Variables: `ISSUE` (target Issue number), `MAX_ROUNDS` (maximum judging rounds, default 3), `BASE_BRANCH` (PR base; the value comes from `.ai-flow/config.mk`),
-`REVIEW_JUDGE_MODEL` (the model judging the implementation and the plan; accepts `strong` / `fast` or a raw model ID. The `Makefile` default is the fast model).
+`REVIEW_JUDGE_MODEL` (the model judging the implementation, and the plan unless `PLAN_JUDGE_MODEL` is set; accepts `strong` / `fast` or a raw model ID.
+The `Makefile` default is the fast model), `PLAN_JUDGE_MODEL` (the model judging the plan; same values; follows `REVIEW_JUDGE_MODEL` when unset).
 
 You can try whether the fast model is enough for judging (`make impl ISSUE=n REVIEW_JUDGE_MODEL=fast`, the default)
 or switch it back to the strong model (`REVIEW_JUDGE_MODEL=strong`).
+To try one judge while the other stays put, set both: e.g. `PLAN_JUDGE_MODEL = strong` and `REVIEW_JUDGE_MODEL = fast` in `.ai-flow/config.mk`
+keeps plan-judge on the strong model and A/Bs only review-judge. Either can be set in `.ai-flow/config.mk`, `.env`, or on the `make` command line.
 
 ### The one place a human steps in
 
@@ -443,6 +475,7 @@ Each is one short run on the fast model, so the cost is small (they cannot be ch
 | Blocks by deny do **not** appear in `permission_denials`; they come back as tool errors | Some denials do not show up in the list |
 | Even when a tool call is denied, `claude` exits with **0** | `claude-run.sh` reads `permission_denials` and prints them to stderr |
 | With the flow directory as the current directory, Bash commands whose arguments point outside it (`git diff -- ../README.md`) are denied, while `Read` / `Write` / `Edit` reach those files | `claude-run.sh` passes `--add-dir=<repository root>`. Use the `=` form: `--add-dir` takes several values and would swallow the prompt |
+| With `--add-dir=<repository root>`, `cd` to the root or to a subdirectory is **not** denied, and the new current directory **persists** across calls (Claude Code also moves its "Primary working directory"). `cd` outside the repository is denied, naming the two allowed directories (checked on 2.1.285, 2026-10-06; in the trial recorded in #29, whose version was not noted, it exited 0 and the current directory went back to the flow directory) | `_rules.md` used to say "`cd` to the root is denied"; it now asks the agents to stay in the flow directory as a rule (the prompts' commands and paths are relative to it) and to `cd` back if they move. Commands in `config.mk` cannot rely on a relative path once the agent has moved |
 | Headless runs load the MCP connectors linked to the user's claude.ai account | `claude-run.sh` passes `--strict-mcp-config` so none are loaded |
 
 ### Allows that must never be granted
@@ -491,7 +524,7 @@ The effective safeguards are these three. **Do not remove any of them.**
 
 Therefore **do not leave secrets in the environment variables passed to the agents.**
 The `Makefile` exports the notification secrets named in `NOTIFY_SECRET_VARS` for `NOTIFY_CMD`, so `claude-run.sh` removes the same names
-(and always `SLACK_WEBHOOK_URL`) with `env -u` (otherwise `echo` could read them and the `Read(./.env)` deny would be pointless).
+(and always `SLACK_WEBHOOK_URL` and `GOOGLE_CHAT_WEBHOOK_URL`) with `env -u` (otherwise `echo` could read them and the `Read(./.env)` deny would be pointless).
 
 ### Protecting the tooling files
 
@@ -530,6 +563,12 @@ what the reviewer read and the actual diff would differ.
 **Project changes** go on a `feature/` branch and into a PR. **The two are never mixed in one commit.**
 
 `run-phase.sh` checks this right before creating the PR and aborts without creating it if they are mixed.
+It also checks at the very start of `impl` and `review`, before the instruction document is fetched, so tooling commits that are
+already there stop the phase before anything is charged: a `git subtree` update or an `.ai-flow/` edit committed on the local
+`BASE_BRANCH` and not pushed yet (or its PR not merged yet), carried along by a project branch cut from it.
+Both checks look at the diff from where the branch forked off `origin/<BASE_BRANCH>` (`origin/<BASE_BRANCH>...HEAD`, what the PR would show),
+so tooling updates that landed on `origin/<BASE_BRANCH>` after the fork do not count. A `BASE_BRANCH` ahead of `origin` is not a reason
+to stop by itself (when `review` is resumed, the agent's own commits are ahead too).
 
 ---
 
@@ -552,8 +591,9 @@ scripts/
   selftest.sh                        Regression tests for run-phase.sh functions and render-prompt.sh (called by check-scripts.sh;
                                      gh / npx / claude / curl are stubbed; runs throwaway repositories with the flow at ai-flow/ and tools/ai.flow/)
   ci-check.sh                        Runs make check in this repository by laying files out like a host repository (local and CI)
-  resign-subtree-merge.sh            Signs the commits git subtree add / pull --squash created, keeping their trees (§3)
+  resign-subtree-merge.sh            Signs the commits git subtree add / merge --squash created, keeping their trees (§3)
   notify-slack.sh                    Slack notification (the default NOTIFY_CMD when SLACK_WEBHOOK_URL is set)
+  notify-google-chat.sh              Google Chat notification (the default NOTIFY_CMD when only GOOGLE_CHAT_WEBHOOK_URL is set)
 
 prompts/
   _rules.md                          Common rules appended to every phase
@@ -577,6 +617,7 @@ docs/
   setup.md                           This guide
 
 examples/project/.ai-flow/           Template for project settings (copy to your repository root)
+examples/go/.ai-flow/                Wrappers for Go with several modules: go-test.sh, gofmt-check.sh, gofmt-file.sh (§9)
 
 .github/workflows/check.yml          CI for this repository (inert inside a host repository)
 
@@ -636,6 +677,8 @@ If explanations or decoration get mixed in, `make` cannot proceed and stops wait
 - **An agent can run only one command per call.** Compound commands (`cd X && cmd`, `cmd1; cmd2`,
   control structures, `VAR=value cmd` prefixes, command substitution, pipes, heredocs) are **denied even when the command is allowed.**
   `cd` is allowed and the current directory persists across calls, so they run it in two calls.
+  `cd` to the root is not blocked either (§6, "Pitfalls found by measurement"); `_rules.md` asks the agents to stay in the flow directory
+  because the commands and paths in the prompts are written relative to it, and to `cd` back if they move.
   Without this guidance in `_rules.md`, agents keep getting denied and spin
 - **`cp` is not allowed** (`cp ./.env /tmp/x` would get around the `Read(./.env)` deny).
   Agents create test input files with the `Write` tool
@@ -668,8 +711,9 @@ Common ones:
 | `… modified tooling files` | Restore with `git` and re-run. **This also happens if a human touched them during a phase** |
 | `… left files that fail the formatting check` | Apply the formatter, then resume with `make review`. If it appears for formatted files, the formatter is missing or there is a syntax error (a failing check is treated as a stop too) |
 | `The branch name does not start with feature/` | The naming rule. The implementation remains, so recreate the branch |
-| `Tooling files are mixed into the project's commits` | Split them into separate commits. **It also happens when the project branch forked from an old point and tooling updates have since landed on `BASE_BRANCH`** (they show up reversed in the `origin/<BASE_BRANCH>..<branch>` diff). In that case rebase the project branch onto `origin/<BASE_BRANCH>` and run `make create-pr` |
-| `origin/… not found` | `BASE_BRANCH` in `.ai-flow/config.mk` does not match the default branch. After fixing it, resume with `make create-pr` without redoing the review (resuming from `review` duplicates the `review-judge` comments) |
+| `Tooling files are in commits that are not on origin/…` | At the start of `impl` / `review`, before anything is charged. Tooling commits (a `git subtree` update, an `.ai-flow/` edit) are on the local `BASE_BRANCH` and not on `origin` yet. Push them (or merge their PR) and `git fetch`; if the project branch was cut before that, cut it again from `origin/<BASE_BRANCH>`. Then re-run the same command |
+| `Tooling files are mixed into the project's commits` | At the end of `review`: tooling files went into commits made during the phase. Split them into separate commits and run `make create-pr`. (Up to 0.8.1, tooling updates that landed on `BASE_BRANCH` after the fork also showed up here, reversed; the check now looks at the diff from the fork) |
+| `origin/… not found` | `BASE_BRANCH` in `.ai-flow/config.mk` does not match the default branch. At the start of `impl` / `review` nothing has been charged yet; fix it and re-run. At the end of `review`, resume with `make create-pr` without redoing the review (resuming from `review` duplicates the `review-judge` comments) |
 | `No difference from origin/…` | The agent did not commit. Resume with `make review` |
 | `PR not found` | When running `code-review` / `pr-review` on their own, the current branch has no PR |
 | `… was not approved after <MAX_ROUNDS> rounds` | **This happens when the acceptance criteria are vague.** Revisit the instruction document |
@@ -716,17 +760,32 @@ What to check and adapt for your repository.
 
 ### Must do
 
-- [ ] **`.env`** in the flow directory: notifications if you want them (`SLACK_WEBHOOK_URL`, or `NOTIFY_CMD` and `NOTIFY_SECRET_VARS`; §2)
+- [ ] **`.env`** in the flow directory: notifications if you want them (`SLACK_WEBHOOK_URL`, `GOOGLE_CHAT_WEBHOOK_URL`, or `NOTIFY_CMD` and `NOTIFY_SECRET_VARS`; §2)
 - [ ] **Environment variables** for the strong and fast model IDs (defaults read `CLAUDE_CODE_OPUS_MODEL` /
       `CLAUDE_CODE_SONNET_MODEL`; put them in `.zshenv` or `.env`, not `.zshrc`)
 - [ ] **`.ai-flow/config.mk`** — `BASE_BRANCH`, tests (`TEST_CMD` / `SCRATCH_TEST_CMD`),
       formatting (`FORMAT_CHECK_CMD` / `FORMAT_FILE_CMD` / `FORMAT_FIX_CMD` / `FORMAT_GLOBS`), `OUTPUT_LANG`.
       `FORMAT_FILE_CMD` must **exit 0 when the file is formatted**. For tools that answer through their output, such as `gofmt -l`,
-      write a wrapper that answers with the exit code. **It must not format** (check only). If the check itself fails, the flow stops.
+      write a wrapper that answers with the exit code (`examples/go/.ai-flow/gofmt-file.sh` / `gofmt-check.sh`).
+      **It must not format** (check only). If the check itself fails, the flow stops.
       **If your project has no formatter, leave all four `FORMAT_*` values empty**: the formatting steps disappear from the prompts and the per-file check is skipped
 - [ ] **Commands run from the flow directory** — the agents use the flow directory (e.g. `ai-flow/`) as the current directory,
       so every command in `config.mk` must work from there. `npm test` / `npm run …` find the root `package.json` by themselves;
       for other tools, give paths relative to the flow directory (e.g. `python3 -m unittest discover -s ../tests`)
+- [ ] **No single command covers the repository from the flow directory?** (several modules or packages each with their own settings:
+      Go modules without `go.work`, Gradle builds that are not one multi-project build, JS packages with their own configs, ...)
+      `TEST_CMD` and `FORMAT_CHECK_CMD` still have to be **one command** run from the flow directory, because the judges re-run them
+      to verify claims. Write a wrapper that walks the modules, as `examples/go/.ai-flow/go-test.sh` does for Go
+      (`go test ../<module>/...` fails there with "directory prefix … does not contain main module"):
+      - **Put the wrappers in `.ai-flow/` at the root**, e.g. `cp ai-flow/examples/go/.ai-flow/*.sh .ai-flow/`. `.ai-flow/` is tooling,
+        so the working tree check stops an agent that edits them. In the project's own `scripts/` an agent could rewrite the command
+        the judges re-run
+      - **Call them by a path relative to the flow directory** (`../.ai-flow/go-test.sh` for `ai-flow/`, `../../.ai-flow/…` one level deeper),
+        and allow exactly that form in `.ai-flow/permissions.json`, e.g. `"Bash(../.ai-flow/go-test.sh:*)"`, `"Bash(../.ai-flow/gofmt-check.sh)"`,
+        `"Bash(../.ai-flow/gofmt-file.sh:*)"`, plus `"Bash(go test:*)"` if the agents should test one module by hand
+        (checked on Claude Code 2.1.285: these allows let the three wrappers run, and a script in `.ai-flow/` that was not allowed was denied)
+      - The relative path only works from the flow directory. The agents can `cd` elsewhere (into a module, to run its tests),
+        but `_rules.md` asks them to come back before running anything else (§6, "Pitfalls found by measurement")
 - [ ] **No tests?** Leave `TEST_CMD` and `SCRATCH_TEST_CMD` both empty. The plan then maps each acceptance criterion to a verification
       command (or a `manual` check with steps) instead of a test, implement runs those commands, and the judges re-run them.
       The verdict design does not change: it is still decided only by acceptance criteria numbers.
@@ -778,7 +837,7 @@ Things that tend to get cut because "it looks easy", and that **silently** stop 
 | **`RESIDUAL_RISK` / `CODE_REVIEW` / `DEVILS_ADVOCATE` do not affect verdicts** | If they could overturn an approval, the writers would hold back |
 | **`push` and `gh pr` are not given to the agents** | Blocking dangerous push forms by enumerating permission rules leaks |
 | **The working tree is checked after each step** | `Write` / `Edit` cannot be restricted by path, so this is the only safeguard |
-| **git output paths are read with `-z`** (`worktree_paths` and `create_pr` in `run-phase.sh`) | Plain `--porcelain` / `--name-only` quote paths containing non-ASCII characters or spaces as `"…"`, so they do not match `^` in `TOOLING_PATHS`. Modified tooling files and tooling mixed into project commits **pass silently** |
+| **git output paths are read with `-z`** (`worktree_paths` and `mixed_tooling` in `run-phase.sh`) | Plain `--porcelain` / `--name-only` quote paths containing non-ASCII characters or spaces as `"…"`, so they do not match `^` in `TOOLING_PATHS`. Modified tooling files and tooling mixed into project commits **pass silently** |
 | **A failing notification only warns** (`notify()` in `run-phase.sh`) | If it stopped the flow, a flaky webhook would throw away a finished implementation or review |
 | **Agents format; the shell only checks** | If the shell rewrote the diff, what the reviewer read and the actual diff would differ |
 | **A failing formatting check stops the flow** (`format_ok()` is false on failure) | Judging only by empty output makes a missing formatter or a syntax error that prints nothing count as "formatted", and **everything passes silently** |

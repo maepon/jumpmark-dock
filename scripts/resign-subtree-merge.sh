@@ -1,6 +1,6 @@
 #!/bin/bash
-# Signs the commits that `git subtree add/pull --squash` just created, without changing their content.
-# Usage (in the host repository, right after `git subtree add` or `git subtree pull`):
+# Signs the commits that `git subtree add/merge --squash` (or `pull`) just created, without changing their content.
+# Usage (in the host repository, right after `git subtree add` or `git subtree merge`):
 #   <flow dir>/scripts/resign-subtree-merge.sh
 #
 # Why: `git subtree` creates the "Squashed '<prefix>/' ..." commit (and, for `add`, the merge commit) with
@@ -15,7 +15,7 @@
 #
 # Not `git rebase --rebase-merges --gpg-sign`: rebase re-runs the merge instead of reusing its tree. After
 # `git subtree add` that put the subtree's files at the repository root instead of under <prefix>/ (verified), and
-# after `pull` it only works when git happens to guess the subtree shift.
+# after `merge` / `pull` it only works when git happens to guess the subtree shift.
 #
 # If both commits are already signed, nothing is done. Uses the signing setup of the repository (user.signingkey,
 # gpg.format, ...), like `git commit -S`.
@@ -25,7 +25,7 @@ die() { echo "Error: resign-subtree-merge.sh: $1" >&2; exit 1; }
 
 git rev-parse --git-dir >/dev/null 2>&1 || die "run inside a git repository."
 merge=$(git rev-parse --verify -q HEAD) || die "HEAD does not point to a commit."
-squash=$(git rev-parse --verify -q "${merge}^2") || die "HEAD is not a merge commit. Run this right after git subtree add / pull."
+squash=$(git rev-parse --verify -q "${merge}^2") || die "HEAD is not a merge commit. Run this right after git subtree add / merge."
 git log -1 --format=%B "$squash" | grep -q '^git-subtree-dir: ' \
   || die "the second parent of HEAD is not a commit created by git subtree --squash."
 
