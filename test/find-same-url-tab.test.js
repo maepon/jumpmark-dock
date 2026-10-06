@@ -262,9 +262,7 @@ test("CHANGELOG has Fixed entry under Unreleased", () => {
 test("README mentions same-page tab matching", () => {
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   const lines = readme.split("\n");
-  const line = lines.find((l) =>
-    l.startsWith("- 同じURLのタブがあればフォーカス"),
-  );
+  const line = lines.find((l) => l.startsWith("同じページかどうかは"));
   assert.ok(line);
   assert.match(line, /末尾の `\/`/);
   assert.match(line, /`#`/);
