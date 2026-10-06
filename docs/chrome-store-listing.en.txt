@@ -4,6 +4,8 @@ Scoped bookmarks for Chrome: links tied to a page or URL pattern that show up on
 
 Jumpmark Dock is a Chrome extension for managing "scoped bookmarks." Regular bookmarks show the same list no matter which page you're on, but a Jumpmark appears in the popup only when you open the page it was created on (its scope). It's perfect when the links you need depend on what you're working on — a ChatGPT thread, a Notion page, a GitHub issue, and so on.
 
+Background on the idea (in Japanese): https://maepon.blog/about-scoped-bookmark/
+
 🔧 Key Features
 
 ● View a list of shortcut links tied to the currently open URL
@@ -12,6 +14,7 @@ Jumpmark Dock is a Chrome extension for managing "scoped bookmarks." Regular boo
 ● Fill in the title and URL by picking one of your open tabs ("Choose from open tabs")
 ● Add * (a wildcard) to the end of the source URL to widen the scope to every page under it
 ● The extension icon shows how many shortcuts are in the current page's scope
+● If the target page is already open, it switches to that tab instead of opening a new one
 ● Export your data as JSON, CSV, or HTML, and import it from JSON
 ● Available in English and Japanese, with dark mode support
 
