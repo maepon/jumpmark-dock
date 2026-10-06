@@ -3,6 +3,8 @@
 
 URLごとに双方向ショートカット（Jumpmark）を設定・管理できるChrome拡張機能です。
 
+背景にある「Scoped Bookmark」という考え方については、ブログ記事「[ブックマークにスコープを ― Scoped Bookmark という考え方](https://maepon.blog/about-scoped-bookmark/)」で紹介しています。
+
 ## 🚀 機能
 
 ### 基本機能
