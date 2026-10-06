@@ -263,6 +263,38 @@ ${msg}"
     || fail "Issue #$ISSUE has no instruction document. Run make spec first and have a human check the instruction document."
 }
 
+# Stops unless origin/<BASE_BRANCH> exists. Without it, mixed_tooling's git diff error would be swallowed by || true
+require_base() {
+  git rev-parse --verify --quiet "origin/${BASE_BRANCH}" >/dev/null \
+    || fail "origin/${BASE_BRANCH} not found. Check that BASE_BRANCH in .ai-flow/config.mk matches the default branch."
+}
+
+# Prints the tooling files in the commits a PR from <rev> would carry, one per line (empty when none).
+# Three dots: the diff from where <rev> forked off origin/<BASE_BRANCH>, which is what the PR shows. Two dots compared with
+# origin/<BASE_BRANCH>'s current tree, so tooling updates that landed there after the fork showed up reversed and stopped the flow.
+# Tooling commits on a local BASE_BRANCH that is not pushed yet are after the fork, so they are still caught.
+# -z avoids quoting (same reason as worktree_paths). --no-renames because a rename only shows
+# the destination, which would miss moving a file out of the tooling.
+mixed_tooling() {
+  git diff --name-only -z --no-renames "origin/${BASE_BRANCH}...$1" | tr '\0' '\n' | grep -E "$TOOLING_PATHS" || true
+}
+
+# Run first in impl / review, before require_instruction: it needs only the local git, so it stops before anything is charged
+# (and can be tried with an Issue number that has no instruction document).
+# Tooling commits can be there before the phase starts: a subtree update or an .ai-flow/ edit committed on the local BASE_BRANCH and
+# not pushed (or its PR not merged yet) is carried along by a project branch cut from it. create_pr would stop on it only after
+# planning, judging, implementing, reviewing and committing were all paid for.
+# HEAD rather than a feature/ branch: impl normally starts on BASE_BRANCH, before the branch exists.
+# A BASE_BRANCH ahead of origin is not a reason to stop by itself: when review is resumed, the agent's own commits are ahead too.
+require_no_mixed_tooling() {
+  local mixed
+  require_base
+  mixed=$(mixed_tooling HEAD)
+  [ -z "$mixed" ] || fail "Tooling files are in commits that are not on origin/${BASE_BRANCH}, so the PR would carry them. Stopped before anything was charged.
+Push the tooling commits to ${BASE_BRANCH} (or merge their PR) and git fetch. If the project branch was cut before that, cut it again from origin/${BASE_BRANCH}. Then re-run:
+$mixed"
+}
+
 # push and PR creation are not given to the agent; they happen here,
 # so the branch name and what is committed can be checked mechanically right before the outward-facing operation.
 # Blocking dangerous push forms by enumerating permission rules leaks, so push is simply not granted.
@@ -276,17 +308,13 @@ create_pr() {
     *)  fail "The branch name does not start with feature/ (${branch}). Project changes go on feature/ branches." ;;
   esac
 
-  # Without the base, the mixing check below would let git diff's error be swallowed by || true. Check it first
-  git rev-parse --verify --quiet "origin/${BASE_BRANCH}" >/dev/null \
-    || fail "origin/${BASE_BRANCH} not found. Check that BASE_BRANCH in .ai-flow/config.mk matches the default branch."
+  require_base
 
   commits=$(git rev-list --count "origin/${BASE_BRANCH}..${branch}")
   [ "$commits" -gt 0 ] || fail "No difference from origin/${BASE_BRANCH}. The agent may not have committed."
 
-  # Are tooling files mixed into the project's commits?
-  # -z avoids quoting (same reason as worktree_paths). --no-renames because a rename only shows
-  # the destination, which would miss moving a file out of the tooling.
-  mixed=$(git diff --name-only -z --no-renames "origin/${BASE_BRANCH}..${branch}" | tr '\0' '\n' | grep -E "$TOOLING_PATHS" || true)
+  # Are tooling files mixed into the project's commits? (Checked at the start of impl / review too; this catches what was committed since)
+  mixed=$(mixed_tooling "$branch")
   if [ -n "$mixed" ]; then
     fail "Tooling files are mixed into the project's commits. Put them in a separate commit:
 $mixed"
@@ -318,7 +346,8 @@ Cumulative cost: \$$(total_cost)"
 [ -n "$STRONG" ] || fail "STRONG_MODEL is empty. Check CLAUDE_CODE_OPUS_MODEL or write STRONG_MODEL in .env (if it is defined in .zshrc, non-interactive runs do not read it)."
 [ -n "$FAST" ]   || fail "FAST_MODEL is empty. Check CLAUDE_CODE_SONNET_MODEL or write FAST_MODEL in .env."
 
-# Only the judges' model (plan-judge / review-judge) can be swapped. The default here is the strong model.
+# Only the judges' models can be swapped: REVIEW_JUDGE_MODEL for review-judge, PLAN_JUDGE_MODEL for plan-judge (unset = the same as
+# REVIEW_JUDGE_MODEL). Each accepts strong / fast or a raw model ID. The default here is the strong model.
 # review-judge works against an implementation, so it can verify with test runs, the formatting check, and the diff (the send-backs
 # seen in the original repository were cross-checks such as "one of the four documents the instruction listed was not updated").
 # To A/B whether the fast model is enough, REVIEW_JUDGE_MODEL=fast switches it (the Makefile default is the fast model; the default
@@ -327,14 +356,20 @@ Cumulative cost: \$$(total_cost)"
 # In the original repository plan-judge was fixed to the strong model: it compares documents (instruction vs plan) and cannot verify
 # by running anything, and both of its send-backs there were inferences the prompt did not ask for ("the proposed tests would pass even
 # with the implementation broken") - the first thing lost with a weaker model. Later plan-judge was aligned with REVIEW_JUDGE too, and
-# the Makefile default makes it the fast model.
+# the Makefile default makes it the fast model. PLAN_JUDGE_MODEL separates them again when wanted: with one variable for both,
+# A/B-ing review-judge moved plan-judge too, so a difference in results could not be traced to either judge.
 #
 # claude-run.sh prints the model ID used for each step to stderr, so the logs show which one ran.
-case "${REVIEW_JUDGE_MODEL:-}" in
-  ""|strong) REVIEW_JUDGE="$STRONG" ;;
-  fast)      REVIEW_JUDGE="$FAST" ;;
-  *)         REVIEW_JUDGE="$REVIEW_JUDGE_MODEL" ;;
-esac
+# Prints the model ID for a judge setting: strong / fast (or empty = strong) / a raw model ID
+judge_model() {
+  case "$1" in
+    ""|strong) echo "$STRONG" ;;
+    fast)      echo "$FAST" ;;
+    *)         echo "$1" ;;
+  esac
+}
+REVIEW_JUDGE=$(judge_model "${REVIEW_JUDGE_MODEL:-}")
+PLAN_JUDGE=$(judge_model "${PLAN_JUDGE_MODEL:-${REVIEW_JUDGE_MODEL:-}}")
 
 phase_spec() {
   PHASE=spec
@@ -361,13 +396,14 @@ $RESULT"
 
 phase_impl() {
   PHASE=impl
+  require_no_mixed_tooling
   require_instruction
   run_step "Writing the implementation plan" prompts/plan.md "$FAST"
 
   round=1
   while : ; do
     : > "$VERDICT_FILE"
-    run_step "Judging against the instruction document, round ${round}/${MAX_ROUNDS}" prompts/plan-judge.md "$REVIEW_JUDGE"
+    run_step "Judging against the instruction document, round ${round}/${MAX_ROUNDS}" prompts/plan-judge.md "$PLAN_JUDGE"
     verdict=$(read_verdict)
     handle_verdict "$verdict" "plan" "make impl ISSUE=${ISSUE}" && break
     if [ "$round" -ge "$MAX_ROUNDS" ]; then
@@ -390,6 +426,7 @@ Cost so far: \$$(total_cost)"
 
 phase_review() {
   PHASE=review
+  require_no_mixed_tooling
   require_instruction
 
   round=1

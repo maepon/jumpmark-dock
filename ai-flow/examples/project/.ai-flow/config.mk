@@ -20,6 +20,7 @@ BASE_BRANCH = main
 # because the judge re-runs the tests to verify claims and must not see a replayed success.
 TEST_CMD = npm test
 # TEST_CMD = go test -count=1 ./...
+# TEST_CMD = ../.ai-flow/go-test.sh            Go with several modules and no go.work (examples/go/.ai-flow; docs/setup.md §9)
 # TEST_CMD = python -m pytest ..
 # TEST_CMD = python3 -m unittest discover -s ../tests
 
@@ -35,10 +36,12 @@ SCRATCH_TEST_CMD = node --test
 FORMAT_CHECK_CMD = npm run format:check
 # FORMAT_CHECK_CMD = make fmt-check
 # FORMAT_CHECK_CMD = ruff format --check ..
+# FORMAT_CHECK_CMD = ../.ai-flow/gofmt-check.sh  gofmt -l answers through its output, not the exit code (examples/go/.ai-flow)
 
 # Formatting check for one file. The absolute path is appended. Must exit 0 when the file is formatted.
 FORMAT_FILE_CMD = npx prettier --check
 # FORMAT_FILE_CMD = ruff format --check
+# FORMAT_FILE_CMD = ../.ai-flow/gofmt-file.sh   (examples/go/.ai-flow)
 
 # Fixes formatting of a file. The file name is appended. Shown in abort messages and prompts.
 FORMAT_FIX_CMD = npx prettier --write

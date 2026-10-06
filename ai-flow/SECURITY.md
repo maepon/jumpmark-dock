@@ -25,4 +25,4 @@ This is a personal project maintained in spare time; expect a reply within a few
 ## Supported versions
 
 Only the latest release tag receives fixes. Release tags (`v*`) are protected and are never moved or deleted,
-so a tag you have pulled with `git subtree pull` always means the same content.
+so a tag you have brought in with `git subtree` always means the same content.
