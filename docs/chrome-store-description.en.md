@@ -2,104 +2,62 @@
 
 > English version of `docs/chrome-store-description.md`. When you change one, update the other to match.
 >
-> The Chrome Web Store description field does not render Markdown. Paste the plain-text `docs/chrome-store-listing.en.txt` / `docs/chrome-store-listing.ja.txt` into the store instead.
+> The Chrome Web Store description field does not render Markdown. Paste the plain-text `docs/chrome-store-listing.en.txt` / `docs/chrome-store-listing.ja.txt` into the store instead. This document summarizes the thinking behind the listing and the text for the "Single purpose" and "Permission justification" fields in the Developer Dashboard.
 
 ## Overview
 
-**Jumpmark Dock** is a Chrome extension focused on **creating bidirectional shortcuts between web pages**.
+**Jumpmark Dock** is a Chrome extension for **scoped bookmarks**.
 
-A Jumpmark is a **scoped bookmark**. Regular bookmarks show the same list no matter which page you're on, but a Jumpmark appears only when you open the page it was created on (its scope).
+Regular bookmarks show the same list no matter which page you're on. A bookmark made with Jumpmark Dock (a Jumpmark) is tied to the page it was created on (its scope) and shows up only when you open that page. It gives you the "whenever I'm on this page, I want to go to that page" kind of shortcut without filling up your bookmarks bar.
 
-### Single, clear purpose
-**Create bidirectional shortcut links between web pages so you can move quickly between related pages**
+Background on the idea (in Japanese): [ブックマークにスコープを ― Scoped Bookmark という考え方](https://maepon.blog/about-scoped-bookmark/)
+
+### Single purpose
+Show bookmarks (Jumpmarks) tied to a page or URL pattern only when that page is open, so you can move quickly to related pages.
 
 ### Key features
-- **Bidirectional shortcuts**: When you create a link from page A to page B, a link from page B back to page A is created automatically
-- **Link management**: View, edit, and delete the shortcuts associated with each page
-- **Badge count**: When the current page has related shortcuts, the extension icon shows how many
-- **Simpler add flow (v2.1.0)**: No icon input needed when creating a shortcut; `🔖` is set automatically
-- **Fill in from open tabs (v2.3.0)**: In the add form, pick one of your open tabs to fill in its title and URL automatically
-- **More storage (v2.4.0)**: Usable storage grows from about 8KB to about 100KB. The return link of a bidirectional pair is now titled after the page it was created on
+- **Per-page Jumpmarks**: Create a Jumpmark on the page you're viewing; it appears in the popup only when you open that page
+- **Bidirectional links**: When creating A→B, you can also create the return Jumpmark B→A (on by default)
+- **Wildcards**: Add `*` to the end of the source URL to widen the scope to every page under that path
+- **Badge count**: When the current page has Jumpmarks, the extension icon shows how many
+- **Switch to an existing tab**: If the target page is already open, it switches to that tab
+- **Fill in from open tabs**: In the add form, pick one of your open tabs to fill in its title and URL
+- **Management page**: Search, filter, edit, and bulk-delete all Jumpmarks; back up and restore with JSON
+- **Chrome Sync**, **Japanese and English UI**, **dark mode**
 
-## Why install it
+## How it differs from regular bookmarks
 
-### 🚀 Work more efficiently
-- **Quick access to related pages**: Jump there in one click instead of searching every time
-- **Faster research**: Move back and forth between references and related articles
-- **Project management**: Tie together related documents, tools, and resources
-
-### 🔄 The power of bidirectional links
-- **See how information connects**: Tell at a glance which pages are linked to which
-- **Organize your knowledge**: Connect scattered information into a coherent whole
-- **Serendipity**: Discover unexpected connections
-
-### ☁️ Convenience of cloud sync
-- **Seamless switching between devices**: The same Jumpmark setup on your desktop, laptop, and tablet
-- **Shared across your devices**: Synced across devices signed in to Chrome with the same Google account
-- **Peace of mind**: Stored safely in Chrome's cloud storage
-
-### 🎯 Example use cases
-
-**Study and research**
-- Paper ⇔ references ⇔ related work
-- Online course ⇔ exercises ⇔ explanation sites
-
-**Business**
-- Project management tool ⇔ design documents ⇔ API documentation
-- Customer information ⇔ related email ⇔ meeting materials
-
-**Hobbies and lifestyle**
-- Recipe site ⇔ online grocery store ⇔ nutrition information
-- Travel plan ⇔ accommodation booking ⇔ sightseeing information
-
-### 💡 How it differs from regular bookmarks
-
-| Feature | Regular bookmarks | Jumpmark Dock |
+| | Regular bookmarks | Jumpmark Dock |
 |------|-------------------|---------------|
-| Relationships | One-way only | **Bidirectional, created automatically** |
-| Context | Managed in folders | **Related links shown per page** |
-| Access | From the bookmarks bar | **Directly from the current page** |
-| Sync | Chrome bookmark sync | **Chrome Storage Sync** |
-| Visibility | List view | **Badge + popup** |
-| Where it appears | The same list on every page | **Only on the page it was created on (its scope)** |
+| Where they appear | The same list on every page | **Only on the page they were created on (their scope)** |
+| How you organize them | Sort into folders and go looking | **Tie them to a page; they show up when you're there** |
+| Scope | ― | **A single page, or every page under a path (wildcard)** |
+| Return links | Create them separately yourself | **Can be created together** |
+| How you notice them | Open the bookmarks bar or menu | **The extension icon's badge shows the count** |
 
-### 🛡️ Privacy and security
+## Use cases
+
+- Keep links to reference documents or blog drafts for each ChatGPT thread
+- Tie related articles or GitHub issues to a Notion page
+- From any page under a GitHub repository (`github.com/owner/repo*`), jump to its documentation or deployed site
+- Move back and forth between paired pages such as staging and production, or an admin page and the public page
+- Go back and forth between a main text and its material, such as a paper and its references, or a course and its exercises
+
+## Privacy and security
 - **Minimal permissions**: Only what is needed (storage, tab information)
-- **Processing in the browser**: Shortcuts are saved, displayed, and matched within the browser, and the extension never sends data to external servers on its own (except syncing through Google when Chrome Sync is enabled)
+- **Processing in the browser**: Jumpmarks are saved, displayed, and matched within the browser, and the extension never sends data to external servers on its own (except syncing through Google when Chrome Sync is enabled)
 - **Extension-only storage**: Data is saved in Chrome's extension storage and cannot be read by other extensions or websites
-- **Open source**: Published on GitHub for transparency
+- **Open source**: Published on GitHub
 
-## Chrome Web Store description (single-purpose version)
+## Chrome Web Store listing
 
 **Store URL**: https://chromewebstore.google.com/detail/jumpmark-dock/ldodfncboddjjbggcholbmkmjbfjmblh
 
-**Short description**
+**Short description** (`extDescription` in `_locales/en/messages.json`)
 Scoped bookmarks for Chrome: links tied to a page or URL pattern that show up only when you're there.
 
 **Detailed description**
-Jumpmark Dock is an extension focused on creating bidirectional shortcuts between web pages.
-
-**A single, clear function:**
-It creates bidirectional shortcut links between web pages so you can move quickly between related pages.
-
-🔗 **Bidirectional shortcuts**: Create a link from page A to B, and a link from page B to A is created automatically
-📊 **Badge count**: When there are related pages, the extension icon shows how many
-⚡ **Quick access**: The extension popup lists the shortcuts associated with the current page
-
-**How to use:**
-1. On the page you want to link from, click the extension icon
-2. Click "+ Add Jumpmark" and enter the target URL and a title
-   - New shortcuts get the `🔖` icon automatically (you can edit it later if you like)
-   - Instead of typing the URL and title, you can also pick one from the list of open tabs ("Choose from open tabs")
-3. A bidirectional shortcut is created automatically
-4. Jump to the related page in one click
-
-**Who it is for:**
-- People who frequently go back and forth between related web pages
-- People who read a main text while referring to reference material
-- People who compare multiple related sites
-
-A simple, easy-to-understand tool for creating shortcuts between web pages.
+Paste the full text of `docs/chrome-store-listing.en.txt` (its first line is the same as the short description).
 
 ## Why the permissions are needed
 
