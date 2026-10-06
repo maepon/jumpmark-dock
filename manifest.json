@@ -27,9 +27,6 @@
     "storage",
     "tabs"
   ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
   "author": "maepon",
   "homepage_url": "https://github.com/maepon/jumpmark-dock"
 }
