@@ -959,8 +959,11 @@ test("AC-49: only errorStorageQuotaExceeded mentions 8KB", () => {
 test("AC-50..53: docs contain the required statements", () => {
   const readme = readSource("README.md");
   assert.ok(!readme.includes("約8KBが上限"));
-  const limit = readme.split("\n").find((l) => l.includes("**制限事項**"));
-  assert.ok(limit);
+  const limit = readme.slice(
+    readme.indexOf("## 同期と保存容量"),
+    readme.indexOf("## 開発"),
+  );
+  assert.ok(limit.startsWith("## 同期と保存容量"));
   for (const text of [
     "102,400",
     "8,192",
