@@ -116,7 +116,7 @@ HTMLエクスポートで、`javascript:` などの危険なスキームを持�
 
 #### 🃏 Wildcard URL Support
 - **Wildcard source URLs** by appending `*` to the end of a source URL
-- **Directory and subdomain matching** for pages under the same path prefix
+- **Directory matching** for pages under the same path prefix (subdomains are not matched)
 - **Wildcard-aware badge counting** with service worker cache rebuild support
 
 #### 🔗 Protocol Preservation Improvements
