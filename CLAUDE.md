@@ -8,6 +8,8 @@ Jumpmark Dock is a Chrome Extension (Manifest V3) that allows users to create bi
 
 **Published on Chrome Web Store**: https://chromewebstore.google.com/detail/jumpmark-dock/ldodfncboddjjbggcholbmkmjbfjmblh
 
+**README**: `README.md` (Japanese) and `README.en.md` (English) have the same content. When you change one, update the other to match. Some tests check statements in `README.md`.
+
 ## Development Commands
 
 This is a Chrome extension project with no build process for the extension itself. Development is done directly with the source files:
