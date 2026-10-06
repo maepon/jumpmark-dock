@@ -412,7 +412,7 @@ test("manifest.json has expected default_locale, description, version, name and 
   const manifest = readJson("manifest.json");
   assert.strictEqual(manifest.default_locale, "en");
   assert.strictEqual(manifest.description, "__MSG_extDescription__");
-  assert.strictEqual(manifest.version, "2.4.0");
+  assert.strictEqual(manifest.version, "2.4.1");
   assert.strictEqual(manifest.name, "Jumpmark Dock");
   assert.strictEqual(manifest.action.default_title, "Jumpmark Dock");
 });
