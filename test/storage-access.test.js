@@ -542,5 +542,5 @@ test("CHANGELOG [Unreleased] mentions the storage entry points", () => {
 });
 
 test("manifest.json version is unchanged", () => {
-  assert.strictEqual(JSON.parse(readSource("manifest.json")).version, "2.4.1");
+  assert.strictEqual(JSON.parse(readSource("manifest.json")).version, "2.4.2");
 });
