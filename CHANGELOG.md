@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-10-07
+
 ### Removed
 
 - 使っていなかった `host_permissions`（`<all_urls>`）を `manifest.json` から削除した。タブの URL・タイトルは `tabs` 権限で取得しており、Webページへのアクセスは行っていない。インストール時の「すべてのウェブサイト上にある自分のデータの読み取りと変更」の警告が出なくなる。権限を減らす変更なので、既存の利用者の拡張機能が無効になったり、再度の許可を求められたりはしない
