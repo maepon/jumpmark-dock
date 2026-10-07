@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- タグの push で `package.yml` と同時に動き、同じタグのリリースを作り合っていた `.github/workflows/build.yml` を削除した。どちらが先にリリースを作るかで `package.yml` が失敗し、ストア提出用の zip が下書きのリリースにだけ残ることがあった（v2.4.2 で発生）。`build.yml` の zip は `package.yml` と同じ中身だったので、リリースの作成と zip の作成は `package.yml` だけにする。各リリースに付いていた `jumpmark-dock-extension.zip` は今後付かない
+
 ## [2.4.2] - 2026-10-07
 
 ### Removed
