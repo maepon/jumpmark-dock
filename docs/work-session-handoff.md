@@ -9,7 +9,7 @@
   - ストアの説明文は、Scoped Bookmark を軸にした `docs/chrome-store-listing.{ja,en}.txt`（#61）に差し替え済み
 - **リリース準備中のバージョン**: v2.4.2（タグ `v2.4.2`。Chrome ウェブストアへの提出はこれから）
   - 使っていなかった `host_permissions`（`<all_urls>`）を削除した（#64）。ストアに提出するときは、ダッシュボードの「権限の理由」からホスト権限の説明がなくなる。公開しているプライバシーポリシーがあれば、`docs/privacy-policy.md`（#64、#65 で更新）に合わせて更新する
-- **次のバージョンに入る変更**（`CHANGELOG.md` の `[Unreleased]`）: なし
+- **次のバージョンに入る変更**（`CHANGELOG.md` の `[Unreleased]`）: 拡張機能の変更はなし。リリース用のワークフローの重複（`build.yml`）を削除した
 - **未着手の Issue**
   - #37 保存するデータの持ち方を詰めて、同じ容量に入る Jumpmark の件数を増やす。v2.4.0 と新しいバージョンが同じアカウントで混在する間に、データが壊れたり消えたりしない形を指示書で決めるところから
 
@@ -22,7 +22,7 @@
 ## リリースの流れ
 
 1. `manifest.json` の `version` と `CHANGELOG.md` を更新する（`package.json` の `version` は拡張機能のバージョンではない）
-2. `v<バージョン>` のタグを push すると、`.github/workflows/package.yml` がストア提出用の zip を作り、GitHub Release を作る
+2. `v<バージョン>` のタグを push すると、`.github/workflows/package.yml` がストア提出用の zip（`jumpmark-dock-v<バージョン>.zip`）を作り、GitHub Release を作る（タグで動くワークフローはこれだけ）
 3. zip を Chrome ウェブストアに提出する。説明文を変えるときは、プレーンテキストの `docs/chrome-store-listing.{ja,en}.txt` を貼る（Markdown は解釈されない）
 4. 公開されたら、この文書の「現在の状況」を更新する
 
