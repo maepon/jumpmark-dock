@@ -42,7 +42,7 @@ LIB="${WORK}/lib.sh"
 grep '^TOOLING_PATHS=' "${SRC}" > "${LIB}"
 [ -s "${LIB}" ] || ng "Could not extract the TOOLING_PATHS definition from run-phase.sh."
 FUNCS="worktree_paths tooling_state format_target format_ok unformatted_files require_instruction ensure_pr_url handle_verdict notify
-  require_base mixed_tooling require_no_mixed_tooling phase_impl phase_review judge_model"
+  require_base mixed_tooling require_no_mixed_tooling phase_impl phase_review model_id read_verdict"
 for fn in ${FUNCS}; do
   body=$(sed -n "/^${fn}() {/,/^}/p" "${SRC}")
   if [ -z "${body}" ]; then
@@ -474,7 +474,7 @@ mtc() { git -C "${MT}/repo" -c user.name=t -c user.email=t@example.com -c commit
 mkdir -p "${MT}/repo/ai-flow/scripts" "${MT}/repo/src"
 echo 'x' > "${MT}/repo/ai-flow/scripts/a.sh"; echo 'x' > "${MT}/repo/src/app.txt"
 mtc add -A; mtc commit -q -m init; mtc branch -M main; mtc push -q -u origin main 2>/dev/null
-MT_VARS='FAST=f; STRONG=s; REVIEW_JUDGE=j; PLAN_JUDGE=j; MAX_ROUNDS=1; VERDICT_FILE=v; PR_TITLE_FILE=t; PR_BODY_FILE=b; COMMIT_PROFILE=c; run_step() { echo CHARGED; exit 3; }'
+MT_VARS='FAST=f; STRONG=s; REVIEW_JUDGE=j; PLAN_JUDGE=j; PLAN=f; MAX_ROUNDS=1; VERDICT_FILE=v; PR_TITLE_FILE=t; PR_BODY_FILE=b; COMMIT_PROFILE=c; run_step() { echo CHARGED; exit 3; }'
 mt_run() {   # mt_run <phase function>: runs it from the flow directory with BASE_BRANCH=main
   GH_MODE=issue_tag run_case "${MT}/repo/ai-flow" "BASE_BRANCH=main; ${MT_VARS}; $1"
 }
@@ -515,27 +515,44 @@ mt_charged "require_no_mixed_tooling (a branch behind origin's tooling updates g
 mt_stopped "require_base (a wrong BASE_BRANCH stops impl before it is charged)" "BASE_BRANCH=nope; phase_impl" \
   "nope not found. Check that BASE_BRANCH"
 
-# --- Judge models (PLAN_JUDGE_MODEL / REVIEW_JUDGE_MODEL) ---
-out=$(run_case "${WORK}" 'STRONG=S; FAST=F; echo "[$(judge_model "")|$(judge_model strong)|$(judge_model fast)|$(judge_model raw-id)]"'); got=$?
-expect "judge_model (empty = strong / strong / fast / a raw model ID)" 0 "[S|S|F|raw-id]" "${out}" "${got}"
+# --- Swappable models (PLAN_JUDGE_MODEL / REVIEW_JUDGE_MODEL / PLAN_MODEL) ---
+out=$(run_case "${WORK}" 'STRONG=S; FAST=F; echo "[$(model_id "")|$(model_id strong)|$(model_id fast)|$(model_id raw-id)]"'); got=$?
+expect "model_id (empty = strong / strong / fast / a raw model ID)" 0 "[S|S|F|raw-id]" "${out}" "${got}"
 out=$(GH_MODE=issue_tag run_case "${MT}/repo/ai-flow" "BASE_BRANCH=main; ${MT_VARS}; PLAN_JUDGE=pj; REVIEW_JUDGE=rj
   run_step() { case \"\$2\" in prompts/plan-judge.md) echo \"PLAN_JUDGE_RAN_WITH=\$3\"; exit 3 ;; esac; }; phase_impl"); got=$?
 expect "phase_impl (plan-judge runs with PLAN_JUDGE, not REVIEW_JUDGE)" 3 "PLAN_JUDGE_RAN_WITH=pj" "${out}" "${got}"
-# The Makefile's defaults: unset, PLAN_JUDGE_MODEL follows REVIEW_JUDGE_MODEL, also when that is given on the command line.
+# plan and plan-revise run with PLAN, implement with FAST: the first verdict sends the plan back, the second approves it
+out=$(GH_MODE=issue_tag run_case "${MT}/repo/ai-flow" "BASE_BRANCH=main; ${MT_VARS}; PLAN=pm; PLAN_JUDGE=pj; MAX_ROUNDS=2
+  VERDICT_FILE='${WORK}/plan-verdict'; rm -f '${WORK}/plan-sent-back'
+  run_step() {
+    printf '%s ' \"\${2#prompts/}=\$3\"
+    case \"\$2\" in
+      prompts/plan-judge.md)
+        if [ -f '${WORK}/plan-sent-back' ]; then echo APPROVED > \"\$VERDICT_FILE\"
+        else touch '${WORK}/plan-sent-back'; echo CHANGES_REQUESTED > \"\$VERDICT_FILE\"; fi ;;
+      prompts/implement.md) exit 3 ;;
+    esac
+  }; phase_impl"); got=$?
+expect "phase_impl (plan and plan-revise run with PLAN, implement with FAST)" 3 \
+  "plan.md=pm plan-judge.md=pj plan-revise.md=pm plan-judge.md=pj implement.md=f" "${out}" "${got}"
+# The Makefile's defaults: unset, PLAN_JUDGE_MODEL follows REVIEW_JUDGE_MODEL, also when that is given on the command line,
+# and PLAN_MODEL is the fast model whatever the judges are set to.
 # Run in an empty directory with a missing project directory, so the host's .env / .ai-flow/config.mk (which may set them) do not count
 MKF="$(pwd)/Makefile"
 mkdir -p "${WORK}/mkjudge"
-printf 'show:\n\t@echo "R=$(REVIEW_JUDGE_MODEL) P=$(PLAN_JUDGE_MODEL)"\n' > "${WORK}/mkjudge/show.mk"
+printf 'show:\n\t@echo "R=$(REVIEW_JUDGE_MODEL) P=$(PLAN_JUDGE_MODEL) W=$(PLAN_MODEL)"\n' > "${WORK}/mkjudge/show.mk"
 mk_judges() {
-  ( cd "${WORK}/mkjudge" && env -u REVIEW_JUDGE_MODEL -u PLAN_JUDGE_MODEL make -s --no-print-directory -f "${MKF}" -f show.mk show \
+  ( cd "${WORK}/mkjudge" && env -u REVIEW_JUDGE_MODEL -u PLAN_JUDGE_MODEL -u PLAN_MODEL make -s --no-print-directory -f "${MKF}" -f show.mk show \
       AI_FLOW_PROJECT_DIR="${WORK}/mkjudge/none" STRONG_MODEL=S FAST_MODEL=F "$@" 2>/dev/null | tail -n 1 )
 }
 out=$(mk_judges); got=$?
-expect "Makefile (both unset: the fast model for both)" 0 "R=F P=F" "${out}" "${got}"
+expect "Makefile (all unset: the fast model for all)" 0 "R=F P=F W=F" "${out}" "${got}"
 out=$(mk_judges REVIEW_JUDGE_MODEL=strong); got=$?
-expect "Makefile (PLAN_JUDGE_MODEL follows REVIEW_JUDGE_MODEL from the command line)" 0 "R=strong P=strong" "${out}" "${got}"
+expect "Makefile (PLAN_JUDGE_MODEL follows REVIEW_JUDGE_MODEL from the command line; PLAN_MODEL does not)" 0 "R=strong P=strong W=F" "${out}" "${got}"
 out=$(mk_judges REVIEW_JUDGE_MODEL=fast PLAN_JUDGE_MODEL=strong); got=$?
-expect "Makefile (PLAN_JUDGE_MODEL set on its own)" 0 "R=fast P=strong" "${out}" "${got}"
+expect "Makefile (PLAN_JUDGE_MODEL set on its own)" 0 "R=fast P=strong W=F" "${out}" "${got}"
+out=$(mk_judges PLAN_MODEL=strong); got=$?
+expect "Makefile (PLAN_MODEL set on its own moves neither judge)" 0 "R=F P=F W=strong" "${out}" "${got}"
 
 # --- examples/go/.ai-flow wrappers (multi-module Go: TEST_CMD / FORMAT_CHECK_CMD / FORMAT_FILE_CMD) ---
 # Run from the flow directory of a throwaway repository with two modules and no go.work, as the agents would.

@@ -183,12 +183,13 @@ Roles:
 | Role | Tier | Why |
 |---|---|---|
 | Writing the instruction document, the commit and PR body, code review, Devil's Advocate | Strong | The job is judgment and cross-checking |
-| Writing the plan, revising the plan, implementing, fixing findings | Fast | Lots of work, with concrete instructions |
+| Implementing, fixing findings | Fast | Lots of work, with concrete instructions (an approved plan, or the findings), checked against tests as it goes |
+| Writing the plan, revising the plan | `PLAN_MODEL` (fast by default) | Lots of work too, but nothing to verify against yet. In one host repository, plans from the fast model kept being sent back for the same kind of finding ("the test does not check the actual output") in a different acceptance criterion each round and stopped at `MAX_ROUNDS`; with the strong model they were not sent back, at about the same cost per plan. To move only the plan to the strong model and keep implementing (the most expensive step) on the fast one: `PLAN_MODEL=strong` |
 | Judging the implementation (review-judge) | `REVIEW_JUDGE_MODEL` (fast by default) | It verifies by running tests and reading diffs, which turned out to be enough for the fast model; switch with `REVIEW_JUDGE_MODEL=strong` |
 | Judging the plan (plan-judge) | `PLAN_JUDGE_MODEL` (follows `REVIEW_JUDGE_MODEL` by default) | It compares documents (instruction vs plan) and cannot verify by running anything, so inferences the prompt does not ask for are the first thing a weaker model loses. To keep it on the strong model while trying review-judge on the fast one: `PLAN_JUDGE_MODEL=strong` |
 
 **The variables are named by capability rather than product name because which phase gets which tier is a policy in `scripts/run-phase.sh`,
-and it is something you actually swap to experiment with** (`REVIEW_JUDGE_MODEL` / `PLAN_JUDGE_MODEL`, §4). The model ID used is printed to stderr for each step,
+and it is something you actually swap to experiment with** (`REVIEW_JUDGE_MODEL` / `PLAN_JUDGE_MODEL` / `PLAN_MODEL`, §4). The model ID used is printed to stderr for each step,
 so the logs show which one ran.
 
 > **Environment variables set in `.zshrc` are not read by non-interactive shells.** Running `make` from a terminal inherits them,
@@ -334,12 +335,15 @@ Redoing it from `review-judge` would duplicate the review comments on the Issue,
 
 Variables: `ISSUE` (target Issue number), `MAX_ROUNDS` (maximum judging rounds, default 3), `BASE_BRANCH` (PR base; the value comes from `.ai-flow/config.mk`),
 `REVIEW_JUDGE_MODEL` (the model judging the implementation, and the plan unless `PLAN_JUDGE_MODEL` is set; accepts `strong` / `fast` or a raw model ID.
-The `Makefile` default is the fast model), `PLAN_JUDGE_MODEL` (the model judging the plan; same values; follows `REVIEW_JUDGE_MODEL` when unset).
+The `Makefile` default is the fast model), `PLAN_JUDGE_MODEL` (the model judging the plan; same values; follows `REVIEW_JUDGE_MODEL` when unset),
+`PLAN_MODEL` (the model writing and revising the plan, not judging it; same values; the fast model when unset, and it does not follow the judges).
 
 You can try whether the fast model is enough for judging (`make impl ISSUE=n REVIEW_JUDGE_MODEL=fast`, the default)
 or switch it back to the strong model (`REVIEW_JUDGE_MODEL=strong`).
 To try one judge while the other stays put, set both: e.g. `PLAN_JUDGE_MODEL = strong` and `REVIEW_JUDGE_MODEL = fast` in `.ai-flow/config.mk`
 keeps plan-judge on the strong model and A/Bs only review-judge. Either can be set in `.ai-flow/config.mk`, `.env`, or on the `make` command line.
+If plans keep stopping at `MAX_ROUNDS` with send-backs, `PLAN_MODEL = strong` moves only the plan's writer and reviser to the strong model;
+implementing and fixing findings stay on `FAST_MODEL`.
 
 ### The one place a human steps in
 
