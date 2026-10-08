@@ -13,7 +13,7 @@ BASE_BRANCH ?= main
 
 # The flow uses two model tiers. Which phase gets which tier is decided in run-phase.sh.
 # They are named by capability rather than product name because the assignment is a policy, not a name
-# (it is actually swapped to experiment, via REVIEW_JUDGE_MODEL / PLAN_JUDGE_MODEL).
+# (it is actually swapped to experiment, via REVIEW_JUDGE_MODEL / PLAN_JUDGE_MODEL / PLAN_MODEL).
 # These two lines are the only place to touch when changing models.
 STRONG_MODEL ?= $(CLAUDE_CODE_OPUS_MODEL)
 FAST_MODEL ?= $(CLAUDE_CODE_SONNET_MODEL)
@@ -25,11 +25,13 @@ ISSUE_URL = $(REPO_URL)/issues/$(ISSUE)
 # Personal settings. .env is not tracked by git (see .env.example)
 -include .env
 
-# Only the judges' models can be swapped. Each accepts fast / strong or a raw model ID.
+# The judges' and the plan writer's models can be swapped. Each accepts fast / strong or a raw model ID.
 # REVIEW_JUDGE_MODEL is for review-judge, PLAN_JUDGE_MODEL for plan-judge; unset, PLAN_JUDGE_MODEL follows REVIEW_JUDGE_MODEL
-# (also when REVIEW_JUDGE_MODEL is given on the command line). If both are unset, run-phase.sh uses the strong model
+# (also when REVIEW_JUDGE_MODEL is given on the command line). If both are unset, run-phase.sh uses the strong model.
+# PLAN_MODEL is for writing and revising the plan (plan / plan-revise), not judging it; implementing stays on FAST_MODEL
 REVIEW_JUDGE_MODEL ?= $(FAST_MODEL)
 PLAN_JUDGE_MODEL ?= $(REVIEW_JUDGE_MODEL)
+PLAN_MODEL ?= $(FAST_MODEL)
 
 # Notifications. run-phase.sh runs NOTIFY_CMD at each ending (done / waiting for a human / aborted) and progress point,
 # passing the body on stdin and the rest in AI_FLOW_NOTIFY_* environment variables (contract: docs/setup.md).
@@ -47,7 +49,7 @@ endif
 NOTIFY_SECRET_VARS ?= SLACK_WEBHOOK_URL GOOGLE_CHAT_WEBHOOK_URL
 
 export NOTIFY_CMD NOTIFY_SECRET_VARS $(NOTIFY_SECRET_VARS)
-export STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL PLAN_JUDGE_MODEL
+export STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL PLAN_JUDGE_MODEL PLAN_MODEL
 export AI_FLOW_PROJECT_DIR TEST_CMD SCRATCH_TEST_CMD FORMAT_CHECK_CMD FORMAT_FILE_CMD FORMAT_FIX_CMD FORMAT_GLOBS OUTPUT_LANG
 
 .PHONY: help spec impl review code-review pr-review create-pr check check-project check-env
@@ -91,6 +93,8 @@ help:
 	@echo "      REVIEW_JUDGE_MODEL  model for judging the implementation (and the plan, unless PLAN_JUDGE_MODEL is set)."
 	@echo "                          Accepts strong / fast or a raw model ID. Default: the fast model. E.g. make impl ISSUE=n REVIEW_JUDGE_MODEL=strong"
 	@echo "      PLAN_JUDGE_MODEL    model for judging the plan. Same values. Default: follows REVIEW_JUDGE_MODEL"
+	@echo "      PLAN_MODEL          model for writing and revising the plan (not judging it; that is PLAN_JUDGE_MODEL)."
+	@echo "                          Same values. Default: the fast model. Implementing and fixing findings stay on FAST_MODEL"
 	@echo "      NOTIFY_CMD  notification command (default: Slack if SLACK_WEBHOOK_URL is set, else Google Chat if GOOGLE_CHAT_WEBHOOK_URL is set, else none; empty turns them off)"
 	@echo "The whole history stays in the Issue comments (the AI-TAG identifies each type)"
 

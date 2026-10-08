@@ -346,7 +346,7 @@ Cumulative cost: \$$(total_cost)"
 [ -n "$STRONG" ] || fail "STRONG_MODEL is empty. Check CLAUDE_CODE_OPUS_MODEL or write STRONG_MODEL in .env (if it is defined in .zshrc, non-interactive runs do not read it)."
 [ -n "$FAST" ]   || fail "FAST_MODEL is empty. Check CLAUDE_CODE_SONNET_MODEL or write FAST_MODEL in .env."
 
-# Only the judges' models can be swapped: REVIEW_JUDGE_MODEL for review-judge, PLAN_JUDGE_MODEL for plan-judge (unset = the same as
+# The judges' models can be swapped: REVIEW_JUDGE_MODEL for review-judge, PLAN_JUDGE_MODEL for plan-judge (unset = the same as
 # REVIEW_JUDGE_MODEL). Each accepts strong / fast or a raw model ID. The default here is the strong model.
 # review-judge works against an implementation, so it can verify with test runs, the formatting check, and the diff (the send-backs
 # seen in the original repository were cross-checks such as "one of the four documents the instruction listed was not updated").
@@ -359,17 +359,25 @@ Cumulative cost: \$$(total_cost)"
 # the Makefile default makes it the fast model. PLAN_JUDGE_MODEL separates them again when wanted: with one variable for both,
 # A/B-ing review-judge moved plan-judge too, so a difference in results could not be traced to either judge.
 #
+# The plan's writer and reviser can be swapped too: PLAN_MODEL for plan and plan-revise, same values, the fast model when unset
+# (implement and review-fix stay on the fast model). In one host repository plans written by the fast model kept being sent back for
+# the same kind of finding in a different acceptance criterion each round ("the test does not check the actual output / raw bytes"),
+# since the reviser fixes only what was pointed out, and stopped at MAX_ROUNDS; with the strong model they were not sent back.
+# Writing a plan costs about the same on either model, while implementing is the most expensive step, so only the plan moves.
+# Not to be confused with PLAN_JUDGE_MODEL, which judges the plan rather than writing it.
+#
 # claude-run.sh prints the model ID used for each step to stderr, so the logs show which one ran.
-# Prints the model ID for a judge setting: strong / fast (or empty = strong) / a raw model ID
-judge_model() {
+# Prints the model ID for a model setting: strong / fast (or empty = strong) / a raw model ID
+model_id() {
   case "$1" in
     ""|strong) echo "$STRONG" ;;
     fast)      echo "$FAST" ;;
     *)         echo "$1" ;;
   esac
 }
-REVIEW_JUDGE=$(judge_model "${REVIEW_JUDGE_MODEL:-}")
-PLAN_JUDGE=$(judge_model "${PLAN_JUDGE_MODEL:-${REVIEW_JUDGE_MODEL:-}}")
+REVIEW_JUDGE=$(model_id "${REVIEW_JUDGE_MODEL:-}")
+PLAN_JUDGE=$(model_id "${PLAN_JUDGE_MODEL:-${REVIEW_JUDGE_MODEL:-}}")
+PLAN=$(model_id "${PLAN_MODEL:-fast}")
 
 phase_spec() {
   PHASE=spec
@@ -398,7 +406,7 @@ phase_impl() {
   PHASE=impl
   require_no_mixed_tooling
   require_instruction
-  run_step "Writing the implementation plan" prompts/plan.md "$FAST"
+  run_step "Writing the implementation plan" prompts/plan.md "$PLAN"
 
   round=1
   while : ; do
@@ -412,7 +420,7 @@ phase_impl() {
 
 $RESULT"
     fi
-    run_step "Revising the plan" prompts/plan-revise.md "$FAST"
+    run_step "Revising the plan" prompts/plan-revise.md "$PLAN"
     round=$((round + 1))
   done
 
