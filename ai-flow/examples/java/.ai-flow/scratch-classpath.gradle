@@ -1,0 +1,15 @@
+// Gradle init script for java-scratch.sh. Adds aiFlowScratchClasspath to every project with the java plugin:
+// it compiles the main and test sources and writes the test runtime classpath to -PaiFlowClasspathFile.
+// Passed with --init-script, so the project's build files stay unchanged.
+allprojects {
+    pluginManager.withPlugin('java') {
+        def classpath = sourceSets.test.runtimeClasspath
+        def target = providers.gradleProperty('aiFlowClasspathFile')
+        tasks.register('aiFlowScratchClasspath') {
+            dependsOn 'testClasses'
+            doLast {
+                new File(target.get()).text = classpath.asPath
+            }
+        }
+    }
+}

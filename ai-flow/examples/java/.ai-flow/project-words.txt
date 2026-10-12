@@ -1,0 +1,10 @@
+# Words of a Java project that must not appear in the shared part of the flow (see examples/project/.ai-flow/project-words.txt).
+# Add your product name and main package or module names.
+java
+gradle
+gradlew
+maven
+mvnw
+spring
+junit
+assertj

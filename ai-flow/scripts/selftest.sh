@@ -15,6 +15,7 @@
 #   - notify-slack.sh's conversion of **bold**, which did not show as bold in Japanese text
 #   - notify-google-chat.sh's payload: Unicode emoji, the same **bold** conversion, and cutting a body that is too large
 #   - The Go wrappers in examples/go/.ai-flow (several modules without go.work; gofmt -l answering through its output)
+#   - The Java scratch wrapper in examples/java/.ai-flow (which build is asked for the classpath, and what java runs)
 #
 # Sourcing run-phase.sh would run its body, so only the functions under test and the TOOLING_PATHS definition are extracted
 # with sed and sourced. If the way functions are written changes (name() { ... } with the } at the start of a line) and extraction
@@ -595,6 +596,77 @@ elif [ -d "${GOW}" ]; then
   expect "gofmt-file.sh (a syntax error is not taken as formatted)" 2 "" "${out}" "${got}"
 fi
 
+# --- examples/java/.ai-flow/java-scratch.sh (SCRATCH_TEST_CMD for Gradle / Maven) ---
+# gradlew, mvnw and java are stubs: the build writes a fixed classpath to the file it is given and java prints its arguments,
+# so what is checked is the plumbing (which build is asked, with what, and what java runs), not Java itself.
+# The real thing was checked by hand with Spring Boot on Gradle 9.7 and Maven (single and multi-module).
+JW="$(pwd)/examples/java/.ai-flow"
+if [ -d "${JW}" ]; then
+  JB="${WORK}/javabin"
+  mkdir -p "${JB}"
+  # java: prints its arguments; JAVA_RC sets the exit code (the scratch file failing)
+  printf '#!/bin/bash\necho "java $*"\nexit "${JAVA_RC:-0}"\n' > "${JB}/java"
+  # The build stub: records its arguments and writes the classpath to the file named by -PaiFlowClasspathFile= / -Dmdep.outputFile=
+  cat > "${JB}/build-stub" <<'EOF'
+#!/bin/bash
+echo "build $*" >> "${BUILD_LOG}"
+for a in "$@"; do
+  case "${a}" in -PaiFlowClasspathFile=*|-Dmdep.outputFile=*) printf '%s' "/deps/a.jar:/deps/b.jar" > "${a#*=}" ;; esac
+done
+exit "${BUILD_RC:-0}"
+EOF
+  chmod +x "${JB}/java" "${JB}/build-stub"
+  for kind in gradle maven; do
+    mkdir -p "${WORK}/java-${kind}/ai-flow/tmp"
+    git -C "${WORK}/java-${kind}" init -q
+    printf 'public class Check { public static void main(String[] a) {} }\n' > "${WORK}/java-${kind}/ai-flow/tmp/Check.java"
+  done
+  cp "${JB}/build-stub" "${WORK}/java-gradle/gradlew"
+  cp "${JB}/build-stub" "${WORK}/java-maven/mvnw"; : > "${WORK}/java-maven/pom.xml"
+  # A copy with MODULE set, as a multi-module repository would have it
+  sed 's/^MODULE=""/MODULE="app"/' "${JW}/java-scratch.sh" > "${WORK}/java-scratch-app.sh"
+  sed 's/^MODULE=""/MODULE=":app"/' "${JW}/java-scratch.sh" > "${WORK}/java-scratch-gapp.sh"
+  chmod +x "${WORK}/java-scratch-app.sh" "${WORK}/java-scratch-gapp.sh"
+  jr() { local kind="$1"; shift; ( cd "${WORK}/java-${kind}/ai-flow" && : > "${WORK}/build.log" \
+    && env PATH="${JB}:${PATH}" BUILD_LOG="${WORK}/build.log" "$@" 2>&1; ) }
+  GROOT=$(git -C "${WORK}/java-gradle" rev-parse --show-toplevel)
+  MROOT=$(git -C "${WORK}/java-maven" rev-parse --show-toplevel)
+
+  out=$(jr gradle "${JW}/java-scratch.sh" tmp/Check.java); got=$?
+  expect "java-scratch.sh (Gradle: java runs the file, by absolute path, with the build's classpath)" 0 \
+    "java -cp /deps/a.jar:/deps/b.jar ${GROOT}/ai-flow/tmp/Check.java" "${out}" "${got}"
+  expect "java-scratch.sh (Gradle: the init script and the root task)" 0 \
+    "--init-script ${JW}/scratch-classpath.gradle" "$(cat "${WORK}/build.log")" 0
+  expect "java-scratch.sh (Gradle: the root project's task)" 0 " :aiFlowScratchClasspath" "$(cat "${WORK}/build.log")" 0
+  out=$(jr gradle "${WORK}/java-scratch-gapp.sh" tmp/Check.java); got=$?
+  expect "java-scratch.sh (Gradle: MODULE picks the subproject's task)" 0 " :app:aiFlowScratchClasspath" "$(cat "${WORK}/build.log")" "${got}"
+  out=$(jr gradle env JAVA_RC=1 "${JW}/java-scratch.sh" tmp/Check.java); got=$?
+  expect "java-scratch.sh (the file's failure is the exit code)" 1 "java -cp" "${out}" "${got}"
+  out=$(jr gradle env BUILD_RC=1 "${JW}/java-scratch.sh" tmp/Check.java); got=$?
+  expect "java-scratch.sh (a failing build stops before java, with 2)" 2 "./gradlew :aiFlowScratchClasspath failed" "${out}" "${got}"
+  case "${out}" in *"java -cp"*) ng "java-scratch.sh (a failing build): java ran anyway. Output: ${out}" ;; esac
+  out=$(jr gradle "${JW}/java-scratch.sh" ../gradlew); got=$?
+  expect "java-scratch.sh (only .java files)" 2 "only a .java file" "${out}" "${got}"
+  out=$(jr gradle "${JW}/java-scratch.sh" tmp/Nope.java); got=$?
+  expect "java-scratch.sh (a missing file)" 2 "tmp/Nope.java not found" "${out}" "${got}"
+
+  out=$(jr maven "${JW}/java-scratch.sh" tmp/Check.java); got=$?
+  expect "java-scratch.sh (Maven: the module's classes come first, then the dependencies)" 0 \
+    "java -cp ${MROOT}/target/test-classes:${MROOT}/target/classes:/deps/a.jar:/deps/b.jar ${MROOT}/ai-flow/tmp/Check.java" "${out}" "${got}"
+  expect "java-scratch.sh (Maven: compiles the tests and asks for the test classpath)" 0 \
+    "test-compile dependency:build-classpath" "$(cat "${WORK}/build.log")" 0
+  expect "java-scratch.sh (Maven: test scope, so test dependencies such as AssertJ are there)" 0 \
+    "-Dmdep.includeScope=test" "$(cat "${WORK}/build.log")" 0
+  out=$(jr maven "${WORK}/java-scratch-app.sh" tmp/Check.java); got=$?
+  expect "java-scratch.sh (Maven: MODULE builds that module and its dependencies)" 0 "-pl app -am" "$(cat "${WORK}/build.log")" "${got}"
+  expect "java-scratch.sh (Maven: MODULE's classes)" 0 "java -cp ${MROOT}/app/target/test-classes:${MROOT}/app/target/classes:" "${out}" "${got}"
+
+  mkdir -p "${WORK}/java-none/ai-flow/tmp"; git -C "${WORK}/java-none" init -q
+  cp "${WORK}/java-gradle/ai-flow/tmp/Check.java" "${WORK}/java-none/ai-flow/tmp/"
+  out=$(jr none "${JW}/java-scratch.sh" tmp/Check.java); got=$?
+  expect "java-scratch.sh (neither build at the root)" 2 "neither ./gradlew nor pom.xml" "${out}" "${got}"
+fi
+
 # --- resign-subtree-merge.sh (sign what git subtree --squash creates, without changing content) ---
 # Offline: the upstream is a local throwaway repository and signing uses a throwaway SSH key, so neither the network
 # nor the user's own signing setup (e.g. a 1Password agent) is involved.
@@ -662,6 +734,6 @@ else
 fi
 
 if [ "${status}" -eq 0 ]; then
-  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh / claude-run.sh / notify-slack.sh / notify-google-chat.sh / resign-subtree-merge.sh passed."
+  echo "selftest: all ${pass} regression tests for run-phase.sh / render-prompt.sh / claude-run.sh / notify-slack.sh / notify-google-chat.sh / resign-subtree-merge.sh / the example wrappers passed."
 fi
 exit "${status}"

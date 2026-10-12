@@ -18,6 +18,9 @@ make impl ISSUE=n   →  plan → judge → revise → implement → review → 
 
 ## Install
 
+**Installing with a coding agent** (Claude Code, …): ask it to install the flow following [docs/setup-with-agent.md](docs/setup-with-agent.md).
+**Agents asked to install or update this flow: follow that file**, not only the steps below.
+
 The flow lives in a subdirectory of your repository (any name and depth) and is brought in with `git subtree`.
 Project-specific settings live in `.ai-flow/` at your repository root.
 
@@ -48,9 +51,12 @@ Notifications are optional: a Slack or Google Chat Incoming Webhook (with `curl`
 
 ## Documentation
 
+- [docs/guide.md](docs/guide.md) ([日本語](docs/guide.ja.md)) — user guide: writing Issues, reading the instruction document, what to do when it stops, reviewing the PR
+- [docs/setup-with-agent.md](docs/setup-with-agent.md) — installation steps for a coding agent: what to check, what to ask the human, when it is done
 - [docs/setup.md](docs/setup.md) — setup, usage, verdict and permission design, troubleshooting, installation checklist
 - [examples/project/.ai-flow/](examples/project/.ai-flow/) — the project settings template, with comments
 - [examples/go/.ai-flow/](examples/go/.ai-flow/) — wrappers for a Go repository with several modules (tests, `gofmt`)
+- [examples/java/.ai-flow/](examples/java/.ai-flow/) — settings for a Java repository built with Gradle or Maven (checked with Spring Boot), with a wrapper for throwaway checks
 
 ## Developing this repository
 

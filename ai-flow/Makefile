@@ -52,7 +52,7 @@ export NOTIFY_CMD NOTIFY_SECRET_VARS $(NOTIFY_SECRET_VARS)
 export STRONG_MODEL FAST_MODEL MAX_ROUNDS BASE_BRANCH REVIEW_JUDGE_MODEL PLAN_JUDGE_MODEL PLAN_MODEL
 export AI_FLOW_PROJECT_DIR TEST_CMD SCRATCH_TEST_CMD FORMAT_CHECK_CMD FORMAT_FILE_CMD FORMAT_FIX_CMD FORMAT_GLOBS OUTPUT_LANG
 
-.PHONY: help spec impl review code-review pr-review create-pr check check-project check-env
+.PHONY: help spec impl review code-review pr-review create-pr check check-project check-env probe
 
 .DEFAULT_GOAL := help
 
@@ -87,6 +87,10 @@ help:
 	@echo "  make check            Runs only the static checks of the tooling files (scripts / .claude / prompts and .ai-flow/)"
 	@echo "                        It runs automatically before each phase above, so you rarely need it on its own"
 	@echo
+	@echo "  make probe            Re-checks the Claude Code behaviors the permission design relies on or works around"
+	@echo "                        (docs/setup.md §6). Costs money (a few short runs on a cheap model, about \$$0.25)."
+	@echo "                        Run it when claude --version goes up. Exits non-zero if a safety assumption no longer holds"
+	@echo
 	@echo "Variables: ISSUE (target Issue number)  MAX_ROUNDS (maximum judging rounds, default $(MAX_ROUNDS))"
 	@echo "      BASE_BRANCH  PR base branch (default $(BASE_BRANCH); the project's value is in .ai-flow/config.mk)"
 	@echo "      STRONG_MODEL / FAST_MODEL  strong / fast model IDs (default from environment variables)"
@@ -95,6 +99,7 @@ help:
 	@echo "      PLAN_JUDGE_MODEL    model for judging the plan. Same values. Default: follows REVIEW_JUDGE_MODEL"
 	@echo "      PLAN_MODEL          model for writing and revising the plan (not judging it; that is PLAN_JUDGE_MODEL)."
 	@echo "                          Same values. Default: the fast model. Implementing and fixing findings stay on FAST_MODEL"
+	@echo "      PROBE_MODEL  model for make probe (default $(PROBE_MODEL))"
 	@echo "      NOTIFY_CMD  notification command (default: Slack if SLACK_WEBHOOK_URL is set, else Google Chat if GOOGLE_CHAT_WEBHOOK_URL is set, else none; empty turns them off)"
 	@echo "The whole history stays in the Issue comments (the AI-TAG identifies each type)"
 
@@ -141,6 +146,13 @@ check-env:
 		echo "Error: the strong / fast model IDs are not set. Set CLAUDE_CODE_OPUS_MODEL / CLAUDE_CODE_SONNET_MODEL, or write STRONG_MODEL / FAST_MODEL in .env." >&2; \
 		exit 1; \
 	fi
+
+# Model for make probe. A cheap one is enough: the probes ask for fixed tool calls and the shell judges the results
+PROBE_MODEL ?= haiku
+
+# Probes of Claude Code's behavior (scripts/probe.sh). It costs money, so it is not part of check and does not need the project settings
+probe:
+	@PROBE_MODEL="$(PROBE_MODEL)" ./scripts/probe.sh
 
 spec: check check-env
 	@./scripts/run-phase.sh spec $(ISSUE) "$(ISSUE_URL)"

@@ -6,23 +6,20 @@
 # Only the agent's reply goes to standard output (so the caller can capture it in a variable).
 # Progress, cost, and denial warnings go to standard error.
 #
-# There is a reason the permission files are not named settings.json (measured).
-#   - For .claude/settings.json, permissions.allow is ignored entirely when the workspace is not trusted,
-#     even when passed explicitly with --settings
-#     (only a warning on stderr, and the exit code stays 0 = silently running with no permissions)
-#   - With any other file name passed to --settings, both allow and deny work
-#   - A deny placed in settings.json also binds the human's interactive sessions,
-#     so you could no longer commit / push yourself (deny blocks without asking)
+# The notes below are measurements, not Claude Code's specification. The IDs refer to docs/setup.md §6
+# "Pitfalls found by measurement", which has the version they were last checked on; make probe re-checks them.
 #
-# Permissions for the file tools are not straightforward either (measured).
-#   - Write / Edit rules with a path never match, in allow or deny.
-#     Write(./**) Write(**) Write(tmp/**) and the absolute form (Write(//Users/...))
-#     were all denied. Only bare Write / Edit work
-#   - Paths work for Read. deny Read(./.env) beats a bare allow Read too (measured)
-#   - Claude Code itself blocks writes under .claude/, so an agent cannot
-#     rewrite its own permission profile.
+# There is a reason the permission files are not named settings.json.
+#   - A7: a deny placed in settings.json also binds the human's interactive sessions,
+#     so you could no longer commit / push yourself (deny blocks without asking)
+#   - A6 (before 2.1.287): for .claude/settings.json, permissions.allow was ignored entirely when the workspace was not trusted,
+#     even when passed explicitly with --settings (only a warning on stderr, exit code 0 = silently running with no permissions)
+#
+# Permissions for the file tools are not straightforward either.
+#   - A4: Write / Edit rules with a path never match, in allow or deny. Only bare Write / Edit work
+#   - B2: paths work for Read. deny Read(./.env) beats a bare allow Read too
+#   - B1: Claude Code itself blocks writes under .claude/, so an agent cannot rewrite its own permission profile.
 #     prompts/ and scripts/ are not covered, though, so run-phase.sh checks the working tree
-#   - Blocks by deny do not appear in permission_denials; they come back as tool errors
 #
 # A deny is "accident prevention", not "isolation". As long as running the tests (TEST_CMD) is allowed,
 # the agent can execute arbitrary code, and could reach denied operations if it wanted to.
@@ -32,8 +29,9 @@
 #   3. push and gh pr create are never given; run-phase.sh runs them after checking
 # Therefore, do not leave secrets in the environment variables passed along (see env -u below).
 #
-# Even when a tool call is denied, claude exits with 0,
-# so permission_denials in the JSON output is read and printed to standard error.
+# Even when a tool call is denied, claude exits with 0 (A5b),
+# so permission_denials in the JSON output is read and printed to standard error
+# (blocks by deny are listed there too since 2.1.286; before that they only came back as tool errors: A5a).
 
 set -uo pipefail
 
@@ -76,18 +74,18 @@ trap 'rm -f "$MERGED_SETTINGS"' EXIT
 # The Makefile exports them for NOTIFY_CMD, and a secret kept in the shell profile is inherited anyway, so otherwise
 # they would be readable with echo (making the Read(./.env) deny pointless).
 # The parent (run-phase.sh) sends the notifications, so the agent does not need them.
-# Launch options (each one was actually hit in a trial repository)
-#   --add-dir=<root>     The agent runs with the flow directory as the current directory, so by default Claude Code
+# Launch options (each one was actually hit in a trial repository; IDs as above)
+#   --add-dir=<root>     A9, A10, A2, B4. The agent runs with the flow directory as the current directory, so by default Claude Code
 #                        treats that as the working directory and denies Bash commands whose arguments point outside it
 #                        (git diff -- ../../README.md, git grep -- ../x.html, ...). Adding the repository root as a working
 #                        directory lets them through. Read / Write / Edit already reached files outside, so this does not
 #                        widen what the agent can do. Pass it with "=": --add-dir takes several values and, separated by a
 #                        space, would swallow the prompt that follows. It also lets `cd` move to the root (and the move
-#                        persists; outside the repository is still denied; measured on 2.1.285). _rules.md asks the agents to
+#                        persists; outside the repository is still denied). _rules.md asks the agents to
 #                        stay in the flow directory, since the prompts' commands and paths are relative to it
-#   --strict-mcp-config  Do not load the MCP connectors linked to the user's claude.ai account. The flow does not use them,
+#   --strict-mcp-config  Not probed (kept anyway). Do not load the MCP connectors linked to the user's claude.ai account. The flow does not use them,
 #                        their tool descriptions were added to every step's prompt, and replies mentioned authorizing them
-#   < /dev/null          Do not wait for standard input (otherwise "no stdin data received in 3s" is printed after a 3 s wait)
+#   < /dev/null          A11. Do not wait for standard input (otherwise "no stdin data received in 3s" is printed after a 3 s wait)
 REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "Error: cannot find the repository root." >&2; exit 1; }
 UNSET_ARGS=()
 for v in SLACK_WEBHOOK_URL GOOGLE_CHAT_WEBHOOK_URL ${NOTIFY_SECRET_VARS:-}; do
