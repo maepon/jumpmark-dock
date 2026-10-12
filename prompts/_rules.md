@@ -4,16 +4,17 @@
 
 ## How to write shell commands
 
-**One command per call, in its simple form.** Claude Code splits commands to check permissions,
-so the following forms are **denied even when the command itself is allowed**. This applies to every command.
+Claude Code splits a command into its parts and checks each part's permission.
+`cmd1 && cmd2`, `cmd1; cmd2`, pipes and heredocs pass when **every part is allowed**
+(a pipe into `grep` is denied because `grep` is not). The following forms are **denied even when the command itself is allowed**:
 
-- `cd X && cmd` / `cmd1; cmd2` / `cmd1 && cmd2` — compound commands
-- Control structures such as `for … do … done`
-- `VAR=value cmd` prefix assignments, command substitution, pipes, heredocs
+- `VAR=value cmd` prefix assignments and command substitution (`$(…)`)
+- Control structures that expand a variable, such as `for … do cmd $i; done` (run each command separately instead)
+- Output redirection (`> file`, even under `tmp/`). Write files with the `Write` tool. `2>&1` is fine
 - `git -C <path>` — the `-C` form is not allowed
   (it is left out on purpose because `git -C` can get around the `git push` deny)
 
-`cd` is allowed, and **the current directory persists across calls**, but stay in `{{FLOW_DIR}}/`
+`cd` is allowed, and **the current directory persists across calls** (also after `cd X && cmd`), but stay in `{{FLOW_DIR}}/`
 (see "Working directory and commands" below).
 
 The exit code shows up in the result of the call, so there is no need to append `; echo "$?"`.

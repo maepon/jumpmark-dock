@@ -8,6 +8,91 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-12
+
+### Added
+
+- **`make probe`** (`scripts/probe.sh`): re-checks the Claude Code behaviors that docs/setup.md §6 "Pitfalls found by measurement"
+  relies on or works around, in throwaway git repositories, with six short runs on a cheap model (`PROBE_MODEL`, default `haiku`; about $0.25).
+  The shell judges each item from the tool calls and their results, logs written by the fixture's scripts, files on disk and
+  `permission_denials`, not from the agent's reply; a call not made exactly as asked makes the item undetermined.
+  Exits with 1 when a safety assumption no longer holds and 2 when an item is undetermined. Not part of `make check` (#47, #54, #56).
+  B9 checks that commands Claude Code allows on its own as read-only (`tail`, `cat`, `head`, `grep`) are still refused on a denied file
+  such as `.env`; found when a trial cycle showed `… | tail -5` passing without an allow.
+  On 2.1.287 every safety assumption held; some workarounds no longer seem needed (some compound command forms pass,
+  refusals by deny now appear in `permission_denials`, an allow in a profile named `settings.json` takes effect)
+
+### Changed
+
+- **`prompts/_rules.md` no longer forbids every compound command.** `&&`, `;`, pipes, heredocs and `cd X && cmd` pass when every part is allowed
+  (checked on 2.1.286 and 2.1.287); the rules now list only the forms still denied whatever the permissions say: `VAR=value cmd`,
+  command substitution, control structures that expand a variable, and output redirection (`>`; new in the list). On an older Claude Code
+  the agents may get a few more denials before falling back to single commands; nothing becomes less safe, since each part is still checked.
+  A paid cycle in a trial repository (spec → impl → PR → code review) had no denials; the agents used `&&`, `;` and `2>&1 | tail` (#55)
+- **docs/setup.md §6 "Pitfalls found by measurement" is reorganized by ID**: A (workarounds; each row says where it is relied on and
+  what to change if it no longer holds) and B (assumptions the safety relies on; what breaks), with the version they were last checked on
+  (2.1.287) in one place. It adds B7 (compound commands are checked part by part), B8 (input redirection is checked against the `Read` denies) and B9 (auto-allowed read-only commands are too),
+  marks A5a and A6 as no longer holding, and has manual steps for what `make probe` cannot check (A7 in an interactive session,
+  B6 with user-level settings). The comments in `scripts/claude-run.sh` and the profiles refer to the IDs
+- The profiles keep their `*-permissions.json` names: a `deny` in `settings.json` still binds interactive sessions (A7).
+  **Host repositories** do not need to change anything in this release
+
+## [0.11.0] - 2026-10-12
+
+### Added
+
+- **`examples/java/.ai-flow/`**: settings for a Java repository built with Gradle or Maven — `config.mk`, `permissions.json`, `context.md`,
+  `project-words.txt` — and `java-scratch.sh` for `SCRATCH_TEST_CMD`. A throwaway file under the flow's `tmp/` is outside every source set,
+  so the wrapper compiles the project, asks the build for the test runtime classpath (an init script for Gradle, `dependency:build-classpath`
+  for Maven; the build files stay unchanged), and runs the file in source-file mode. `MODULE` picks a subproject or module.
+  Checked by hand with Spring Boot 4.1 on Gradle 9.7 (also with the configuration cache) and Maven, single and multi-module;
+  `selftest.sh` covers the wrapper's plumbing with stub builds. The formatter settings are left empty and only described (not checked yet).
+  setup.md §9 has an item on `SCRATCH_TEST_CMD` for compiled languages
+- **Checklist items in `docs/setup.md` §9 for slower, compiled stacks** such as Java / Spring Boot: timing `TEST_CMD` against Claude Code's
+  Bash timeout (2 minutes by default, 10 at most) since the judges re-run the whole suite, allowing it as a prefix so the agents can run one test class,
+  toolchains set up only in `.zshrc` (SDKMAN, jenv, …), commands that never finish (dev servers, `bootRun`), and `application-local.yml` as an example
+  of a secret file to deny. `docs/setup-with-agent.md` has the agent time `TEST_CMD` and report it
+
+### Changed
+
+- **`make check` rejects more allows** in the merged permissions: `java` bare or with nothing after `-jar` / `-cp` / `--source`
+  (`java Foo.java` runs a source file; `java -jar <a fixed jar>:*` still passes), `jshell` and `jbang` in every form, `groovy` / `kotlin` / `scala`
+  like the other interpreters, and `docker` / `podman` in every form (any image, any mounts). **Absolute-path forms are now checked too**:
+  `Bash(/bin/cat:*)` used to pass while `Bash(cat:*)` was rejected, although §9 asks for the absolute-path forms of allowed commands.
+  **Host repositories**: if `make check` now reports one of these in `.ai-flow/permissions.json`, narrow it to what you need or remove it
+  (setup.md §6, "Allows that must never be granted")
+- **Gradle's cache advice** in setup.md §9: `test --rerun` (7.6 or later) or `cleanTest test` instead of `--rerun-tasks`, which also reruns compilation
+
+## [0.10.2] - 2026-10-12
+
+### Added
+
+- **Installation steps for a coding agent** (`docs/setup-with-agent.md`), so that asking Claude Code or a similar agent to "set up
+  issue-to-pr-flow" in a host repository goes the same way every time: what to check first, which decisions to ask the human
+  (tag, flow directory, `OUTPUT_LANG`, model IDs, notifications, …), the `git subtree` steps exactly as in §3, filling in `.ai-flow/`
+  against the §9 checklist, and when it is done. It keeps the agent out of the flow directory and away from secrets, and leaves
+  `make spec` / `make impl` to the human. English only: the agent reads it and talks to the human in their language.
+  The README's Install section points agents to it. **Host repositories** do not need to change anything
+
+## [0.10.1] - 2026-10-09
+
+### Added
+
+- **A user guide** for the people who use the flow day to day, in English (`docs/guide.md`) and Japanese (`docs/guide.ja.md`):
+  writing Issues, reading the instruction document, the Issue comment types, what to do when a phase stops and how to resume,
+  and what to look at in the PR. `docs/setup.md` stays the full reference. **Host repositories** do not need to change anything
+
+### Fixed
+
+- **An instruction document no longer asks the agents for a byte-for-byte copy they cannot make** ([#44](https://github.com/maepon/issue-to-pr-flow/issues/44)).
+  `Write` takes the content as a JSON string, so a copy of a file with escapes (`\u003c`, which JSON encoders often write for `<`) gets the raw
+  character, and `cp` is not allowed. In one host repository an AC asked for real output copied with `Write` and checked byte for byte; neither
+  judge saw that it could not be met, and the implementation reached `NEEDS_HUMAN` only on the third review. `prompts/spec.md` now has a human
+  (`cp` before `make impl`) or a copy command allowed in `.ai-flow/permissions.json` make such a copy, or compares contents instead.
+  `plan-judge.md` and `review-judge.md` treat the AC as `NEEDS_HUMAN` when neither is given, and `review-judge.md` checks byte equality with
+  `git diff --no-index` (already allowed) instead of reading the files. `docs/setup.md` records the measurement in §6 and has a copy wrapper
+  that fixes both directories in the §9 checklist. **Host repositories** do not need to change anything
+
 ## [0.10.0] - 2026-10-07
 
 ### Added
@@ -257,7 +342,11 @@ so its history is included; Issue / PR numbers in those commit messages refer to
 - The scripts' comments and terminal / Slack messages are in Japanese (fixed in 0.3.0)
 - A project without a formatter or a test command is not supported yet: prompts that use an empty `FORMAT_*` / `TEST_CMD` value stop at render time (formatter: fixed in 0.2.0; tests: fixed in 0.4.0)
 
-[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/maepon/issue-to-pr-flow/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.10.2...v0.11.0
+[0.10.2]: https://github.com/maepon/issue-to-pr-flow/compare/v0.10.1...v0.10.2
+[0.10.1]: https://github.com/maepon/issue-to-pr-flow/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/maepon/issue-to-pr-flow/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/maepon/issue-to-pr-flow/compare/v0.8.0...v0.8.1
