@@ -23,11 +23,13 @@ TEST_CMD = npm test
 # TEST_CMD = ../.ai-flow/go-test.sh            Go with several modules and no go.work (examples/go/.ai-flow; docs/setup.md §9)
 # TEST_CMD = python -m pytest ..
 # TEST_CMD = python3 -m unittest discover -s ../tests
+# TEST_CMD = ../gradlew -p .. test --rerun      Java with Gradle (examples/java/.ai-flow); Maven: ../mvnw -B -f ../pom.xml test
 
 # Runs a single throwaway test file (written under <flow dir>/tmp/). The file name is appended.
 SCRATCH_TEST_CMD = node --test
 # SCRATCH_TEST_CMD = go test
 # SCRATCH_TEST_CMD = python -m pytest
+# SCRATCH_TEST_CMD = ../.ai-flow/java-scratch.sh   Java: runs the file with the project's classpath (examples/java/.ai-flow)
 
 # Formatting. If your project has no formatter, leave all four FORMAT_* values empty:
 # the formatting steps are then removed from the prompts and the per-file check is skipped.

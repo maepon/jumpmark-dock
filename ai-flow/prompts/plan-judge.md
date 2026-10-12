@@ -42,6 +42,10 @@ Plan revision can only change the plan. Use `NEEDS_HUMAN` only for unmet criteri
 - Acceptance criteria contradict each other and cannot be met at the same time
 - A premise of the instruction document is factually wrong (a nonexistent function or file, a description of the current state that differs from reality, etc.)
 - Meeting it would require changing something the instruction document said "must not be changed"
+- The AC requires a file the agents copy with `Write` to equal its source byte for byte, and the source may contain escapes
+  (`\u003c` and the like) or its final newline matters. `Write` takes the content as a JSON string and writes an escape as the raw
+  character, and `cp` is not allowed, so no plan can produce the bytes. It can be met only when a human makes the copy, or a copy command
+  allowed in `.ai-flow/permissions.json` does; check that the instruction document says so
 
 An unmet criterion that a rewrite of the plan can fix is `CHANGES_REQUESTED`, however large. When in doubt, choose `CHANGES_REQUESTED`.
 If there is even one `NEEDS_HUMAN`, the verdict is `NEEDS_HUMAN` even if there are other fixable findings.

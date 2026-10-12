@@ -1,0 +1,14 @@
+{
+  "//": "Extra permissions for a Java repository built with Gradle (see examples/project/.ai-flow/permissions.json for how this file is used). TEST_CMD is allowed as a prefix, so the agents can narrow a run with --tests <class>. For Maven, replace the two gradlew lines with \"Bash(../mvnw -B -f ../pom.xml test:*)\" (narrowed with -Dtest=<class>) and \"Bash(../mvnw --version)\". Never allow java bare, jshell, or docker (make check rejects them), nor a command that keeps running such as bootRun or spring-boot:run. The deny line is for local settings with passwords (Spring Boot's application-local.yml); name the files your project actually has.",
+  "allow": [
+    "Bash(../gradlew -p .. test:*)",
+    "Bash(../gradlew --version)",
+    "Bash(../.ai-flow/java-scratch.sh:*)",
+    "Bash(java -version)",
+    "Bash(java --version)"
+  ],
+  "deny": [
+    "Read(//**/application-local.yml)",
+    "Read(//**/application-local.properties)"
+  ]
+}

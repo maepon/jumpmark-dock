@@ -68,8 +68,13 @@ EOF
   # git -C / go -C shift the prefix match and get around the git push deny.
   # Shells and interpreters run anything in one command when bare, as one-liners (-c / -e / -p), or with nothing after -m.
   # Forms narrowed down to the module name, such as python -m pytest:*, pass.
-  bad=$(jq -r '.permissions.allow[]' "${MERGED}" \
-    | LC_ALL=C grep -E 'Bash\((grep|cat|sed|awk|head|tail|cp|mv|chmod|curl|ln|tee|xargs|find|git -C|go -C|bash|sh|zsh|env|eval|exec)[ :)]|Bash\((python3?|node|ruby|perl|deno|bun|npx)(:|\)| -[cepE][ :)]| -m[:)])|Bash\(git:|Bash\(gh:|Bash\(\*|Bash\(:' || true)
+  # java is the same when bare or with nothing after -jar / -cp / --source (java Foo.java runs a source file);
+  # java -jar <a fixed jar>:* passes. jshell / jbang run any code they are given and docker / podman any image with any mounts,
+  # in every form.
+  # Each rule is checked as written and with a leading absolute path removed (Bash(/usr/bin/cat:*) is Bash(cat:*); §9 asks for
+  # the absolute-path forms too). The second column is only for matching; cut keeps the rule as written.
+  bad=$(jq -r '.permissions.allow[] | . + "\t" + sub("^Bash\\(/[^ :)]*/"; "Bash(")' "${MERGED}" \
+    | LC_ALL=C grep -E 'Bash\((grep|cat|sed|awk|head|tail|cp|mv|chmod|curl|ln|tee|xargs|find|git -C|go -C|bash|sh|zsh|env|eval|exec|jshell|jbang|docker|podman)[ :)]|Bash\((python3?|node|ruby|perl|deno|bun|npx|groovy|kotlin|scala)(:|\)| -[cepE][ :)]| -m[:)])|Bash\(java(:|\)| -(jar|cp|classpath|-class-path|-source)[:)])|Bash\(git:|Bash\(gh:|Bash\(\*|Bash\(:' | cut -f1 || true)
   if [ -n "${bad}" ]; then
     ng "${p}: allow contains commands that must never be allowed:
 ${bad}"

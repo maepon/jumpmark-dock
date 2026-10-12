@@ -38,6 +38,9 @@ The fixer can only change code within the scope of the instruction document. Use
   cannot both hold because of existing unformatted files)
 - A premise of the instruction document is factually wrong (a nonexistent function or file, a description of the current state that differs from reality, etc.)
 - Meeting it would require changing something the instruction document said "must not be changed", or a tooling file
+- The AC requires a file the agents copy with `Write` to equal its source byte for byte, the copy differs, and the instruction document
+  does not have a human or an allowed copy command make it. `Write` takes the content as a JSON string and writes an escape (`\u003c` and
+  the like) as the raw character, and `cp` is not allowed, so another fix will not produce the bytes either
 
 An unmet criterion that a code fix can resolve is `CHANGES_REQUESTED`, however large. When in doubt, choose `CHANGES_REQUESTED`.
 If there is even one `NEEDS_HUMAN`, the verdict is `NEEDS_HUMAN` even if there are other fixable findings.
@@ -60,6 +63,8 @@ Points to look at.
   (such as a word appearing in a file) does not count when the criterion is about behavior. Check `manual` rows yourself as far as you can
 {{/unless}}
 - Whether what the report says was done really exists in the diff
+- **Byte equality of two files: compare them with `git diff --no-index -- <source> <copy>`** (exit code 0 only when they are identical).
+  Do not judge it by reading both with `Read`, or by reasoning that `Write` keeps escapes: it does not
 - Whether changes outside the scope of the instruction document are mixed in. If so, point that out too
 
 Write findings by citing an `AC-n` or a specific `file:line`.
