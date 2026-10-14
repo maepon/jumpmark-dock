@@ -164,6 +164,24 @@ In `chrome.storage.sync`, this is split by an FNV-1a hash of the source URL into
 - `jm:meta`: `{ "v": 2, "legacyIds": [...] }`. The ids of Jumpmarks already imported from the legacy format
 - `jumpmarks`: the format of v2.3.0 and earlier (all data in one item). Kept for compatibility; never rewritten or deleted
 
+#### Compact form (read only)
+
+When a bucket item has `"f": 1`, the Jumpmarks in its `d` are stored in a compact form (the marker is set per item):
+
+| Key | Original property | Content |
+|---|---|---|
+| `i` | `id` | As is |
+| `t` | `title` | As is |
+| `u` | `url` | As is |
+| `k` | `icon` | Omitted when it is the default icon `🔗` |
+| `c` | `created` | Epoch milliseconds when the ISO string can be restored; otherwise the string as is |
+| `a` | — | An array of the names `icon` / `isWildcard` / `sourceUrl` that were absent in the original |
+| `x` | others | Properties not listed above (also a `sourceUrl` that differs from the key, or a numeric `created`), with names and values unchanged |
+
+- `sourceUrl` isn't stored; it's restored from the key (source URL) inside the bucket. `isWildcard` is restored as `true` when the key ends with `*`
+- Even in an item without the marker, an entry that has no own `id` and has a string `i` is read as compact
+- The current version reads the compact form, but it writes the current format. A bucket whose item without the marker holds compact entries is rewritten in the current format on write
+
 ### Debugging
 
 - **Popup**: Right-click the extension icon → "Inspect popup"

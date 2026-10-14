@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 詰めた保存形式を読めるようにした（#37 段階 1）。バケットの項目に `"f": 1` が付いているとき、`sourceUrl` の省略、短いプロパティ名、エポックミリ秒の `created`、既定のアイコン `🔗` の省略を戻して読む。印の無い項目でも、`id` が無く文字列の `i` を持つエントリは詰めた形として読む。書き込みは今の形のままで、保存されるデータは変わらない（印の無い項目に詰めたエントリがあるバケットだけ、書き込みのときに今の形で書き直す）。詰めた形での書き込みは段階 2 で行う
+
 ### Removed
 
 - タグの push で `package.yml` と同時に動き、同じタグのリリースを作り合っていた `.github/workflows/build.yml` を削除した。どちらが先にリリースを作るかで `package.yml` が失敗し、ストア提出用の zip が下書きのリリースにだけ残ることがあった（v2.4.2 で発生）。`build.yml` の zip は `package.yml` と同じ中身だったので、リリースの作成と zip の作成は `package.yml` だけにする。各リリースに付いていた `jumpmark-dock-extension.zip` は今後付かない

@@ -559,6 +559,10 @@ const SYNC_MAX_ITEMS = 512;
 // 作成元 URL のハッシュで振り分けるバケット数
 const JUMPMARKS_BUCKET_COUNT = 64;
 
+// 詰めた保存形式（#37）の印。項目の `f` がこの値のとき、`d` のエントリは詰めた形
+const JUMPMARKS_COMPACT_FORMAT = 1;
+const DEFAULT_JUMPMARK_ICON = "🔗";
+
 // 変更通知をまとめる待ち時間（ミリ秒）
 const JUMPMARKS_CHANGE_NOTIFY_DELAY_MS = 100;
 
@@ -727,7 +731,176 @@ function parseJumpmarksBucketKey(key) {
   return index >= 1 ? { bucket, index } : null;
 }
 
-// 1 バケットの項目から内容を読み取る。続き項目が欠けている・食い違うときは、ある分を連結して重複を除く
+function hasOwn(object, name) {
+  return Object.prototype.hasOwnProperty.call(object, name);
+}
+
+// 値を名前どおりのデータプロパティとして入れる（`__proto__` という名前でもプロトタイプを変えない）
+function defineDataProperty(object, name, value) {
+  Object.defineProperty(object, name, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+// 詰めたエントリ（#37）の見分け。印（f: 1）の無い項目の中で使う。
+// 今の形の Jumpmark は必ず自分の id を持つので、id が無く文字列の i を持つものだけを詰めた形とみなす
+function isCompactJumpmarkEntry(entry) {
+  return (
+    isPlainObject(entry) &&
+    !hasOwn(entry, "id") &&
+    hasOwn(entry, "i") &&
+    typeof entry.i === "string"
+  );
+}
+
+// created が ISO 文字列で、エポックミリ秒から元の文字列に戻せるなら、そのミリ秒（戻せなければ null）
+function isoStringToEpochMs(value) {
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return null;
+  try {
+    return new Date(ms).toISOString() === value ? ms : null;
+  } catch {
+    return null;
+  }
+}
+
+// Jumpmark を詰めたエントリにする。sourceUrl はバケットの中のキー。
+// 段階 1 では保存に使わない（読み込みの確認用）。段階 2 で書き込みに使う
+function compactJumpmark(jumpmark, sourceUrl) {
+  if (!isPlainObject(jumpmark)) return jumpmark;
+
+  const compact = {};
+  const absent = [];
+  const extra = {};
+  const isWildcardKey = sourceUrl.endsWith("*");
+
+  if (hasOwn(jumpmark, "id")) compact.i = jumpmark.id;
+  if (hasOwn(jumpmark, "title")) compact.t = jumpmark.title;
+  if (hasOwn(jumpmark, "url")) compact.u = jumpmark.url;
+
+  if (!hasOwn(jumpmark, "icon")) {
+    absent.push("icon");
+  } else if (jumpmark.icon !== DEFAULT_JUMPMARK_ICON) {
+    compact.k = jumpmark.icon;
+  }
+
+  if (hasOwn(jumpmark, "created")) {
+    const created = jumpmark.created;
+    if (typeof created === "number") {
+      // c の数値はエポックミリ秒を表すので、元から数値だったものは x に入れて区別する
+      defineDataProperty(extra, "created", created);
+    } else {
+      const ms =
+        typeof created === "string" ? isoStringToEpochMs(created) : null;
+      compact.c = ms === null ? created : ms;
+    }
+  }
+
+  if (!hasOwn(jumpmark, "sourceUrl")) {
+    absent.push("sourceUrl");
+  } else if (jumpmark.sourceUrl !== sourceUrl) {
+    defineDataProperty(extra, "sourceUrl", jumpmark.sourceUrl);
+  }
+
+  if (isWildcardKey) {
+    if (!hasOwn(jumpmark, "isWildcard")) {
+      absent.push("isWildcard");
+    } else if (jumpmark.isWildcard !== true) {
+      defineDataProperty(extra, "isWildcard", jumpmark.isWildcard);
+    }
+  } else if (hasOwn(jumpmark, "isWildcard")) {
+    defineDataProperty(extra, "isWildcard", jumpmark.isWildcard);
+  }
+
+  const known = new Set([
+    "id",
+    "title",
+    "url",
+    "icon",
+    "created",
+    "sourceUrl",
+    "isWildcard",
+  ]);
+  for (const name of Object.keys(jumpmark)) {
+    if (!known.has(name)) defineDataProperty(extra, name, jumpmark[name]);
+  }
+
+  if (absent.length > 0) compact.a = absent.sort();
+  if (Object.keys(extra).length > 0) compact.x = extra;
+  return compact;
+}
+
+// 詰めたエントリを今の形の Jumpmark に戻す。compactJumpmark の逆
+function expandJumpmark(entry, sourceUrl) {
+  if (!isPlainObject(entry)) return entry;
+
+  const absent = Array.isArray(entry.a)
+    ? entry.a.filter((name) => typeof name === "string")
+    : [];
+  const jumpmark = {};
+
+  if (hasOwn(entry, "i")) jumpmark.id = entry.i;
+  if (hasOwn(entry, "t")) jumpmark.title = entry.t;
+  if (hasOwn(entry, "u")) jumpmark.url = entry.u;
+
+  if (hasOwn(entry, "k")) {
+    jumpmark.icon = entry.k;
+  } else if (!absent.includes("icon")) {
+    jumpmark.icon = DEFAULT_JUMPMARK_ICON;
+  }
+
+  if (hasOwn(entry, "c")) {
+    if (typeof entry.c === "number") {
+      try {
+        jumpmark.created = new Date(entry.c).toISOString();
+      } catch {
+        jumpmark.created = entry.c;
+      }
+    } else {
+      jumpmark.created = entry.c;
+    }
+  }
+
+  if (!absent.includes("sourceUrl")) jumpmark.sourceUrl = sourceUrl;
+  if (sourceUrl.endsWith("*") && !absent.includes("isWildcard")) {
+    jumpmark.isWildcard = true;
+  }
+
+  // x は最後に写す（上で決めた値より優先）
+  if (isPlainObject(entry.x)) {
+    for (const name of Object.keys(entry.x)) {
+      defineDataProperty(jumpmark, name, entry.x[name]);
+    }
+  }
+  return jumpmark;
+}
+
+// { 作成元URL: [Jumpmark, ...] } の各 Jumpmark を変換する。配列でない値はそのまま残す
+function mapBucketData(data, convert) {
+  if (!isPlainObject(data)) return data;
+  const result = {};
+  for (const [url, list] of Object.entries(data)) {
+    result[url] = Array.isArray(list)
+      ? list.map((entry) => convert(entry, url))
+      : list;
+  }
+  return result;
+}
+
+function compactBucketData(data) {
+  return mapBucketData(data, compactJumpmark);
+}
+
+function expandBucketData(data) {
+  return mapBucketData(data, expandJumpmark);
+}
+
+// 1 バケットの項目から内容を読み取る。続き項目が欠けている・食い違うときは、ある分を連結して重複を除く。
+// 詰めた形のエントリは、連結の前に今の形へ戻す。印（f: 1）の無い項目に詰めたエントリがあったときは
+// needsRewrite を true にする（書き込みのとき今の形で書き直すため）
 function readBucketData(head, continuations) {
   const headItem = isPlainObject(head) ? head : null;
   const n =
@@ -752,15 +925,26 @@ function readBucketData(head, continuations) {
   }
 
   const data = {};
+  let needsRewrite = false;
   for (const item of sources) {
     if (!isPlainObject(item) || !isPlainObject(item.d)) continue;
+    const marked = item.f === JUMPMARKS_COMPACT_FORMAT;
     for (const [url, list] of Object.entries(item.d)) {
       if (!Array.isArray(list)) continue;
       if (!data[url]) data[url] = [];
-      data[url].push(...list);
+      for (const entry of list) {
+        if (marked) {
+          data[url].push(expandJumpmark(entry, url));
+        } else if (isCompactJumpmarkEntry(entry)) {
+          needsRewrite = true;
+          data[url].push(expandJumpmark(entry, url));
+        } else {
+          data[url].push(entry);
+        }
+      }
     }
   }
-  if (consistent) return data;
+  if (consistent) return { data, needsRewrite };
 
   for (const url of Object.keys(data)) {
     const seen = new Set();
@@ -775,7 +959,7 @@ function readBucketData(head, continuations) {
       return true;
     });
   }
-  return data;
+  return { data, needsRewrite };
 }
 
 // get(null) の結果から、バケットごとの今の内容と、今あるキーの一覧を集める（バケット番号の昇順）
@@ -803,7 +987,8 @@ function collectBucketsFromItems(items) {
   const buckets = new Map();
   for (const bucket of [...groups.keys()].sort((a, b) => a - b)) {
     const { head, continuations, keys } = groups.get(bucket);
-    buckets.set(bucket, { data: readBucketData(head, continuations), keys });
+    const { data, needsRewrite } = readBucketData(head, continuations);
+    buckets.set(bucket, { data, keys, needsRewrite });
   }
   return buckets;
 }
@@ -908,9 +1093,11 @@ async function writeJumpmarksStore(jumpmarks, { checkQuota = true } = {}) {
   for (const bucket of buckets) {
     const existing = current.get(bucket);
     const data = next.get(bucket) ?? {};
+    // 内容が同じなら書かない。ただし印の無い項目に詰めたエントリがあるバケットは今の形で書き直す
     if (
       canonicalizeBucketData(existing?.data ?? {}) ===
-      canonicalizeBucketData(data)
+        canonicalizeBucketData(data) &&
+      !existing?.needsRewrite
     ) {
       continue;
     }
